@@ -123,7 +123,34 @@ ProduceAircraft = function()
 			Trigger.AfterDelay(DateTime.Seconds(ProductionInterval[Difficulty] / 2), ProduceAircraft)
 		end
 
-		InitializeAttackAircraft(mig, Greece)
+		TargetAndAttack(mig)
+	end)
+end
+
+TargetAndAttack = function(mig, target)
+	if mig.IsDead then
+		return
+	end
+
+	if not target or target.IsDead or (not target.IsInWorld) then
+		local enemies = Utils.Where(greece.GetActors(), function(actor)
+			return actor.HasProperty("Health") and actor.Type ~= "brik"
+		end)
+		if #enemies > 0 then
+			target = Utils.Random(enemies)
+		end
+	end
+
+	-- Attack, and keep attacking even after automatic return to base
+	if mig.CanTarget(target) then
+		mig.AbortOnResupply = false
+		mig.Attack(target)
+	end
+
+	-- Next activity is to do this again
+	-- Short delay guards against fatal CallFunc loop, if Attack() was not possible or fails to queue an activity
+	mig.CallFunc(function()
+		Trigger.AfterDelay(DateTime.Seconds(1), function() TargetAndAttack(mig, target) end)
 	end)
 end
 

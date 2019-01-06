@@ -154,6 +154,33 @@ ProduceAircraft = function()
 	end)
 end
 
+TargetAndAttack = function(yak, target)
+	if yak.IsDead then
+		return
+	end
+
+	if not target or target.IsDead or (not target.IsInWorld) then
+		local enemies = Utils.Where(Map.ActorsInWorld, function(self) return self.Owner == player and self.HasProperty("Health") and yak.CanTarget(self) end)
+		if #enemies > 0 then
+			target = Utils.Random(enemies)
+		end
+	end
+
+	-- Attack, and keep attacking even after automatic return to base
+	if yak.CanTarget(target) then
+		yak.AbortOnResupply = false
+		yak.Attack(target)
+	end
+
+	-- Next activity is to do this again
+	-- Short delay guards against fatal CallFunc loop, if Attack() was not possible or fails to queue an activity
+	yak.CallFunc(function()
+		Trigger.AfterDelay(DateTime.Seconds(1), function() TargetAndAttack(yak, target) end)
+	end)
+end
+
+IdleHunt = function(unit) if not unit.IsDead then Trigger.OnIdle(unit, unit.Hunt) end end
+
 SendAttack = function(units, path)
 	Utils.Do(units, function(unit)
 		unit.Patrol(path, false)
