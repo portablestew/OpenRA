@@ -50,3 +50,10 @@ update.log
 
 # IntelliJ files
 .idea
+
+# pyddock local/generated files (keep pyddock.override.toml tracked).
+# /.pyddock/tmp holds .kiro build-and-run runtime artifacts: logs, dumps, run state.
+/.pyddock/tmp/
+/.pyddock/venv/
+/.pyddock/installed.json
+*.pyc

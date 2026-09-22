@@ -1,0 +1,47 @@
+{
+  "mcpServers": {
+    "fetch": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-fetch"
+      ],
+      "env": {},
+      "disabled": true,
+      "autoApprove": []
+    },
+    "pyddock": {
+      "command": "uvx",
+      "args": [
+        "--refresh",
+        "pyddock",
+        "serve"
+      ],
+      "autoApprove": [
+        "run_python",
+        "run_shell",
+        "run_mcp",
+        "fs_readfile",
+        "fs_stat",
+        "fs_find",
+        "fs_grep",
+        "fs_append",
+        "fs_delete",
+        "fs_str_replace"
+      ],
+      "disabled": false
+    },
+    "chat-mother-forker": {
+      "command": "uvx",
+      "args": [
+        "--refresh",
+        "chat-mother-forker"
+      ],
+      "autoApprove": [
+        "chat_checkpoint",
+        "chat_fork",
+        "chat_search"
+      ],
+      "disabled": false
+    }
+  }
+}

@@ -46,6 +46,19 @@
 			"preLaunchTask": "build",
 		},
 		{
+			// Attaches directly to a game already launched by
+			// .kiro/scripts/build/build-and-run.ps1 (which starts no debugger of
+			// its own). Pick the "dotnet" process running bin/OpenRA.dll.
+			//
+			// CoreCLR allows only ONE debugger per process, so this fails while a
+			// .kiro/scripts/debug/dbg.py probe holds the game. Check first with
+			// .kiro/scripts/build/status-game.ps1.
+			"name": "Attach (OpenRA)",
+			"type": "coreclr",
+			"request": "attach",
+			"processId": "${command:pickProcess}",
+		},
+		{
 			"name": "Launch Utility",
 			"type": "coreclr",
 			"request": "launch",

@@ -1,0 +1,9 @@
+[mcp.chat-mother-forker]
+description = "Access to local chat history"
+tools = { "chat_(search|fork|checkpoint)" = true }
+
+[shell.scripts]
+command = "(\\.[/\\\\])?\\.kiro[/\\\\]scripts[/\\\\].+"
+mode = "allow"
+deny = []
+arg_paths = "workspace"
