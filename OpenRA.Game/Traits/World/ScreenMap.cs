@@ -107,6 +107,15 @@ namespace OpenRA.Traits
 
 		public void Add(IEffect effect, WPos position, Size size)
 		{
+			// The screen map is a render/interaction index; it is meaningless without a renderer. In a
+			// headless world worldRenderer is never set (WorldLoaded is called with a null wr), yet presentation
+			// effects such as SpriteEffect (muzzle flashes, impact piffs) still tick and call in here. They are
+			// pure presentation and carry no synced state, so dropping them from the index is correct - and it
+			// avoids dereferencing the absent renderer below. This is the single choke point for every effect
+			// Add/Update overload, so guarding it here covers them all.
+			if (worldRenderer == null)
+				return;
+
 			var screenPos = worldRenderer.ScreenPxPosition(position);
 			var screenWidth = Math.Abs(size.Width);
 			var screenHeight = Math.Abs(size.Height);
