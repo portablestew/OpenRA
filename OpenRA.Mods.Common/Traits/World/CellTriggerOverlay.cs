@@ -58,7 +58,9 @@ namespace OpenRA.Mods.Common.Traits
 
 		public CellTriggerOverlay(CellTriggerOverlayInfo info)
 		{
-			font = Game.Renderer.Fonts[info.Font];
+			// Debug overlay: the font is only used when drawing annotations, which never happens in a headless
+			// world (no renderer). Leave it null rather than dereferencing the absent Game.Renderer.
+			font = Game.Renderer?.Fonts[info.Font];
 			color = info.Color;
 		}
 

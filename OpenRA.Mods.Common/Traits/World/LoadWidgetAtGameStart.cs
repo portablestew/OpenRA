@@ -61,6 +61,11 @@ namespace OpenRA.Mods.Common.Traits
 
 		void IWorldLoaded.WorldLoaded(World world, WorldRenderer wr)
 		{
+			// This trait only builds the in-game UI widget tree, which is purely visual and has no simulation
+			// state. There is no UI in a headless world, so skip it entirely.
+			if (world.IsHeadless)
+				return;
+
 			if (!world.IsLoadingGameSave && info.ClearRoot)
 				Ui.ResetAll();
 

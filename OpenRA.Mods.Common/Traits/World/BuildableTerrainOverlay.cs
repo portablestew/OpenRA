@@ -67,6 +67,13 @@ namespace OpenRA.Mods.Common.Traits
 
 		void IWorldLoaded.WorldLoaded(World w, WorldRenderer wr)
 		{
+			// This trait only draws a "cannot build here" overlay: it implements render interfaces only
+			// (IRenderAboveWorld/IWorldLoaded) and holds no simulation state - UpdateTerrainCell reads terrain to
+			// pick a sprite but never mutates the map. It builds a TerrainSpriteLayer and reads a palette from the
+			// (absent) WorldRenderer, so skip it headlessly; render/palette stay null and the other members guard.
+			if (world.IsHeadless)
+				return;
+
 			render = new TerrainSpriteLayer(w, wr, disabledSprite, BlendMode.Alpha, false);
 
 			world.Map.Tiles.CellEntryChanged += UpdateTerrainCell;
@@ -102,7 +109,8 @@ namespace OpenRA.Mods.Common.Traits
 			if (disposed)
 				return;
 
-			render.Dispose();
+			// render is only created in WorldLoaded, which is skipped headlessly.
+			render?.Dispose();
 			disposed = true;
 		}
 	}

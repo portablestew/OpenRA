@@ -33,10 +33,12 @@ namespace OpenRA.Mods.Common.Traits.Render
 		readonly Dictionary<Barrel, AnimationWithOffset> anims = [];
 		readonly Func<WAngle> getFacing;
 		readonly Armament[] armaments;
+		readonly bool headless;
 
 		public WithMuzzleOverlay(Actor self, WithMuzzleOverlayInfo info)
 			: base(info)
 		{
+			headless = self.World.IsHeadless;
 			var render = self.Trait<RenderSprites>();
 			var facing = self.TraitOrDefault<IFacing>();
 
@@ -111,6 +113,11 @@ namespace OpenRA.Mods.Common.Traits.Render
 
 		void ITick.Tick(Actor self)
 		{
+			// Muzzle-flash animations are purely visual (driven by INotifyAttack) and their sequences are not
+			// resolved headlessly. Skip advancing them; the simulation is unaffected.
+			if (headless)
+				return;
+
 			foreach (var a in anims.Values)
 				a.Animation.Tick();
 		}

@@ -41,10 +41,12 @@ namespace OpenRA.Mods.Common.Traits.Render
 	{
 		protected Animation anim;
 		readonly string image;
+		readonly bool headless;
 
 		public WithDecoration(Actor self, WithDecorationInfo info)
 			: base(self, info)
 		{
+			headless = self.World.IsHeadless;
 			image = info.Image ?? self.Info.Name;
 			anim = new Animation(self.World, image, () => self.World.Paused);
 			anim.PlayRepeating(info.Sequence);
@@ -66,6 +68,8 @@ namespace OpenRA.Mods.Common.Traits.Render
 			];
 		}
 
-		void ITick.Tick(Actor self) { anim.Tick(); }
+		// Advancing the decoration animation is purely visual (decoration frame state is not synced) and the
+		// sprite sequence is not resolved headlessly, so skip it. The simulation is unaffected.
+		void ITick.Tick(Actor self) { if (!headless) anim.Tick(); }
 	}
 }

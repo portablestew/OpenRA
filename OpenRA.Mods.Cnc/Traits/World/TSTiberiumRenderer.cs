@@ -70,10 +70,15 @@ namespace OpenRA.Mods.Cnc.Traits
 
 		protected override void WorldLoaded(World w, WorldRenderer wr)
 		{
-			LoadVariants(info.Ramp1Sequences, ramp1Variants);
-			LoadVariants(info.Ramp2Sequences, ramp2Variants);
-			LoadVariants(info.Ramp3Sequences, ramp3Variants);
-			LoadVariants(info.Ramp4Sequences, ramp4Variants);
+			// The ramp variants are sprite sequences used only for drawing; skip loading them headlessly, exactly
+			// as the base ResourceRenderer skips its own variants. The base still seeds the resource-type lookup.
+			if (!Headless)
+			{
+				LoadVariants(info.Ramp1Sequences, ramp1Variants);
+				LoadVariants(info.Ramp2Sequences, ramp2Variants);
+				LoadVariants(info.Ramp3Sequences, ramp3Variants);
+				LoadVariants(info.Ramp4Sequences, ramp4Variants);
+			}
 
 			base.WorldLoaded(w, wr);
 		}

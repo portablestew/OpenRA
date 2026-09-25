@@ -63,6 +63,7 @@ namespace OpenRA.Mods.Common.Traits
 	public sealed class TerrainRenderer : IRenderTerrain, IWorldLoaded, INotifyActorDisposing, ITiledTerrainRenderer
 	{
 		readonly Map map;
+		readonly bool headless;
 		TerrainSpriteLayer spriteLayer;
 		readonly DefaultTerrain terrainInfo;
 		readonly DefaultTileCache tileCache;
@@ -72,15 +73,26 @@ namespace OpenRA.Mods.Common.Traits
 		public TerrainRenderer(World world)
 		{
 			map = world.Map;
+			headless = world.IsHeadless;
 			terrainInfo = map.Rules.TerrainInfo as DefaultTerrain;
 			if (terrainInfo == null)
 				throw new InvalidDataException($"{nameof(TerrainRenderer)} can only be used with the {nameof(DefaultTerrain)} parser");
+
+			// The tile cache loads terrain sprite sheets, which are purely visual and require game content that
+			// need not be present in a headless world. The terrain contributes nothing to the simulation, so
+			// leave the cache and sprite layer uncreated rather than loading content we will never draw.
+			if (headless)
+				return;
 
 			tileCache = new DefaultTileCache(terrainInfo);
 		}
 
 		void IWorldLoaded.WorldLoaded(World world, WorldRenderer wr)
 		{
+			// No sprite layer to populate headlessly; see the constructor.
+			if (headless)
+				return;
+
 			worldRenderer = wr;
 			spriteLayer = new TerrainSpriteLayer(world, wr, tileCache.MissingTile, BlendMode.Alpha, world.Type != WorldType.Editor);
 			foreach (var cell in map.AllCells)
@@ -114,6 +126,13 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			if (disposed)
 				return;
+
+			// Nothing was created or subscribed headlessly; see the constructor and WorldLoaded.
+			if (headless)
+			{
+				disposed = true;
+				return;
+			}
 
 			map.Tiles.CellEntryChanged -= UpdateCell;
 			map.Height.CellEntryChanged -= UpdateCell;

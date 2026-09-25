@@ -24,6 +24,17 @@ namespace OpenRA
 		// This tracks the assemblies that have been loaded since game start so that we don't load multiple copies
 		static readonly Dictionary<string, Assembly> ResolvedAssemblies = [];
 
+		// The same assemblies keyed by simple name, so that a mod assembly which depends on another
+		// (e.g. OpenRA.Mods.Cnc -> OpenRA.Mods.Common) binds to the instance we already loaded rather than a
+		// duplicate. Consulted from inside each mod's load context, which makes resolution independent of the
+		// order in which AppDomain.AssemblyResolve handlers happen to be registered.
+		static readonly Dictionary<string, Assembly> ModAssembliesByName = new(StringComparer.Ordinal);
+
+		static Assembly ResolveModAssembly(AssemblyName name)
+		{
+			return ModAssembliesByName.GetValueOrDefault(name.Name);
+		}
+
 		readonly Cache<string, Type> typeCache;
 		readonly Cache<Type, ConstructorInfo> ctorCache;
 		readonly (Assembly Assembly, string Namespace)[] assemblies;
@@ -55,11 +66,12 @@ namespace OpenRA
 
 			if (!ResolvedAssemblies.TryGetValue(hash, out var assembly))
 			{
-				var loader = new Support.AssemblyLoader(resolvedPath);
+				var loader = new Support.AssemblyLoader(resolvedPath, ResolveModAssembly);
 				assembly = loader.LoadDefaultAssembly();
 				ResolvedAssemblies.Add(hash, assembly);
 			}
 
+			ModAssembliesByName[assembly.GetName().Name] = assembly;
 			assemblyList.Add(assembly);
 		}
 

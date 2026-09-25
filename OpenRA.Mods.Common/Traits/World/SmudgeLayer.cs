@@ -100,6 +100,7 @@ namespace OpenRA.Mods.Common.Traits
 		readonly Dictionary<string, ISpriteSequence> smudges = [];
 		readonly World world;
 		readonly bool hasSmoke;
+		readonly bool headless;
 
 		TerrainSpriteLayer render;
 		PaletteReference paletteReference;
@@ -109,6 +110,7 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			Info = info;
 			world = self.World;
+			headless = self.World.IsHeadless;
 			hasSmoke = !string.IsNullOrEmpty(info.SmokeImage) && info.SmokeSequences.Length > 0;
 
 			var sequences = world.Map.Sequences;
@@ -124,6 +126,12 @@ namespace OpenRA.Mods.Common.Traits
 
 		public void WorldLoaded(World w, WorldRenderer wr)
 		{
+			// Smudges (scorch marks, craters) are purely cosmetic: they are placed using Game.CosmeticRandom and
+			// never read back by the simulation. Headlessly there is no sprite layer to build and AddSmudge is a
+			// no-op, so skip resolving the sprite content entirely.
+			if (headless)
+				return;
+
 			var sprites = smudges.Values.SelectMany(v => Exts.MakeArray(v.Length, x => v.GetSprite(x))).ToList();
 			var sheet = sprites[0].Sheet;
 			var blendMode = sprites[0].BlendMode;
@@ -158,6 +166,11 @@ namespace OpenRA.Mods.Common.Traits
 
 		public void AddSmudge(CPos loc)
 		{
+			// Purely cosmetic and never resolved headlessly; see WorldLoaded. Skipping keeps the simulation
+			// identical because smudges use Game.CosmeticRandom and are not read back by any synced code.
+			if (headless)
+				return;
+
 			if (!world.Map.Contains(loc))
 				return;
 
@@ -197,6 +210,10 @@ namespace OpenRA.Mods.Common.Traits
 
 		public void RemoveSmudge(CPos loc)
 		{
+			// No smudges are ever added headlessly; see AddSmudge.
+			if (headless)
+				return;
+
 			if (!world.Map.Contains(loc))
 				return;
 
@@ -267,7 +284,9 @@ namespace OpenRA.Mods.Common.Traits
 			world.Map.CustomTerrain.CellEntryChanged -= RemoveUnacceptableSmudgeOnCellChange;
 			world.Map.Ramp.CellEntryChanged -= RemoveUnacceptableSmudgeOnCellChange;
 			world.Map.Height.CellEntryChanged -= RemoveUnacceptableSmudgeOnCellChange;
-			render.Dispose();
+
+			// render is only created in a rendered world; see WorldLoaded.
+			render?.Dispose();
 			disposed = true;
 		}
 	}

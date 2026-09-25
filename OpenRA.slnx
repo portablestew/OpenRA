@@ -7,6 +7,7 @@
   <Project Path="OpenRA.Platforms.Default/OpenRA.Platforms.Default.csproj" />
   <Project Path="OpenRA.Server/OpenRA.Server.csproj" />
   <Project Path="OpenRA.Test/OpenRA.Test.csproj" />
+  <Project Path="OpenRA.Test.Game/OpenRA.Test.Game.csproj" />
   <Project Path="OpenRA.Utility/OpenRA.Utility.csproj" />
   <Project Path="OpenRA.WindowsLauncher/OpenRA.WindowsLauncher.csproj">
     <Build Project="false" />

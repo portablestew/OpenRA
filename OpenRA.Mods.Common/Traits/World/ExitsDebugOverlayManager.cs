@@ -57,7 +57,10 @@ namespace OpenRA.Mods.Common.Traits
 			this.self = self;
 			Info = info;
 
-			if (!Game.Renderer.Fonts.TryGetValue(info.Font, out Font))
+			// Debug overlay: the font is only used when drawing annotations, which never happens in a headless
+			// world (no renderer). Skip the lookup (and its font-not-found validation) rather than dereferencing
+			// the absent Game.Renderer.
+			if (Game.Renderer != null && !Game.Renderer.Fonts.TryGetValue(info.Font, out Font))
 				throw new YamlException($"Could not find font '{info.Font}'");
 		}
 

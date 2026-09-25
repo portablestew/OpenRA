@@ -121,6 +121,7 @@ namespace OpenRA.Mods.Common.Traits
 		Func<PPos, Shroud.CellVisibility> cellVisibility;
 		TerrainSpriteLayer shroudLayer, fogLayer;
 		PaletteReference shroudPaletteReference, fogPaletteReference;
+		readonly bool headless;
 		bool disposed;
 
 		public ShroudRenderer(World world, ShroudRendererInfo info)
@@ -140,6 +141,13 @@ namespace OpenRA.Mods.Common.Traits
 			this.info = info;
 			this.world = world;
 			map = world.Map;
+			headless = world.IsHeadless;
+
+			// The shroud renderer only draws the shroud/fog overlay; the visibility that gates the simulation
+			// lives in Shroud/Player.Shroud, not here. Headlessly there is nothing to draw, so skip loading the
+			// shroud/fog sprite sequences (game content) and the render-player subscription that maintains them.
+			if (headless)
+				return;
 
 			tileInfos = new CellLayer<TileInfo>(map);
 
@@ -198,6 +206,10 @@ namespace OpenRA.Mods.Common.Traits
 
 		void IWorldLoaded.WorldLoaded(World w, WorldRenderer wr)
 		{
+			// No shroud/fog sprite layers to populate headlessly; see the constructor.
+			if (headless)
+				return;
+
 			// Initialize tile cache
 			// This includes the region outside the visible area to cover any sprites peeking outside the map
 			foreach (var uv in w.Map.AllCells.MapCoords)
@@ -382,6 +394,13 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			if (disposed)
 				return;
+
+			// Nothing was created or subscribed headlessly; see the constructor.
+			if (headless)
+			{
+				disposed = true;
+				return;
+			}
 
 			shroudLayer.Dispose();
 			fogLayer.Dispose();

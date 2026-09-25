@@ -142,6 +142,15 @@ namespace OpenRA
 		public readonly ScreenMap ScreenMap;
 		public readonly WorldType Type;
 
+		/// <summary>
+		/// True when the world runs without a renderer (e.g. MCTS rollouts, tests, or a dedicated host).
+		/// Render-only traits use this to skip loading graphical content and dereferencing the (null)
+		/// WorldRenderer, while the simulation runs identically. This is deliberately a per-world flag
+		/// rather than a global <c>Game.Renderer == null</c> check: a forked rollout world is headless
+		/// even while the real game is drawing on screen.
+		/// </summary>
+		public readonly bool IsHeadless;
+
 		public readonly IValidateOrder[] OrderValidators;
 		readonly INotifyPlayerDisconnected[] notifyDisconnected;
 
@@ -175,9 +184,10 @@ namespace OpenRA
 
 		bool wasLoadingGameSave;
 
-		internal World(Map map, ModData modData, OrderManager orderManager, WorldType type)
+		public World(Map map, ModData modData, OrderManager orderManager, WorldType type, bool isHeadless = false)
 		{
 			Type = type;
+			IsHeadless = isHeadless;
 			OrderManager = orderManager;
 			this.modData = modData;
 			Map = map;

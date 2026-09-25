@@ -109,6 +109,7 @@ namespace OpenRA.Mods.Common.Traits.Render
 		readonly WithParachuteInfo info;
 		readonly Vector3 shadowColor;
 		readonly float shadowAlpha;
+		readonly bool headless;
 
 		bool renderProlonged = false;
 
@@ -116,6 +117,7 @@ namespace OpenRA.Mods.Common.Traits.Render
 			: base(info)
 		{
 			this.info = info;
+			headless = self.World.IsHeadless;
 
 			if (info.ShadowImage != null)
 			{
@@ -164,6 +166,11 @@ namespace OpenRA.Mods.Common.Traits.Render
 
 		void ITick.Tick(Actor self)
 		{
+			// Advancing the parachute shadow animation is purely visual; the sequence is unresolved headlessly
+			// and the parachute's simulation behaviour lives in separate traits. Skip it.
+			if (headless)
+				return;
+
 			shadow?.Tick();
 		}
 

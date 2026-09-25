@@ -25,6 +25,14 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			this.type = type;
 			renderer = Game.Renderer;
+
+			// A headless world (no renderer) still constructs the world actor's traits. These passes are
+			// purely visual and are only ever drawn through a WorldRenderer, which does not exist headlessly,
+			// so leave the GPU resources uncreated rather than failing construction. Game.Renderer is never
+			// null in normal play, so this changes nothing there.
+			if (renderer == null)
+				return;
+
 			shader = renderer.CreateShader(new RenderPostProcessPassShaderBindings(name));
 			var vertices = new RenderPostProcessPassVertex[]
 			{
@@ -54,7 +62,8 @@ namespace OpenRA.Mods.Common.Traits
 
 		void INotifyActorDisposing.Disposing(Actor self)
 		{
-			buffer.Dispose();
+			// Null when constructed headlessly; see the constructor.
+			buffer?.Dispose();
 		}
 	}
 }

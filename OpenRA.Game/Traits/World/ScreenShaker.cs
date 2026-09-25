@@ -45,11 +45,17 @@ namespace OpenRA.Traits
 		{
 			shakeEffects.RemoveAll(t => t.ExpiryTime == ticks);
 
-			var newOffset = shakeEffects.Count > 0 ? GetScrollOffset() : Vector2.Zero;
-			if (newOffset != previousOffset)
+			// Screen shake is a pure camera/viewport effect with no simulation state: it only scrolls the
+			// WorldRenderer's viewport. There is no renderer or viewport headlessly (worldRenderer is null), so
+			// skip the scroll. Expired effects are still pruned above so the list does not grow unbounded.
+			if (worldRenderer != null)
 			{
-				worldRenderer.Viewport.Scroll(newOffset - previousOffset, true);
-				previousOffset = newOffset;
+				var newOffset = shakeEffects.Count > 0 ? GetScrollOffset() : Vector2.Zero;
+				if (newOffset != previousOffset)
+				{
+					worldRenderer.Viewport.Scroll(newOffset - previousOffset, true);
+					previousOffset = newOffset;
+				}
 			}
 
 			ticks++;

@@ -28,15 +28,21 @@ namespace OpenRA.Support
 
 		public Assembly LoadDefaultAssembly() => context.LoadFromAssemblyPath(mainAssembly);
 
-		public AssemblyLoader(string assemblyFile)
+		/// <summary>Creates a private load context for an assembly and its dependencies.</summary>
+		/// <param name="assemblyFile">Path of the assembly to load.</param>
+		/// <param name="sharedResolver">
+		/// Consulted before any other resolution step, so a caller that has already loaded a dependency can
+		/// hand back that exact instance. Returning null defers to the normal resolution order.
+		/// </param>
+		public AssemblyLoader(string assemblyFile, Func<AssemblyName, Assembly> sharedResolver = null)
 		{
 			mainAssembly = assemblyFile;
 			var baseDir = Path.GetDirectoryName(assemblyFile);
 
-			context = CreateLoadContext(baseDir, assemblyFile);
+			context = CreateLoadContext(baseDir, assemblyFile, sharedResolver);
 		}
 
-		static AssemblyLoadContext CreateLoadContext(string baseDir, string assemblyFile)
+		static AssemblyLoadContext CreateLoadContext(string baseDir, string assemblyFile, Func<AssemblyName, Assembly> sharedResolver)
 		{
 			var depsJsonFile = Path.Combine(baseDir, Path.GetFileNameWithoutExtension(assemblyFile) + ".deps.json");
 
@@ -44,6 +50,7 @@ namespace OpenRA.Support
 
 			builder.TryAddDependencyContext(depsJsonFile, out _);
 			builder.SetBaseDirectory(baseDir);
+			builder.SetSharedResolver(sharedResolver);
 
 			return builder.Build();
 		}
@@ -54,10 +61,17 @@ namespace OpenRA.Support
 		readonly Dictionary<string, ManagedLibrary> managedLibraries = new(StringComparer.Ordinal);
 		readonly Dictionary<string, NativeLibrary> nativeLibraries = new(StringComparer.Ordinal);
 		string basePath;
+		Func<AssemblyName, Assembly> sharedResolver;
 
 		public AssemblyLoadContext Build()
 		{
-			return new ManagedLoadContext(basePath, managedLibraries, nativeLibraries);
+			return new ManagedLoadContext(basePath, managedLibraries, nativeLibraries, sharedResolver);
+		}
+
+		public AssemblyLoadContextBuilder SetSharedResolver(Func<AssemblyName, Assembly> resolver)
+		{
+			sharedResolver = resolver;
+			return this;
 		}
 
 		public AssemblyLoadContextBuilder SetBaseDirectory(string path)
@@ -100,6 +114,7 @@ namespace OpenRA.Support
 		readonly string basePath;
 		readonly Dictionary<string, ManagedLibrary> managedAssemblies;
 		readonly Dictionary<string, NativeLibrary> nativeLibraries;
+		readonly Func<AssemblyName, Assembly> sharedResolver;
 
 		static readonly string[] NativeLibraryExtensions;
 		static readonly string[] NativeLibraryPrefixes;
@@ -136,15 +151,26 @@ namespace OpenRA.Support
 			}
 		}
 
-		public ManagedLoadContext(string baseDirectory, Dictionary<string, ManagedLibrary> managedAssemblies, Dictionary<string, NativeLibrary> nativeLibraries)
+		public ManagedLoadContext(string baseDirectory, Dictionary<string, ManagedLibrary> managedAssemblies,
+			Dictionary<string, NativeLibrary> nativeLibraries, Func<AssemblyName, Assembly> sharedResolver = null)
 		{
 			basePath = baseDirectory ?? throw new ArgumentNullException(nameof(baseDirectory));
 			this.managedAssemblies = managedAssemblies ?? throw new ArgumentNullException(nameof(managedAssemblies));
 			this.nativeLibraries = nativeLibraries ?? throw new ArgumentNullException(nameof(nativeLibraries));
+			this.sharedResolver = sharedResolver;
 		}
 
 		protected override Assembly Load(AssemblyName assemblyName)
 		{
+			// Give the owner of this context the first say, so a dependency it has already loaded resolves to
+			// that exact instance. Without this, resolution depends on the AppDomain.AssemblyResolve fallback
+			// firing before any other subscriber - which a host that probes the same directory (e.g. the test
+			// host, whose resolver is registered at startup) will win, loading a duplicate copy. Two copies of
+			// the same assembly have distinct type identities, silently breaking cross-assembly type checks.
+			var shared = sharedResolver?.Invoke(assemblyName);
+			if (shared != null)
+				return shared;
+
 			// If default context is preferred, check first for types in the default context unless the dependency has been declared as private
 			try
 			{

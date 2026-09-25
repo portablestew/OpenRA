@@ -3,6 +3,12 @@
 		<RootNamespace>OpenRA</RootNamespace>
 	</PropertyGroup>
 	<ItemGroup>
+		<!-- The integration test project constructs a real World directly (bypassing Game.StartGame),
+		     so it needs to wire its own OrderManager into the Game.OrderManager global that engine
+		     code such as CreateMapPlayers reads via Game.LocalClientId. -->
+		<InternalsVisibleTo Include="OpenRA.Test.Game" />
+	</ItemGroup>
+	<ItemGroup>
 		<PackageReference Include="Microsoft.Extensions.DependencyModel" Version="10.0.0" />
 		<PackageReference Include="Linguini.Bundle" Version="0.8.1" />
 		<PackageReference Include="OpenRA-Eluant" Version="1.0.23" />

@@ -108,6 +108,7 @@ namespace OpenRA.Mods.Common.Traits
 
 		readonly HashSet<CPos> dirty = [];
 		readonly Queue<CPos> cleanDirty = [];
+		protected readonly bool Headless;
 		TerrainSpriteLayer shadowLayer;
 		TerrainSpriteLayer spriteLayer;
 		bool disposed;
@@ -116,9 +117,18 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			Info = info;
 			World = self.World;
+			Headless = self.World.IsHeadless;
 			ResourceLayer = self.Trait<IResourceLayer>();
 			ResourceLayer.CellChanged += AddDirtyCell;
+
+			// RenderContents tracks which resource type occupies each cell. Unlike the other render traits this
+			// is not purely visual: Harvester queries it via IResourceRenderer.GetRenderedResourceType to decide
+			// what to harvest, so it must be maintained even headlessly to keep the simulation identical. Only
+			// the sprite variants and TerrainSpriteLayers below are render-only and skipped when headless.
 			RenderContents = new CellLayer<RendererCellContents>(self.World.Map);
+
+			if (Headless)
+				return;
 
 			var sequences = self.World.Map.Sequences;
 			foreach (var kv in Info.ResourceTypes)
@@ -138,37 +148,43 @@ namespace OpenRA.Mods.Common.Traits
 
 		protected virtual void WorldLoaded(World w, WorldRenderer wr)
 		{
-			foreach (var kv in Variants)
+			// Render-only: build the sprite layers used to draw resources. Skipped headlessly, where wr is null
+			// and no variants were loaded.
+			if (!Headless)
 			{
-				var resourceVariants = kv.Value;
-				if (spriteLayer == null)
+				foreach (var kv in Variants)
 				{
-					var first = resourceVariants.First().Value.GetSprite(0);
-					var emptySprite = new Sprite(first.Sheet, Rectangle.Empty, TextureChannel.Alpha);
-					spriteLayer = new TerrainSpriteLayer(w, wr, emptySprite, first.BlendMode, wr.World.Type != WorldType.Editor);
-				}
-
-				if (shadowLayer == null)
-				{
-					var firstShadow = resourceVariants.Values
-						.Select(v => v.GetShadow(0, WAngle.Zero))
-						.FirstOrDefault(s => s != null);
-					if (firstShadow != null)
+					var resourceVariants = kv.Value;
+					if (spriteLayer == null)
 					{
-						var emptySprite = new Sprite(firstShadow.Sheet, Rectangle.Empty, TextureChannel.Alpha);
-						shadowLayer = new TerrainSpriteLayer(w, wr, emptySprite, firstShadow.BlendMode, wr.World.Type != WorldType.Editor);
+						var first = resourceVariants.First().Value.GetSprite(0);
+						var emptySprite = new Sprite(first.Sheet, Rectangle.Empty, TextureChannel.Alpha);
+						spriteLayer = new TerrainSpriteLayer(w, wr, emptySprite, first.BlendMode, wr.World.Type != WorldType.Editor);
 					}
-				}
 
-				// All resources must share a blend mode
-				var sprites = resourceVariants.Values.SelectMany(v => Exts.MakeArray(v.Length, x => v.GetSprite(x)));
-				if (sprites.Any(s => s.BlendMode != spriteLayer.BlendMode))
-					throw new InvalidDataException("Resource sprites specify different blend modes. "
-						+ "Try using different ResourceRenderer traits for resource types that use different blend modes.");
+					if (shadowLayer == null)
+					{
+						var firstShadow = resourceVariants.Values
+							.Select(v => v.GetShadow(0, WAngle.Zero))
+							.FirstOrDefault(s => s != null);
+						if (firstShadow != null)
+						{
+							var emptySprite = new Sprite(firstShadow.Sheet, Rectangle.Empty, TextureChannel.Alpha);
+							shadowLayer = new TerrainSpriteLayer(w, wr, emptySprite, firstShadow.BlendMode, wr.World.Type != WorldType.Editor);
+						}
+					}
+
+					// All resources must share a blend mode
+					var sprites = resourceVariants.Values.SelectMany(v => Exts.MakeArray(v.Length, x => v.GetSprite(x)));
+					if (sprites.Any(s => s.BlendMode != spriteLayer.BlendMode))
+						throw new InvalidDataException("Resource sprites specify different blend modes. "
+							+ "Try using different ResourceRenderer traits for resource types that use different blend modes.");
+				}
 			}
 
 			// Initialize the RenderContent with the initial map state so it is visible
-			// through the fog with the Explored Map option enabled
+			// through the fog with the Explored Map option enabled. This also seeds the resource-type lookup
+			// that Harvester relies on, so it runs headlessly too - only the sprite update below is skipped.
 			foreach (var cell in w.Map.AllCells)
 			{
 				var resource = ResourceLayer.GetResource(cell);
@@ -176,7 +192,8 @@ namespace OpenRA.Mods.Common.Traits
 				if (rendererCellContents.Type != null)
 				{
 					RenderContents[cell] = rendererCellContents;
-					UpdateRenderedSprite(cell, rendererCellContents);
+					if (!Headless)
+						UpdateRenderedSprite(cell, rendererCellContents);
 				}
 			}
 		}
@@ -186,7 +203,15 @@ namespace OpenRA.Mods.Common.Traits
 		protected RendererCellContents CreateRenderCellContents(WorldRenderer wr, ResourceLayerContents contents, CPos cell)
 		{
 			if (contents.Type != null && contents.Density > 0 && Info.ResourceTypes.TryGetValue(contents.Type, out var resourceInfo))
+			{
+				// Headlessly there are no sprite variants or palette (both render-only); still record the resource
+				// type and density so IResourceRenderer.GetRenderedResourceType returns the same answer as in a
+				// rendered game, keeping harvester behaviour identical.
+				if (Headless)
+					return new RendererCellContents(contents.Type, contents.Density, resourceInfo, null, null);
+
 				return new RendererCellContents(contents.Type, contents.Density, resourceInfo, ChooseVariant(contents.Type, cell), wr.Palette(resourceInfo.Palette));
+			}
 
 			return RendererCellContents.Empty;
 		}
@@ -258,8 +283,12 @@ namespace OpenRA.Mods.Common.Traits
 			if (disposed)
 				return;
 
-			shadowLayer?.Dispose();
-			spriteLayer.Dispose();
+			// spriteLayer/shadowLayer are only created in a rendered world; see WorldLoaded.
+			if (!Headless)
+			{
+				shadowLayer?.Dispose();
+				spriteLayer.Dispose();
+			}
 
 			ResourceLayer.CellChanged -= AddDirtyCell;
 

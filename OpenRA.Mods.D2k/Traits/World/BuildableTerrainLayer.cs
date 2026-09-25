@@ -58,6 +58,14 @@ namespace OpenRA.Mods.D2k.Traits
 
 		void IWorldLoaded.WorldLoaded(World w, WorldRenderer wr)
 		{
+			// Mixed trait: the simulation half (AddTile/HitTile/RemoveTile mutating strength, CustomTerrain and
+			// radarColor) runs unconditionally and is what the sim and pathfinding depend on. Only the rendering
+			// half - the TerrainSpriteLayer and its palette, consumed exclusively by the ITickRender/IRenderOverlay
+			// paths that never dispatch headlessly - needs a renderer. Skip building it when headless; the sim
+			// methods only ever set dirty[cell], which the (never-called) TickRender would drain.
+			if (world.IsHeadless)
+				return;
+
 			render = new TerrainSpriteLayer(w, wr, terrainRenderer.MissingTile, BlendMode.Alpha, true);
 			paletteReference = wr.Palette(info.Palette);
 		}
@@ -149,7 +157,8 @@ namespace OpenRA.Mods.D2k.Traits
 			if (disposed)
 				return;
 
-			render.Dispose();
+			// render is only created in WorldLoaded, which is skipped headlessly.
+			render?.Dispose();
 			disposed = true;
 		}
 	}

@@ -180,8 +180,10 @@ namespace OpenRA.Mods.Common.Traits
 				if (!p.Playable)
 					continue;
 
+				// Centering the viewport is render-only; wr is null in a headless world. The shroud exploration
+				// below is simulation state (it gates visibility) and must still run headlessly.
 				if (p == world.LocalPlayer)
-					wr.Viewport.Center(world.Map.CenterOfCell(p.HomeLocation));
+					wr?.Viewport.Center(world.Map.CenterOfCell(p.HomeLocation));
 
 				var cells = Shroud.ProjectedCellsInRange(world.Map, p.HomeLocation, info.InitialExploreRange)
 					.ToList();

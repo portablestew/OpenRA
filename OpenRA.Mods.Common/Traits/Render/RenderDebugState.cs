@@ -40,7 +40,9 @@ namespace OpenRA.Mods.Common.Traits.Render
 			var yOffset = buildingInfo?.Dimensions.Y ?? 1;
 			offset = new WVec(0, 512 * yOffset, 0);
 
-			font = Game.Renderer.Fonts[info.Font];
+			// Debug decoration: the font is only used when drawing annotations, which never happens in a headless
+			// world (no renderer). Leave it null rather than dereferencing the absent Game.Renderer.
+			font = Game.Renderer?.Fonts[info.Font];
 
 			debugVis = self.World.WorldActor.TraitOrDefault<DebugVisualizations>();
 		}

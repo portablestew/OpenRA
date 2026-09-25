@@ -33,6 +33,24 @@ namespace OpenRA.Support
 		}
 
 		/// <summary>
+		/// Creates an independent copy that continues the same sequence of values from the point at
+		/// which the copy was taken, sharing no state with <paramref name="other"/>.
+		/// </summary>
+		/// <remarks>
+		/// The whole internal state must be copied. Constructing a new generator from the original seed
+		/// is not equivalent, because the sequence depends on both the state array and the current index
+		/// into it. <see cref="Last"/> and <see cref="TotalCount"/> are copied because they are
+		/// externally observable: <see cref="Last"/> contributes to the simulation sync hash.
+		/// </remarks>
+		public MersenneTwister(MersenneTwister other)
+		{
+			Array.Copy(other.mt, mt, mt.Length);
+			index = other.index;
+			Last = other.Last;
+			TotalCount = other.TotalCount;
+		}
+
+		/// <summary>
 		/// Produces a random unsigned 32-bit integer.
 		/// </summary>
 		public uint NextUint()

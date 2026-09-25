@@ -145,6 +145,7 @@ namespace OpenRA.Mods.Common.Traits.Render
 		readonly string faction;
 		readonly List<AnimationWrapper> anims = [];
 		readonly IEnumerable<IRenderable> renderables;
+		readonly bool headless;
 		bool shouldRefreshPalettes;
 		string cachedImage;
 
@@ -160,6 +161,7 @@ namespace OpenRA.Mods.Common.Traits.Render
 		public RenderSprites(ActorInitializer init, RenderSpritesInfo info)
 		{
 			Info = info;
+			headless = init.Self.World.IsHeadless;
 			faction = init.GetValue<FactionInit, string>(init.Self.Owner.Faction.InternalName);
 			renderables = RenderAnimations(anims, init.Self);
 		}
@@ -226,11 +228,19 @@ namespace OpenRA.Mods.Common.Traits.Render
 
 		protected virtual void Tick(Actor self)
 		{
+			// Animations must advance even headlessly. Advancing frames is not itself part of the sync hash, but
+			// animation *completion* drives simulation-affecting callbacks: WithMakeAnimation.Forward/Reverse hang
+			// the sell/transform/deploy continuation off PlayThen's completion, which only fires when the sequence
+			// reaches its final frame in Animation.Tick(). Frame counts and per-frame durations come from the
+			// resolved sprite sequences (SequenceSet.LoadSprites, run on the CPU without a renderer), so a headless
+			// world must tick animations identically to a rendered one or the two simulations diverge in timing.
 			var updated = false;
 			foreach (var a in anims)
 				updated |= a.Tick();
 
-			if (updated)
+			// The ScreenMap is a render/selection spatial index with no simulation role, and there is no renderer
+			// to consume it headlessly, so skip the update.
+			if (!headless && updated)
 				self.World.ScreenMap.AddOrUpdate(self);
 		}
 

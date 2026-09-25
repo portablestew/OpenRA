@@ -35,6 +35,16 @@ namespace OpenRA.Mods.Cnc.Traits
 		public ChronoVortexRenderer(Actor self)
 		{
 			renderer = Game.Renderer;
+
+			// A headless world (no renderer) still constructs the world actor's traits. This pass is purely
+			// visual - it loads the vortex lookup textures and GPU buffers used to draw the chronoshift effect,
+			// and is only ever drawn through a WorldRenderer, which does not exist headlessly. Leave the GPU
+			// resources uncreated rather than failing construction; DrawVortex still safely enqueues (the queue
+			// is simply never drained). Game.Renderer is never null in normal play, so this changes nothing there.
+			// Mirrors the guard in RenderPostProcessPassBase.
+			if (renderer == null)
+				return;
+
 			shader = renderer.CreateShader(new RenderPostProcessPassTexturedShaderBindings("vortex"));
 
 			vortexSheet = new Sheet(SheetType.BGRA, new Size(512, 512));
@@ -108,8 +118,9 @@ namespace OpenRA.Mods.Cnc.Traits
 
 		void INotifyActorDisposing.Disposing(Actor self)
 		{
-			vortexSheet.Dispose();
-			vortexBuffer.Dispose();
+			// Null when constructed headlessly; see the constructor.
+			vortexSheet?.Dispose();
+			vortexBuffer?.Dispose();
 		}
 	}
 }

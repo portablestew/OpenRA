@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<IsPublishable>false</IsPublishable>
+	</PropertyGroup>
+
+	<!--
+		Integration tests that boot a real mod and construct a live World.
+
+		Unlike OpenRA.Test, this project references ONLY OpenRA.Game - never the mod
+		assemblies (OpenRA.Mods.Common/Cnc/D2k). Referencing a mod assembly would load it
+		into the default AssemblyLoadContext before the tests run, while ObjectCreator loads
+		the mod's copy into its own context; the two copies have distinct type identities, so
+		a cross-assembly trait check like Chronoshiftable's HasTraitInfo<MobileInfo>() fails.
+		Leaving ObjectCreator as the sole loader of the mod assemblies keeps a single identity,
+		exactly as the real game and OpenRA.Utility run.
+	-->
+	<ItemGroup>
+		<ProjectReference Include="..\OpenRA.Game\OpenRA.Game.csproj" />
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+		<PackageReference Include="NUnit" Version="4.3.2" />
+		<PackageReference Include="NUnit.Console" Version="3.19.0" />
+		<PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+	</ItemGroup>
+</Project>

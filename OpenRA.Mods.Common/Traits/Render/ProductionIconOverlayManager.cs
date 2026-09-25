@@ -64,9 +64,16 @@ namespace OpenRA.Mods.Common.Traits.Render
 		{
 			self = init.Self;
 
-			var anim = new Animation(self.World, info.Image);
-			anim.Play(info.Sequence);
-			sprite = anim.Image;
+			// The overlay sprite (e.g. the veterancy chevron drawn on production icons) is purely a UI concern
+			// consumed via IProductionIconOverlay by production-palette widgets. Resolving it requires loaded
+			// sequences, which a headless world does not initialize, so skip it. The TechTree registration below
+			// still runs so the trait's simulation-facing bookkeeping is unchanged.
+			if (!self.World.IsHeadless)
+			{
+				var anim = new Animation(self.World, info.Image);
+				anim.Play(info.Sequence);
+				sprite = anim.Image;
+			}
 
 			this.info = info;
 

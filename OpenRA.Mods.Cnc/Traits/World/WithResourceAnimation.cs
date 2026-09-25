@@ -79,6 +79,13 @@ namespace OpenRA.Mods.Cnc.Traits
 
 		void ITick.Tick(Actor self)
 		{
+			// This trait spawns purely decorative sprite effects on resource cells that are currently on screen.
+			// It is gated on the WorldRenderer's viewport (AllVisibleCells) and only consumes world.LocalRandom,
+			// which is unsynced and excluded from the SyncHash (unlike SharedRandom). Headlessly there is no
+			// viewport (worldRenderer is null) and nothing to draw, so skip entirely - the simulation is unaffected.
+			if (worldRenderer == null)
+				return;
+
 			if (--ticks > 0)
 				return;
 
