@@ -4,8 +4,8 @@
 
 .DESCRIPTION
     Prints the tracked game process, whether a debugger currently holds the
-    process (a dbg.py probe in flight, or a stray netcoredbg), OpenRA's own logs,
-    and any crash dumps. Shares its implementation (Show-GameStatus in
+    process (an openra_debug session in flight, or a stray netcoredbg), OpenRA's
+    own logs, and any crash dumps. Shares its implementation (Show-GameStatus in
     _common.ps1) with `build-and-run.ps1 -Status`.
 
 .EXAMPLE

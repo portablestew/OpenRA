@@ -57,6 +57,8 @@ update.log
 /.pyddock/venv/
 /.pyddock/installed.json
 *.pyc
+__pycache__/
+*.egg-info/
 
 # netcoredbg command history, written into the workspace root by debug sessions.
 /.netcoredbg_hist

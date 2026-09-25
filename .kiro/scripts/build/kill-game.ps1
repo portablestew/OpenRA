@@ -4,9 +4,9 @@
 
 .DESCRIPTION
     Kills the tracked game process and clears the session state file. Any
-    netcoredbg left over from a crashed dbg.py probe is also cleaned up, since a
-    stray debugger holds the single CoreCLR debugger slot and blocks both VS Code
-    and new probes.
+    netcoredbg left over from a crashed openra_debug session is also cleaned up,
+    since a stray debugger holds the single CoreCLR debugger slot and blocks both
+    VS Code and new sessions.
 
     With -All it additionally sweeps up untracked OpenRA / netcoredbg processes.
 

@@ -2,16 +2,16 @@
 """Collect and analyse OpenRA crash dumps via dotnet-dump.
 
   # what happened in the most recent crash
-  .kiro/scripts/debug/dump.py analyze
+  .kiro/scripts/openra_debug/dump.py analyze
 
   # snapshot a running game without stopping it for long, then read its stacks
-  .kiro/scripts/debug/dump.py collect
-  .kiro/scripts/debug/dump.py analyze --command "clrstack -all"
+  .kiro/scripts/openra_debug/dump.py collect
+  .kiro/scripts/openra_debug/dump.py analyze --command "clrstack -all"
 
-collect is the low-risk way to answer "what is the game doing right now" - it
-pauses the process only briefly and needs no debugger attached, so unlike dbg.py
-it cannot leave the game halted and does not contend for the single CoreCLR
-debugger slot.
+analyze reads a crash dump from an already-dead process - the one thing no live
+debugger can do. For a *running* game prefer the openra_debug library
+(`from openra_debug import session; session().callstack()`); collect stays as the
+zero-risk fallback that needs no attach and cannot leave the game halted.
 
 Full analysis output always goes to a log file; stdout is bounded, because
 commands like `dumpheap -stat` on OpenRA run to thousands of lines.
@@ -27,9 +27,12 @@ from datetime import datetime
 from pathlib import Path
 from shutil import which
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Import the package whether or not it has been pip-installed into the venv yet:
+# add the src/ dir so `import openra_debug.*` resolves from source.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from openra_dev import game, paths  # noqa: E402
+from openra_debug import locate, paths  # noqa: E402
+from openra_debug.locate import LocateError  # noqa: E402
 
 # Enough to explain a crash: what threads exist, the pending exception, and where
 # the current thread was.
@@ -42,7 +45,7 @@ def find_dotnet_dump() -> str:
     exe = which("dotnet-dump")
     if exe:
         return exe
-    raise game.ToolError(
+    raise LocateError(
         "dotnet-dump was not found on PATH.\n"
         "  Install it with: dotnet tool install -g dotnet-dump\n"
         "  (then make sure %USERPROFILE%\\.dotnet\\tools is on PATH)"
@@ -81,12 +84,12 @@ def resolve_dump(explicit: str | None) -> tuple[Path, int]:
         if not p.is_absolute():
             p = (paths.REPO_ROOT / p).resolve()
         if not p.is_file():
-            raise game.ToolError(f"Dump file not found: {p}")
+            raise LocateError(f"Dump file not found: {p}")
         return p, 0
 
     dumps = list_dumps()
     if not dumps:
-        raise game.ToolError(
+        raise LocateError(
             f"No dumps found in {paths.rel(paths.DUMP_DIR)}.\n"
             "  Crash dumps appear there automatically when the game dies with no "
             "debugger attached.\n"
@@ -124,13 +127,13 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     try:
         proc = subprocess.run(argv, capture_output=True, text=True, timeout=args.timeout)
     except subprocess.TimeoutExpired:
-        raise game.ToolError(
+        raise LocateError(
             f"dotnet-dump did not finish within {args.timeout:g}s. "
             "Large dumps and first-run symbol downloads are slow; retry with "
             "--timeout."
         ) from None
     except OSError as ex:
-        raise game.ToolError(f"could not run dotnet-dump: {ex}") from ex
+        raise LocateError(f"could not run dotnet-dump: {ex}") from ex
 
     transcript = (proc.stdout or "") + (proc.stderr or "")
     header = (
@@ -143,7 +146,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     log_path.write_text(header + transcript, encoding="utf-8")
 
     if proc.returncode != 0 and not transcript.strip():
-        raise game.ToolError(
+        raise LocateError(
             f"dotnet-dump exited {proc.returncode} with no output. See {paths.rel(log_path)}"
         )
 
@@ -175,7 +178,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
 
 def cmd_collect(args: argparse.Namespace) -> int:
     exe = find_dotnet_dump()
-    pid = args.pid or game.game_pid()
+    pid = args.pid or locate.resolve_game_pid()
 
     paths.ensure_dirs()
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -187,20 +190,20 @@ def cmd_collect(args: argparse.Namespace) -> int:
     try:
         proc = subprocess.run(argv, capture_output=True, text=True, timeout=args.timeout)
     except subprocess.TimeoutExpired:
-        raise game.ToolError(
+        raise LocateError(
             f"dotnet-dump collect did not finish within {args.timeout:g}s."
         ) from None
     except OSError as ex:
-        raise game.ToolError(f"could not run dotnet-dump: {ex}") from ex
+        raise LocateError(f"could not run dotnet-dump: {ex}") from ex
 
     if proc.stdout.strip():
         for line in proc.stdout.strip().splitlines():
             print(f"  {line}")
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "").strip()
-        raise game.ToolError(f"dotnet-dump collect exited {proc.returncode}: {detail}")
+        raise LocateError(f"dotnet-dump collect exited {proc.returncode}: {detail}")
     if not out.is_file():
-        raise game.ToolError(f"dotnet-dump reported success but {out} does not exist.")
+        raise LocateError(f"dotnet-dump reported success but {out} does not exist.")
 
     print("\n== Collected " + "=" * 51)
     describe(out, 0)
@@ -265,7 +268,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "collect":
             return cmd_collect(args)
         return cmd_list()
-    except game.ToolError as ex:
+    except LocateError as ex:
         print(f"ERROR: {ex}", file=sys.stderr)
         return 1
 

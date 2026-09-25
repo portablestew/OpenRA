@@ -1,9 +1,28 @@
-[mcp.chat-mother-forker]
-description = "Access to local chat history"
-tools = { "chat_(search|fork|checkpoint)" = true }
+[imports]
+openra_debug = ".kiro/scripts/openra_debug"
+
+[shell.netcoredbg]
+mode = "deny"
+allow = ["^--interpreter=cli --attach \\d+$"]
+
+[shell.dotnet]
+mode = "deny"
+allow = [
+    "^build OpenRA.slnx",
+    "^test"
+]
 
 [shell.scripts]
 command = "(\\.[/\\\\])?\\.kiro[/\\\\]scripts[/\\\\].+"
 mode = "allow"
 deny = []
 arg_paths = "workspace"
+
+[shell."OpenRA.Utility"]
+command = "(\\.[/\\\\])?bin[/\\\\]OpenRA\\.Utility(\\.exe)?"
+mode = "allow"
+deny = []
+
+[mcp.chat-mother-forker]
+description = "Access to local chat history"
+tools = { "chat_(search|fork|checkpoint)" = true }

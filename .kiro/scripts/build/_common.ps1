@@ -11,9 +11,9 @@ $script:TmpRoot  = Join-Path $RepoRoot '.pyddock\tmp'
 $script:RunDir   = Join-Path $TmpRoot 'run'
 $script:LogDir   = Join-Path $TmpRoot 'logs'
 $script:DumpDir  = Join-Path $TmpRoot 'dumps'
-# Written by build-and-run.ps1, read by the debug tooling (.kiro/scripts/debug).
+# Written by build-and-run.ps1, read by the openra_debug library.
 $script:StateFile = Join-Path $RunDir 'game.json'
-# Written by .kiro/scripts/debug/dbg.py while a probe holds the debugger.
+# Written by the openra_debug session while it holds netcoredbg.
 $script:DebugStateFile = Join-Path $RunDir 'debug.json'
 $script:Solution  = Join-Path $RepoRoot 'OpenRA.slnx'
 $script:GameDll   = Join-Path $RepoRoot 'bin\OpenRA.dll'
@@ -47,7 +47,7 @@ function Clear-GameState {
     if (Test-Path $StateFile) { Remove-Item $StateFile -Force }
 }
 
-# Debug-session state, owned by dbg.py. We only ever read it here.
+# Debug-session state, owned by the openra_debug library. We only ever read it here.
 function Get-DebugState {
     if (-not (Test-Path $DebugStateFile)) { return $null }
     try { return Get-Content $DebugStateFile -Raw | ConvertFrom-Json }
@@ -180,23 +180,24 @@ function Show-GameStatus {
         $dbgPid = Get-Prop $dbgState 'DebuggerPid'
         $alive = Get-LiveProcess $dbgPid 'netcoredbg*'
         if ($alive) {
-            Write-Host "  Probe in flight: netcoredbg PID $dbgPid" -ForegroundColor Yellow
+            Write-Host "  Debug session in flight: netcoredbg PID $dbgPid" -ForegroundColor Yellow
             Write-Host "    started : $(Get-Prop $dbgState 'StartedAt')" -ForegroundColor DarkGray
-            Write-Host "    target  : $((Get-Prop $dbgState 'Breakpoints') -join ', ')" -ForegroundColor DarkGray
-            Write-Host '    The game may be halted at a breakpoint.' -ForegroundColor DarkGray
+            $ownerPid = Get-Prop $dbgState 'OwnerPid'
+            if ($ownerPid) { Write-Host "    owner   : run_python PID $ownerPid" -ForegroundColor DarkGray }
+            Write-Host '    The game may be halted at a breakpoint right now.' -ForegroundColor DarkGray
         }
         else {
             Write-Host "  Stale debug state (netcoredbg PID $dbgPid is gone)." -ForegroundColor Yellow
-            Write-Host '    A probe died without cleaning up. Safe to remove:' -ForegroundColor DarkGray
+            Write-Host '    A session died without cleaning up. Safe to remove:' -ForegroundColor DarkGray
             Write-Host '    .kiro\scripts\build\kill-game.ps1 -All' -ForegroundColor DarkGray
         }
     }
     elseif ($live) {
         Write-Host "  $($live.Count) untracked netcoredbg process(es): $(($live | ForEach-Object { $_.Id }) -join ', ')" -ForegroundColor Yellow
-        Write-Host '    Not started by dbg.py. This will block both VS Code and new probes.' -ForegroundColor DarkGray
+        Write-Host '    Not started by openra_debug. This will block both VS Code and new sessions.' -ForegroundColor DarkGray
     }
     else {
-        Write-Host '  No debugger attached. VS Code and dbg.py are both free to attach.' -ForegroundColor DarkGray
+        Write-Host '  No debugger attached. VS Code and openra_debug are both free to attach.' -ForegroundColor DarkGray
     }
 
     Write-Section 'OpenRA logs'

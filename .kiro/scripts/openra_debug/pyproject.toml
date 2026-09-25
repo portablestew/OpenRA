@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openra-debug"
+version = "0.1.0"
+description = "Agent-facing live debugger for a running OpenRA game (netcoredbg CLI over stdio)."
+requires-python = ">=3.10"
+dependencies = [
+    # Spawn-free process inspection: liveness, create_time (anti-PID-reuse) and
+    # exe() (workspace identity). Inside a run_python snippet, subprocess.Popen is
+    # an audit chokepoint validated against the shell policy, so tasklist/wmic
+    # would each be a policy-checked spawn; psutil uses native APIs and avoids
+    # them entirely.
+    "psutil>=5.9",
+]
+
+# src-layout: the config maps `openra_debug` to this directory (the project
+# root), and `pip install -e .` puts src/ on the path so `import openra_debug`
+# resolves to src/openra_debug/.
+[tool.setuptools.packages.find]
+where = ["src"]
