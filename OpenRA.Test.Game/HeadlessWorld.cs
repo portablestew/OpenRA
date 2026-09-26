@@ -14,8 +14,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using NUnit.Framework;
+using OpenRA.Graphics;
 using OpenRA.Network;
 using OpenRA.Primitives;
+using OpenRA.Support;
 using OpenRA.Traits;
 using OpenRA.Widgets;
 
@@ -231,6 +233,104 @@ namespace OpenRA.Test
 		}
 
 		/// <summary>
+		/// Deep-clones this world's live simulation state into an independent fork that continues from the
+		/// exact same point. This is the rung-5 payload: from one game position, spin up a rollout that ticks
+		/// a divergent future without touching the parent. The proof of faithfulness is the oracle - tick the
+		/// parent and the fork forward and their <see cref="World.SyncHash"/> sequences must agree.
+		/// <para>
+		/// The whole reachable mutable graph is cloned in one pass by <see cref="ObjectGraphCloner"/>: the
+		/// <see cref="World"/>, every actor and trait, players, activities, effects, the actor map, the synced
+		/// RNG, and the <see cref="OrderManager"/> + <see cref="EchoConnection"/> with their frame counters and
+		/// in-flight order queues (so the fork's order pipeline is a faithful continuation, not a reset). The
+		/// cloner remaps delegates onto the clones, so simulation callbacks (condition notifiers, actor-map
+		/// triggers, <c>World.ActorAdded</c>) come across wired to the fork. Immutable, externally-owned asset
+		/// data is aliased rather than copied via <see cref="ShareAsset"/> so a fork is cheap and never
+		/// duplicates rules/map/sequences.
+		/// </para>
+		/// <para>
+		/// Must be called between ticks. <see cref="World.Tick"/> drains its frame-end task queue before
+		/// returning, so after any <see cref="TickOnce"/> there are no pending closures capturing the parent
+		/// to carry across; the fork boundary is clean.
+		/// </para>
+		/// </summary>
+		public HeadlessWorld Fork()
+		{
+			var cloner = new ObjectGraphCloner(ShareAsset);
+			var forkedWorld = cloner.Clone(World);
+
+			Assert.That(cloner.Unsupported, Is.Empty,
+				"The world graph contained values the cloner could not copy, so the fork is not a faithful deep " +
+				"copy. Each entry is a field path; either it is genuinely uncloneable (e.g. a multidimensional " +
+				"array) and needs cloner support, or it is externally-owned asset data that ShareAsset should be " +
+				"aliasing. Unsupported: " + string.Join(", ", cloner.Unsupported));
+
+			// The OrderManager is part of the cloned graph, so the fork already has its own independent OM and
+			// EchoConnection (sharing no state with the parent) while preserving the parent's frame counters.
+			var forkedOm = forkedWorld.OrderManager;
+
+			// Resolve the fork's players by the same client-index lookup Create uses, so the wrapper's
+			// LocalPlayer/EnemyPlayer point at the cloned Player instances rather than the parent's.
+			var localClientId = forkedOm.Connection.LocalClientId;
+			var forkedLocal = forkedWorld.LocalPlayer ??
+				forkedWorld.Players.First(p => p.ClientIndex == localClientId && p.PlayerReference.Playable);
+			var forkedEnemy = EnemyPlayer == null
+				? null
+				: forkedWorld.Players.FirstOrDefault(p => p.ClientIndex == EnemyPlayer.ClientIndex && p.PlayerReference.Playable);
+
+			return new HeadlessWorld(forkedWorld, forkedOm, forkedLocal, forkedEnemy) { TicksAdvanced = TicksAdvanced };
+		}
+
+		/// <summary>
+		/// The <see cref="ObjectGraphCloner"/> share-instance policy for a world fork: returns true for
+		/// instances that are immutable or externally owned after world load and so must be aliased rather
+		/// than deep-copied. These are the mod's rules, map, terrain, sequences and asset definitions -
+		/// large, read-only, and shared by every rollout. Everything not matched here is treated as mutable
+		/// simulation state and cloned.
+		/// </summary>
+		/// <remarks>
+		/// Aliasing an object also prunes the clone traversal at that point: the cloner does not recurse into
+		/// a shared instance, so anything reachable only through these assets is shared too. The set is
+		/// matched by concrete type. If a fork ever diverges from its parent's SyncHash, the first suspect is
+		/// an object wrongly aliased here that in fact carries mutable per-world state.
+		/// </remarks>
+		static bool ShareAsset(object o)
+		{
+			switch (o)
+			{
+				// Reflection objects are immutable, process-wide singletons. They are also used as dictionary
+				// keys - TraitDictionary is keyed by trait Type - so they MUST be shared: cloning a Type would
+				// produce a key that no typeof(T) lookup could ever match, silently emptying the dictionary.
+				// (System.Type derives from MemberInfo; both are listed for clarity.)
+				case System.Reflection.MemberInfo:
+
+				// The map and mod-wide services. Map is read-only terrain/rules after load; ModData owns the
+				// object creator, asset loaders, rules cache and sequences - all shared, never per-world.
+				case Map:
+				case ModData:
+				case Ruleset:
+				case SequenceSet:
+					return true;
+			}
+
+			var type = o.GetType();
+			var ns = type.Namespace ?? "";
+
+			// Immutable rules/asset info objects (TraitInfo, WeaponInfo, ActorInfo, projectile/warhead infos,
+			// terrain info, sprite sequences, ...) live in the rules graph and are shared across every actor
+			// of a type. They are constructed once at load from yaml and not mutated during the sim.
+			if (type.Name.EndsWith("Info", StringComparison.Ordinal) ||
+				type.Name.EndsWith("Infos", StringComparison.Ordinal))
+				return true;
+
+			// Sprite/terrain asset content that RenderSprites and the sequence layer reference. Cheap to share
+			// and never part of synced state.
+			if (ns.StartsWith("OpenRA.Graphics", StringComparison.Ordinal))
+				return true;
+
+			return false;
+		}
+
+		/// <summary>
 		/// Builds a headless world for the shared map at the given seed, with a single local human client
 		/// occupying the first playable slot. A single non-bot client is deliberate: the
 		/// <see cref="EchoConnection"/> loopback only produces orders for the local client, and
@@ -246,7 +346,6 @@ namespace OpenRA.Test
 			// OrderManager (World.LocalClientId / World.IsHost), so a headless world stands on its own OM.
 			// This is what lets multiple worlds coexist - e.g. concurrent MCTS rollouts on worker threads -
 			// without a shared static to clobber.
-
 			var modData = HeadlessMod.ModData;
 			var mapUid = HeadlessMod.MapUid;
 

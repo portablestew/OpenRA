@@ -28,9 +28,17 @@ namespace OpenRA.Support
 	/// copy are that an instance reachable by several paths is cloned exactly once (so reference
 	/// identity within the graph is preserved), that reference cycles terminate, and that collections
 	/// keyed on object identity are rebuilt rather than copied field-wise.</para>
-	/// <para>Delegates are not cloned. Their captured variables live in compiler-generated closure
-	/// objects that may reference anything, so a copied delegate would silently continue to act on the
-	/// original graph. They are recorded in <see cref="Unsupported"/> and left null, so that callers
+	/// <para>Delegates are cloned by remapping their target. A delegate is a (target, method) pair; a
+	/// lambda's captured variables live in a compiler-generated closure object that is its target. That
+	/// closure is cloned through this same graph (so a variable it captured which is elsewhere in the
+	/// graph resolves to the one clone, preserving identity), and the delegate is rebuilt against the
+	/// clone. Multicast delegates are rebuilt entry by entry. A delegate with no target (a static method)
+	/// is shared. This is what lets simulation events and callbacks - <c>World.ActorAdded</c>, condition
+	/// notifiers, actor-map triggers - come across a fork wired to the copy rather than the original.</para>
+	/// <para>A delegate whose target lies outside the cloned graph (for instance a closure capturing a
+	/// service the fork should not inherit) is still cloned structurally; the <see cref="shareInstance"/>
+	/// policy is the tool for aliasing such a captured instance instead. Anything genuinely uncloneable
+	/// (a multidimensional array) is recorded in <see cref="Unsupported"/> and left null, so that callers
 	/// find out rather than inheriting a corrupt copy.</para>
 	/// </remarks>
 	public sealed class ObjectGraphCloner
@@ -76,11 +84,8 @@ namespace OpenRA.Support
 			if (type.IsPrimitive || type.IsEnum || value is string)
 				return value;
 
-			if (value is Delegate)
-			{
-				unsupported.Add($"{path} ({type.Name} delegate)");
-				return null;
-			}
+			if (value is Delegate del)
+				return CloneDelegate(del, type, path);
 
 			if (shareInstance(value))
 				return value;
@@ -103,7 +108,13 @@ namespace OpenRA.Support
 			if (value is Array array)
 				return CloneArray(array, type, path);
 
-			if (value is IDictionary dictionary)
+			// A read-only wrapper (e.g. ReadOnlyDictionary) has no parameterless constructor and, more
+			// importantly, must not be rebuilt by re-insertion: it wraps a backing collection that is
+			// mutated elsewhere in the graph (Actor's condition cache is the motivating case), and the
+			// wrapper has to keep wrapping *that* instance's clone. Field-wise cloning does exactly that -
+			// its inner-collection field resolves to the already-registered clone of the backing store -
+			// so let such wrappers fall through to the general reference path below.
+			if (value is IDictionary dictionary && !dictionary.IsReadOnly)
 				return CloneDictionary(dictionary, type, path);
 
 			if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(HashSet<>))
@@ -113,6 +124,42 @@ namespace OpenRA.Support
 			clones.Add(value, clone);
 			CloneFieldsInto(value, clone, type, path);
 			return clone;
+		}
+
+		object CloneDelegate(Delegate del, Type type, string path)
+		{
+			// A delegate is immutable, but the closure it points at is not, so two delegate instances
+			// wrapping the same target+method must map to one rebuilt delegate to keep reference identity
+			// (e.g. the same handler subscribed to two events). Register before rebuilding for that reason
+			// and to terminate a target that cycles back to the delegate.
+			if (clones.TryGetValue(del, out var existing))
+				return existing;
+
+			var invocationList = del.GetInvocationList();
+			if (invocationList.Length > 1)
+			{
+				// Multicast: rebuild each entry against its cloned target, then recombine in order. The
+				// combined delegate is registered so a second reference to this same multicast is shared.
+				var clonedEntries = new Delegate[invocationList.Length];
+				for (var i = 0; i < invocationList.Length; i++)
+					clonedEntries[i] = (Delegate)CloneDelegate(invocationList[i], invocationList[i].GetType(), $"{path}[{i}]");
+
+				var combined = Delegate.Combine(clonedEntries);
+				clones.Add(del, combined);
+				return combined;
+			}
+
+			// A static method has no target to clone; the delegate is immutable and safe to share.
+			if (del.Target == null)
+			{
+				clones.Add(del, del);
+				return del;
+			}
+
+			var clonedTarget = CloneValue(del.Target, $"{path}.Target");
+			var rebuilt = Delegate.CreateDelegate(type, clonedTarget, del.Method);
+			clones.Add(del, rebuilt);
+			return rebuilt;
 		}
 
 		object CloneArray(Array array, Type type, string path)
@@ -141,8 +188,9 @@ namespace OpenRA.Support
 			// Rebuilt by re-inserting every entry rather than copied field-wise, because the internal
 			// buckets hold hash codes derived from the original keys. For keys compared by reference
 			// those hash codes do not survive cloning, and a field-wise copy would be unsearchable.
-			// Note that a non-default comparer is not carried over.
-			var clone = (IDictionary)Activator.CreateInstance(type);
+			// A non-default comparer is carried over (see CreateWithComparer) so lookup semantics - e.g.
+			// case-insensitive string keys - survive the clone.
+			var clone = (IDictionary)CreateWithComparer(type, dictionary);
 			clones.Add(dictionary, clone);
 
 			foreach (DictionaryEntry entry in dictionary)
@@ -153,8 +201,8 @@ namespace OpenRA.Support
 
 		object CloneHashSet(object set, Type type, string path)
 		{
-			// Rebuilt for the same reason as a dictionary.
-			var clone = Activator.CreateInstance(type);
+			// Rebuilt for the same reason as a dictionary, comparer included.
+			var clone = CreateWithComparer(type, set);
 			clones.Add(set, clone);
 
 			var add = type.GetMethod(nameof(HashSet<object>.Add), BindingFlags.Instance | BindingFlags.Public);
@@ -163,6 +211,29 @@ namespace OpenRA.Support
 				add.Invoke(clone, [CloneValue(item, $"{path}[{index++}]")]);
 
 			return clone;
+		}
+
+		/// <summary>
+		/// Creates an empty instance of a Dictionary or HashSet, preserving the source's comparer when it
+		/// exposes one and offers a matching constructor. Comparers are stateless, externally-owned value
+		/// objects (e.g. StringComparer.OrdinalIgnoreCase), so the source's comparer is shared rather than
+		/// cloned. Falls back to the parameterless constructor for types without a comparer constructor.
+		/// </summary>
+		static object CreateWithComparer(Type type, object source)
+		{
+			var comparerProperty = type.GetProperty("Comparer", BindingFlags.Instance | BindingFlags.Public);
+			if (comparerProperty != null)
+			{
+				var comparer = comparerProperty.GetValue(source);
+				if (comparer != null)
+				{
+					var ctor = type.GetConstructor([comparerProperty.PropertyType]);
+					if (ctor != null)
+						return ctor.Invoke([comparer]);
+				}
+			}
+
+			return Activator.CreateInstance(type);
 		}
 
 		void CloneFieldsInto(object original, object clone, Type type, string path)

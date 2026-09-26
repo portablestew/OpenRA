@@ -43,6 +43,13 @@ namespace OpenRA.Test
 
 	sealed class CloneDelegateHolder
 	{
+		public CloneNode Node;
+		public Func<int> Callback;
+	}
+
+	sealed class CloneMulticastHolder
+	{
+		public readonly List<CloneNode> Nodes = [];
 		public Func<int> Callback;
 	}
 
@@ -144,20 +151,71 @@ namespace OpenRA.Test
 				"A reference embedded in a struct must be remapped to the same clone as a direct reference.");
 		}
 
-		[TestCase(TestName = "Delegates are reported rather than silently aliased")]
-		public void ReportsDelegatesAsUnsupported()
+		[TestCase(TestName = "A delegate is rebuilt against the cloned closure, not left acting on the original")]
+		public void RemapsDelegateClosureOntoTheClone()
 		{
-			var captured = new CloneNode("captured");
-			var holder = new CloneDelegateHolder { Callback = () => captured.Value };
+			var captured = new CloneNode("captured") { Value = 1 };
+			var holder = new CloneDelegateHolder { Node = captured, Callback = () => captured.Value };
 
 			var cloner = new ObjectGraphCloner();
 			var clone = cloner.Clone(holder);
 
-			// A copied delegate would keep acting on the original graph, so the caller has to be told.
-			Assert.That(clone.Callback, Is.Null);
-			Assert.That(cloner.Unsupported, Is.Not.Empty,
-				"An uncloneable delegate must be reported so it can be rebuilt explicitly.");
+			Assert.That(cloner.Unsupported, Is.Empty, "A delegate is now cloneable and must not be reported as unsupported.");
+			Assert.That(clone.Callback, Is.Not.Null);
+
+			// The captured node is reachable both directly and through the closure; both must resolve to the
+			// single clone, and invoking the copied delegate must read the clone's state, not the original's.
+			clone.Node.Value = 42;
+			Assert.That(clone.Callback(), Is.EqualTo(42),
+				"The cloned delegate still observed the original captured node, so it was not remapped onto the clone.");
+			Assert.That(captured.Value, Is.EqualTo(1), "Invoking the clone must not touch the original graph.");
 		}
+
+		[TestCase(TestName = "A multicast delegate is rebuilt entry by entry onto the clones")]
+		public void RemapsMulticastDelegate()
+		{
+			var a = new CloneNode("a") { Value = 10 };
+			var b = new CloneNode("b") { Value = 20 };
+			var holder = new CloneMulticastHolder();
+			holder.Nodes.Add(a);
+			holder.Nodes.Add(b);
+			holder.Callback += () => a.Value;
+			holder.Callback += () => b.Value;
+
+			var cloner = new ObjectGraphCloner();
+			var clone = cloner.Clone(holder);
+
+			Assert.That(cloner.Unsupported, Is.Empty);
+			Assert.That(clone.Callback.GetInvocationList(), Has.Length.EqualTo(2),
+				"Both handlers of the multicast delegate must survive the clone.");
+
+			// Each captured node is also held in the list; the closures must resolve to those same clones.
+			clone.Nodes[0].Value = 11;
+			clone.Nodes[1].Value = 22;
+			var results = new List<int>();
+			foreach (var d in clone.Callback.GetInvocationList())
+				results.Add((int)d.DynamicInvoke());
+
+			Assert.That(results, Is.EqualTo(new[] { 11, 22 }),
+				"The multicast entries were not remapped onto the cloned captured nodes.");
+			Assert.That(a.Value, Is.EqualTo(10), "The original graph must be untouched.");
+			Assert.That(b.Value, Is.EqualTo(20));
+		}
+
+		[TestCase(TestName = "A delegate wrapping a static method is shared, not rebuilt")]
+		public void SharesStaticDelegate()
+		{
+			var holder = new CloneDelegateHolder { Callback = StaticCallback };
+
+			var cloner = new ObjectGraphCloner();
+			var clone = cloner.Clone(holder);
+
+			Assert.That(cloner.Unsupported, Is.Empty);
+			Assert.That(clone.Callback, Is.Not.Null);
+			Assert.That(clone.Callback(), Is.EqualTo(7));
+		}
+
+		static int StaticCallback() => 7;
 
 		[TestCase(TestName = "Instances matching the share predicate are not cloned")]
 		public void SharesInstancesMatchingThePredicate()
