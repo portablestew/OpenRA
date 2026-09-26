@@ -166,6 +166,12 @@ namespace OpenRA.Mods.Common.Traits
 			var gameOver = player.World.Players.All(p => p.NonCombatant || p.WinState != WinState.Undefined || !p.HasObjectives);
 			if (gameOver)
 			{
+				// A headless rollout world (e.g. an MCTS simulation) is never the process-global "current world"
+				// and its wall-clock delayed-action queue is never pumped, so this callback would never fire anyway.
+				// Skip scheduling it entirely: MCTS reads WinState directly and does not need EndGame's pause/IsGameOver.
+				if (player.World.IsHeadless)
+					return;
+
 				Game.RunAfterDelay(Info.GameOverDelay, () =>
 				{
 					if (Game.IsCurrentWorld(player.World))

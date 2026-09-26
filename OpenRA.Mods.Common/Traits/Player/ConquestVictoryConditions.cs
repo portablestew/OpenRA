@@ -103,7 +103,9 @@ namespace OpenRA.Mods.Common.Traits
 			foreach (var a in player.World.ActorsWithTrait<INotifyOwnerLost>().Where(a => a.Actor.Owner == player))
 				a.Trait.OnOwnerLost(a.Actor);
 
-			if (info.SuppressNotifications)
+			// The win/lose notification is pure presentation and its wall-clock delayed action never fires on a
+			// headless rollout world. Skip it there; the INotifyOwnerLost sim logic above still runs.
+			if (info.SuppressNotifications || player.World.IsHeadless)
 				return;
 
 			TextNotificationsManager.AddSystemLine(PlayerIsDefeated, "player", player.ResolvedPlayerName);
@@ -119,7 +121,7 @@ namespace OpenRA.Mods.Common.Traits
 
 		void INotifyWinStateChanged.OnPlayerWon(Player player)
 		{
-			if (info.SuppressNotifications)
+			if (info.SuppressNotifications || player.World.IsHeadless)
 				return;
 
 			TextNotificationsManager.AddSystemLine(PlayerIsVictorious, "player", player.ResolvedPlayerName);

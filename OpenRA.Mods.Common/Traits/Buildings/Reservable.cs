@@ -57,12 +57,21 @@ namespace OpenRA.Mods.Common.Traits
 			// the one we're playing in.
 			return new DisposableAction(
 				() => { reservedFor = null; reservedForAircraft = null; },
-				() => Game.RunAfterTick(() =>
+				() =>
 				{
-					if (Game.IsCurrentWorld(self.World))
-						throw new InvalidOperationException(
-							$"Attempted to finalize an undisposed DisposableAction. {forActor.Info.Name} ({forActor.ActorID}) reserved {self.Info.Name} ({self.ActorID})");
-				}));
+					// This is a debug-only leak assertion scheduled on the process-global wall-clock queue, which is
+					// never pumped for a headless rollout world. Skip it there rather than leaking a closure per
+					// reservation across every parallel rollout.
+					if (self.World.IsHeadless)
+						return;
+
+					Game.RunAfterTick(() =>
+					{
+						if (Game.IsCurrentWorld(self.World))
+							throw new InvalidOperationException(
+								$"Attempted to finalize an undisposed DisposableAction. {forActor.Info.Name} ({forActor.ActorID}) reserved {self.Info.Name} ({self.ActorID})");
+					});
+				});
 		}
 
 		public static bool IsReserved(Actor a)

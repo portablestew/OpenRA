@@ -241,11 +241,11 @@ namespace OpenRA.Test
 		{
 			var om = new OrderManager(new EchoConnection());
 
-			// Engine code such as CreateMapPlayers resolves the local player via Game.LocalClientId, which reads
-			// the process-global Game.OrderManager. Because this test constructs the World directly instead of
-			// going through Game.StartGame, we must point that global at our OrderManager so LocalClientId
-			// resolves to our EchoConnection's local client (id 1, the client we add to the first slot below).
-			Game.OrderManager = om;
+			// Note: we deliberately do NOT set the process-global Game.OrderManager. Engine code on the
+			// construction/sim path resolves the local player and host status from the world's own
+			// OrderManager (World.LocalClientId / World.IsHost), so a headless world stands on its own OM.
+			// This is what lets multiple worlds coexist - e.g. concurrent MCTS rollouts on worker threads -
+			// without a shared static to clobber.
 
 			var modData = HeadlessMod.ModData;
 			var mapUid = HeadlessMod.MapUid;
@@ -343,7 +343,8 @@ namespace OpenRA.Test
 
 			// ValidateOrder drops any order whose subject is not owned by the issuing client, so tests need the
 			// client-backed player rather than any playable one. LocalPlayer is set by CreateMapPlayers from
-			// Game.LocalClientId; fall back to the same lookup UnitOrders uses if that ever changes.
+			// World.LocalClientId (this world's own OM); fall back to the same lookup UnitOrders uses if that
+			// ever changes.
 			var localPlayer = world.LocalPlayer ??
 				world.Players.First(p => p.ClientIndex == om.Connection.LocalClientId && p.PlayerReference.Playable);
 

@@ -214,7 +214,7 @@ namespace OpenRA
 			FrozenActorLayer = PlayerActor.TraitOrDefault<FrozenActorLayer>();
 
 			// Enable the bot logic on the host
-			if (IsBot && Game.IsHost)
+			if (IsBot && World.IsHost)
 			{
 				var logic = PlayerActor.TraitsImplementing<IBot>().FirstOrDefault(b => b.Info.Type == BotType);
 				if (logic == null)

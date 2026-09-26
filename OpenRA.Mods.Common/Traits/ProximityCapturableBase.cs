@@ -196,7 +196,12 @@ namespace OpenRA.Mods.Common.Traits
 
 		void INotifyOwnerChanged.OnOwnerChanged(Actor self, Player oldOwner, Player newOwner)
 		{
-			Game.RunAfterTick(() => skipTriggerUpdate = false);
+			// Reset the trigger-suppression flag on this world's own frame-end queue rather than the process-global
+			// Game.RunAfterTick queue. skipTriggerUpdate is read back by synced code ((Added|Removed)FromWorld,
+			// ActorEntered/Left), so its reset must be deterministic and per-world: a frame-end task drains at the
+			// end of this same tick (after ChangeOwner has completed) regardless of headless state, whereas the
+			// global wall-clock queue is never pumped for a headless rollout world.
+			self.World.AddFrameEndTask(_ => skipTriggerUpdate = false);
 		}
 
 		IEnumerable<IRenderable> IRenderAnnotations.RenderAnnotations(Actor self, WorldRenderer wr)

@@ -4,8 +4,8 @@
 	</PropertyGroup>
 	<ItemGroup>
 		<!-- The integration test project constructs a real World directly (bypassing Game.StartGame),
-		     so it needs to wire its own OrderManager into the Game.OrderManager global that engine
-		     code such as CreateMapPlayers reads via Game.LocalClientId. -->
+		     so it needs to reach internal members: constructing an OrderManager, assigning its World,
+		     and driving StartGame / LoadComplete to stand up a headless world. -->
 		<InternalsVisibleTo Include="OpenRA.Test.Game" />
 	</ItemGroup>
 	<ItemGroup>

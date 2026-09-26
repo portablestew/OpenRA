@@ -48,6 +48,19 @@ namespace OpenRA
 		internal readonly OrderManager OrderManager;
 		public Session LobbyInfo => OrderManager.LobbyInfo;
 
+		// World-relative equivalents of the Game.LocalClientId / Game.IsHost globals. Reading them from this
+		// world's own OrderManager (rather than the process-global Game.OrderManager) is what lets multiple
+		// worlds - e.g. concurrent MCTS rollouts on worker threads - coexist without clobbering a shared static.
+		public int LocalClientId => OrderManager.Connection.LocalClientId;
+		public bool IsHost
+		{
+			get
+			{
+				var client = OrderManager.LobbyInfo.ClientWithIndex(LocalClientId);
+				return client != null && client.IsAdmin;
+			}
+		}
+
 		public readonly MersenneTwister SharedRandom;
 		public readonly MersenneTwister LocalRandom;
 		public LongBitSet<PlayerBitMask> AllPlayersMask = default;
