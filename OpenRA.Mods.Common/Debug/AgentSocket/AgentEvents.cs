@@ -118,9 +118,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public const int Capacity = 4096;
 
 		readonly object gate = new();
-		readonly HashSet<string> groups = [];
+
+		// Each subscribed group keeps the owner filter it was subscribed with, or null when every owner's events pass.
+		readonly Dictionary<string, string> groups = [];
 		readonly Queue<object> queue = new();
-		string owner;
 		int dropped;
 		bool closed;
 
@@ -134,19 +135,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 		}
 
-		/// <summary>The owner filter, or null when every owner's events pass.</summary>
-		public string Owner
-		{
-			get
-			{
-				lock (gate)
-					return owner;
-			}
-		}
-
 		/// <summary>
-		/// Adds the groups (already validated) and returns the active groups in canonical order. A non-null owner replaces
-		/// the owner filter; null leaves it as it was.
+		/// Adds the groups (already validated) with this owner filter, and returns the active groups in canonical order.
+		/// A subscribe sets the filter of the groups it names and leaves the other groups alone. A null owner passes every
+		/// owner's events for those groups, so re-subscribing a group without an owner widens its filter.
 		/// </summary>
 		public string[] Subscribe(IEnumerable<string> names, string ownerFilter = null)
 		{
@@ -157,10 +149,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					return [];
 
 				foreach (var name in names)
-					groups.Add(name);
-
-				if (ownerFilter != null)
-					owner = ownerFilter;
+					groups[name] = ownerFilter;
 
 				registered = groups.Count > 0;
 			}
@@ -170,7 +159,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Removes the groups, or every group when names is null. Unsubscribing everything also clears the owner filter.
+		/// Removes the groups, or every group when names is null. Removing a group also removes its owner filter.
 		/// Returns the active groups in canonical order.
 		/// </summary>
 		public string[] Unsubscribe(IEnumerable<string> names)
@@ -179,10 +168,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			lock (gate)
 			{
 				if (names == null)
-				{
 					groups.Clear();
-					owner = null;
-				}
 				else
 					foreach (var name in names)
 						groups.Remove(name);
@@ -197,18 +183,18 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public string[] Active()
 		{
 			lock (gate)
-				return AgentEvents.Groups.Where(groups.Contains).ToArray();
+				return AgentEvents.Groups.Where(groups.ContainsKey).ToArray();
 		}
 
 		/// <summary>
-		/// Adds dto when group is subscribed and the owner filter passes. A full queue drops its oldest entry and counts it,
-		/// so the next Take reports one overflow marker for the whole burst.
+		/// Adds dto when group is subscribed and the group's owner filter passes. A full queue drops its oldest entry and
+		/// counts it, so the next Take reports one overflow marker for the whole burst.
 		/// </summary>
 		internal void Enqueue(string group, string eventOwner, object dto)
 		{
 			lock (gate)
 			{
-				if (closed || !groups.Contains(group))
+				if (closed || !groups.TryGetValue(group, out var owner))
 					return;
 
 				if (owner != null && eventOwner != null && eventOwner != owner)
@@ -260,7 +246,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 			{
 				closed = true;
 				groups.Clear();
-				owner = null;
 				queue.Clear();
 				dropped = 0;
 				Monitor.PulseAll(gate);

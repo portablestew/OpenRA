@@ -49,16 +49,9 @@ namespace OpenRA.Test
 			Assert.That(listed, Is.EquivalentTo(AgentSocketCommands.Names));
 		}
 
-		[TestCase(TestName = "Every command the banner lists is handled, not answered as an unknown command")]
-		public void EveryBannerCommandIsHandled()
+		[TestCase(TestName = "An unknown command is answered with the unknown command error")]
+		public void UnknownCommandIsAnError()
 		{
-			foreach (var name in AgentSocketCommands.Names)
-			{
-				// Commands that need the game thread time out without a game; only the error text matters here.
-				var response = AgentSocketCommands.Handle($"{{\"cmd\":\"{name}\"}}", null);
-				Assert.That(response, Does.Not.Contain("unknown command"), name);
-			}
-
 			Assert.That(AgentSocketCommands.Handle("{\"cmd\":\"nope\"}", null), Does.Contain("unknown command"));
 		}
 
@@ -106,6 +99,7 @@ namespace OpenRA.Test
 			Assert.That(banner, Does.Contain("min_effect_tick is a lower bound"));
 			Assert.That(banner, Does.Contain("remaining_cells is 0 on canceled moves"));
 			Assert.That(banner, Does.Contain("path.to is the cell the path actually ends on"));
+			Assert.That(banner, Does.Contain("owner filters only the groups named in this request"));
 		}
 
 		[TestCase(TestName = "The banner has one blank line, at its end, so a client can read up to the blank line")]

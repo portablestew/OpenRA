@@ -32,30 +32,45 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		sealed record Pending(string Uid, World Previous);
 
-		/// <summary>Starts the load and returns the state of its new world. Blocks only the calling (socket) thread.</summary>
+		/// <summary>
+		/// Starts the load and returns the state of its new world. Blocks only the calling (socket) thread. A timed-out
+		/// step is not the end of the step: it may still run on the game thread later, so the clear of the pending load is
+		/// queued behind it, and the next load_map is not refused as already in progress.
+		/// </summary>
 		public static StateV1 Load(string name)
 		{
-			var request = AgentMarshal.ExecuteOnGameThread(() => Begin(name));
+			return Load(name, StartSkirmish);
+		}
 
-			var deadline = DateTime.UtcNow.AddMilliseconds(TimeoutMs);
-			while (true)
+		/// <summary>Load with the game-side start step given, so the poll and its cleanup can be tested without a game.</summary>
+		internal static StateV1 Load(string name, Action<string> startGame)
+		{
+			try
 			{
-				var state = AgentMarshal.ExecuteOnGameThread(() => Check(request));
-				if (state != null)
-					return state;
+				var request = AgentMarshal.ExecuteOnGameThread(() => Begin(name, startGame));
 
-				if (DateTime.UtcNow >= deadline)
+				var deadline = DateTime.UtcNow.AddMilliseconds(TimeoutMs);
+				while (true)
 				{
-					AgentMarshal.ExecuteOnGameThread(() => pending = null);
-					throw new TimeoutException($"the new game did not start within {TimeoutMs / 1000} s");
-				}
+					var state = AgentMarshal.ExecuteOnGameThread(() => Check(request));
+					if (state != null)
+						return state;
 
-				Thread.Sleep(PollIntervalMs);
+					if (DateTime.UtcNow >= deadline)
+						throw new TimeoutException($"the new game did not start within {TimeoutMs / 1000} s");
+
+					Thread.Sleep(PollIntervalMs);
+				}
+			}
+			catch (TimeoutException)
+			{
+				Game.RunAfterTick(() => pending = null);
+				throw;
 			}
 		}
 
-		/// <summary>Resolves the map, then tears down the current game and starts the new skirmish. Game thread.</summary>
-		static Pending Begin(string name)
+		/// <summary>Resolves the map and claims the pending load, then runs the start step. Game thread.</summary>
+		static Pending Begin(string name, Action<string> startGame)
 		{
 			var map = Resolve(name);
 			if (pending != null)
@@ -65,20 +80,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			pending = request;
 			try
 			{
-				Game.Disconnect();
-				Ui.ResetAll();
-
-				var om = Game.JoinServer(Game.CreateLocalServer(map.Uid, isSkirmish: true), "", recordReplay: false);
-
-				// Same setup as Game.LoadMap. The server starts the game once this local client is ready (CheckAutoStart).
-				void LobbyReady()
-				{
-					Game.LobbyInfoChanged -= LobbyReady;
-					om.IssueOrder(Order.Command("option gamespeed default"));
-					om.IssueOrder(Order.Command($"state {Session.ClientState.Ready}"));
-				}
-
-				Game.LobbyInfoChanged += LobbyReady;
+				startGame(map.Uid);
 			}
 			catch
 			{
@@ -87,6 +89,25 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 
 			return request;
+		}
+
+		/// <summary>Tears down the current game and starts a fresh local skirmish on the map. Game thread.</summary>
+		static void StartSkirmish(string uid)
+		{
+			Game.Disconnect();
+			Ui.ResetAll();
+
+			var om = Game.JoinServer(Game.CreateLocalServer(uid, isSkirmish: true), "", recordReplay: false);
+
+			// Same setup as Game.LoadMap. The server starts the game once this local client is ready (CheckAutoStart).
+			void LobbyReady()
+			{
+				Game.LobbyInfoChanged -= LobbyReady;
+				om.IssueOrder(Order.Command("option gamespeed default"));
+				om.IssueOrder(Order.Command($"state {Session.ClientState.Ready}"));
+			}
+
+			Game.LobbyInfoChanged += LobbyReady;
 		}
 
 		/// <summary>Returns the new world's state once it is a live Regular world for the requested map, otherwise null. Game thread.</summary>

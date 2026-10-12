@@ -1,0 +1,106 @@
+#region Copyright & License Information
+/*
+ * Copyright (c) The OpenRA Developers and Contributors
+ * This file is part of OpenRA, which is free software. It is made
+ * available to you under the terms of the GNU General Public License
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
+ */
+#endregion
+
+using System.Linq;
+using System.Text.Json;
+using NUnit.Framework;
+
+namespace OpenRA.Test
+{
+	/// <summary>
+	/// Every command the banner lists answers with its documented envelope. Read-only commands run against a headless
+	/// world and must return ok:true with their response keys. The others are sent a request that fails validation, so
+	/// they answer with the error envelope without touching the game thread.
+	/// </summary>
+	[TestFixture]
+	sealed class AgentCommandEnvelopeTest
+	{
+		static readonly string[] PingKeys = ["ok", "cmd", "tick"];
+		static readonly string[] HelpKeys = ["ok", "cmd", "banner"];
+		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "paused", "game_over", "local_player", "players", "units"];
+		static readonly string[] ActorsKeys = ["ok", "cmd", "units"];
+		static readonly string[] MapsKeys = ["ok", "cmd", "maps"];
+		static readonly string[] ErrorKeys = ["ok", "cmd", "error"];
+
+		bool savedAgentSocket;
+
+		[OneTimeSetUp]
+		public void InitializeMod()
+		{
+			HeadlessMod.Require();
+		}
+
+		[SetUp]
+		public void EnableAgentSocket()
+		{
+			savedAgentSocket = Game.Settings.Debug.AgentSocket;
+			Game.Settings.Debug.AgentSocket = true;
+		}
+
+		[TearDown]
+		public void RestoreAgentSocket()
+		{
+			Game.Settings.Debug.AgentSocket = savedAgentSocket;
+		}
+
+		static string[] Keys(JsonElement element)
+		{
+			return element.EnumerateObject().Select(p => p.Name).ToArray();
+		}
+
+		[TestCase(TestName = "Every read-only command the banner lists answers ok:true with its documented keys")]
+		public void ReadOnlyCommandsAnswerTheirEnvelope()
+		{
+			using var hw = HeadlessWorld.Create(1);
+
+			using (var ping = AgentStateDumpTest.Request("{\"cmd\":\"ping\"}"))
+				Assert.That(Keys(ping.RootElement), Is.EquivalentTo(PingKeys));
+
+			using (var help = AgentStateDumpTest.Request("{\"cmd\":\"help\"}"))
+			{
+				Assert.That(Keys(help.RootElement), Is.EquivalentTo(HelpKeys));
+				Assert.That(help.RootElement.GetProperty("banner").GetString(), Does.Contain("Commands"));
+			}
+
+			using (var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}"))
+				Assert.That(Keys(state.RootElement), Is.EquivalentTo(StateKeys));
+
+			using (var actors = AgentStateDumpTest.Request("{\"cmd\":\"actors\"}"))
+				Assert.That(Keys(actors.RootElement), Is.EquivalentTo(ActorsKeys));
+
+			using (var maps = AgentStateDumpTest.Request("{\"cmd\":\"maps\"}"))
+				Assert.That(Keys(maps.RootElement), Is.EquivalentTo(MapsKeys));
+		}
+
+		[TestCase(TestName = "Every write command the banner lists answers with the error envelope for an invalid request")]
+		public void WriteCommandsAnswerTheErrorEnvelope()
+		{
+			(string Line, string Cmd, string Error)[] invalid =
+			[
+				("{\"cmd\":\"order\"}", "order", "order must be a non-empty string"),
+				("{\"cmd\":\"subscribe\"}", "subscribe", "events need a connection"),
+				("{\"cmd\":\"unsubscribe\"}", "unsubscribe", "events need a connection"),
+				("{\"cmd\":\"load_map\"}", "load_map", "map must be a string"),
+			];
+
+			foreach (var (line, cmd, error) in invalid)
+			{
+				using var response = AgentStateDumpTest.Request(line);
+				var root = response.RootElement;
+
+				Assert.That(Keys(root), Is.EquivalentTo(ErrorKeys), cmd);
+				Assert.That(root.GetProperty("ok").GetBoolean(), Is.False, cmd);
+				Assert.That(root.GetProperty("cmd").GetString(), Is.EqualTo(cmd), cmd);
+				Assert.That(root.GetProperty("error").GetString(), Is.EqualTo(error), cmd);
+			}
+		}
+	}
+}

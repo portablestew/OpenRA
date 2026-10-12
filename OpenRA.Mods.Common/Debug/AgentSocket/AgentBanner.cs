@@ -37,7 +37,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("load_map", "map (string, uid or title) -> the state shape, once the new world is ready"),
 			("order", "actor (uint); order (string); at most one of cell [x,y], pos [x,y,z], target_actor (uint);"
 				+ " optional queued (bool)\n                -> tick, min_effect_tick"),
-			("subscribe", "events (non-empty array of group names); optional owner (player name) -> subscribed"),
+			("subscribe", "events (non-empty array of group names); optional owner (player name) -> subscribed\n"
+				+ "                owner filters only the groups named in this request; omit it to receive every owner's events."
+				+ " A later subscribe replaces a group's filter"),
 			("unsubscribe", "events (array), or all:true -> subscribed"),
 		];
 

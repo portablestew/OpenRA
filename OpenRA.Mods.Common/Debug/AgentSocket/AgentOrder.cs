@@ -76,7 +76,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (targets > 1)
 				return "give at most one of cell, pos and target_actor";
 
-			var queued = root.TryGetProperty("queued", out var queuedElement) && queuedElement.ValueKind == JsonValueKind.True;
+			var queued = false;
+			if (IsPresent(root, "queued"))
+			{
+				var queuedElement = root.GetProperty("queued");
+				if (queuedElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+					return "queued must be a boolean";
+
+				queued = queuedElement.ValueKind == JsonValueKind.True;
+			}
+
 			request = new OrderRequest(orderElement.GetString(), actor, cell, pos, targetActor, queued);
 			return null;
 		}

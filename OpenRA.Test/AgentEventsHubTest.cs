@@ -128,22 +128,32 @@ namespace OpenRA.Test
 			Assert.That(subscriber.Pending, Is.Zero);
 		}
 
-		[TestCase(TestName = "An owner filter passes only that owner's events and events with no owner")]
-		public void OwnerFilterPassesOnlyThatOwner()
+		[TestCase(TestName = "An owner filter passes only that owner's events and events with no owner, for its own groups only")]
+		public void OwnerFilterIsPerGroup()
 		{
 			var subscriber = NewSubscriber();
 			subscriber.Subscribe(["damage"], "Player");
-			Assert.That(subscriber.Owner, Is.EqualTo("Player"));
+			subscriber.Subscribe(["killed"]);
 
 			AgentEvents.Raise("damage", "Enemy", new TestEvent("damaged", 1));
 			AgentEvents.Raise("damage", "Player", new TestEvent("damaged", 2));
 			AgentEvents.Raise("damage", null, new TestEvent("damaged", 3));
+			AgentEvents.Raise("killed", "Enemy", new TestEvent("killed", 4));
 
 			var batch = subscriber.Take();
-			Assert.That(batch.Cast<TestEvent>().Select(e => e.N), Is.EqualTo(new[] { 2, 3 }));
+			Assert.That(batch.Cast<TestEvent>().Select(e => e.N), Is.EqualTo(new[] { 2, 3, 4 }),
+				"The later subscribe to killed must not change damage's filter, and killed has no filter.");
 
-			Assert.That(subscriber.Unsubscribe(null), Is.Empty);
-			Assert.That(subscriber.Owner, Is.Null);
+			subscriber.Subscribe(["damage"]);
+			AgentEvents.Raise("damage", "Enemy", new TestEvent("damaged", 5));
+			Assert.That(subscriber.Take().Cast<TestEvent>().Select(e => e.N), Is.EqualTo(new[] { 5 }),
+				"Re-subscribing a group without an owner replaces its filter.");
+
+			subscriber.Unsubscribe(["damage"]);
+			subscriber.Subscribe(["damage"]);
+			AgentEvents.Raise("damage", "Enemy", new TestEvent("damaged", 6));
+			Assert.That(subscriber.Take().Cast<TestEvent>().Select(e => e.N), Is.EqualTo(new[] { 6 }),
+				"Unsubscribing a group removes its filter.");
 		}
 
 		[TestCase(TestName = "Subscribe and unsubscribe reply with the active groups in canonical order")]

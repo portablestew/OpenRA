@@ -174,6 +174,14 @@ namespace OpenRA.Test
 			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo("order must be a non-empty string"));
 		}
 
+		[TestCase(TestName = "A queued value that is not a boolean is rejected, not read as false")]
+		public void NonBooleanQueuedIsRejected()
+		{
+			using var response = AgentStateDumpTest.Request("{\"cmd\":\"order\",\"actor\":1,\"order\":\"Move\",\"cell\":[1,1],\"queued\":\"true\"}");
+			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.False);
+			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo("queued must be a boolean"));
+		}
+
 		static IEnumerable<string> Keys(JsonElement element)
 		{
 			return element.EnumerateObject().Select(p => p.Name);
