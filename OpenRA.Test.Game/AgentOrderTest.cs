@@ -57,11 +57,11 @@ namespace OpenRA.Test
 			using var response = AgentStateDumpTest.Request(line);
 			var root = response.RootElement;
 
-			Assert.That(Keys(root), Is.EquivalentTo(["ok", "cmd", "tick", "effect_tick"]));
+			Assert.That(Keys(root), Is.EquivalentTo(["ok", "cmd", "tick", "min_effect_tick"]));
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True);
 			Assert.That(root.GetProperty("cmd").GetString(), Is.EqualTo("order"));
 			Assert.That(root.GetProperty("tick").GetInt32(), Is.EqualTo(tick));
-			Assert.That(root.GetProperty("effect_tick").GetInt32(), Is.EqualTo(tick + 1));
+			Assert.That(root.GetProperty("min_effect_tick").GetInt32(), Is.EqualTo(tick + 1));
 
 			Assert.That(hw.TickUntil(() => unit.Location == destination, 500), Is.Not.Null, "The unit never reached the destination.");
 		}
@@ -77,7 +77,7 @@ namespace OpenRA.Test
 
 			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"pos\":[{pos.X},{pos.Y},{pos.Z}]}}");
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
-			Assert.That(response.RootElement.GetProperty("effect_tick").GetInt32(), Is.EqualTo(hw.World.WorldTick + 1));
+			Assert.That(response.RootElement.GetProperty("min_effect_tick").GetInt32(), Is.EqualTo(hw.World.WorldTick + 1));
 
 			Assert.That(hw.TickUntil(() => unit.Location == destination, 500), Is.Not.Null, "The unit never reached the destination.");
 		}
@@ -104,7 +104,7 @@ namespace OpenRA.Test
 
 			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Stop\"}}");
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
-			Assert.That(response.RootElement.GetProperty("effect_tick").GetInt32(), Is.EqualTo(hw.World.WorldTick + 1));
+			Assert.That(response.RootElement.GetProperty("min_effect_tick").GetInt32(), Is.EqualTo(hw.World.WorldTick + 1));
 		}
 
 		[TestCase(TestName = "An order for an unknown actor returns the unknown-actor error")]

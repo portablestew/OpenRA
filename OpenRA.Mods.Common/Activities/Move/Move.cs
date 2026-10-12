@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using OpenRA.Activities;
+using OpenRA.Mods.Common.AgentSocket;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Primitives;
 using OpenRA.Traits;
@@ -44,6 +45,10 @@ namespace OpenRA.Mods.Common.Activities
 		CPos? destination;
 		int startTicks;
 		bool hadNoPath;
+
+		// Origin and target for the move_result event (M10)
+		CPos moveOrigin;
+		CPos moveTarget;
 
 		// For dealing with blockers
 		bool hasWaited;
@@ -123,6 +128,7 @@ namespace OpenRA.Mods.Common.Activities
 		{
 			startTicks = self.World.WorldTick;
 			mobile.MoveResult = MoveResult.InProgress;
+			moveOrigin = mobile.ToCell;
 
 			if (evaluateNearestMovableCell && destination.HasValue)
 			{
@@ -131,12 +137,18 @@ namespace OpenRA.Mods.Common.Activities
 			}
 
 			// TODO: Change this to BlockedByActor.Stationary after improving the local avoidance behaviour
+			var pathCheck = BlockedByActor.None;
 			foreach (var check in PathSearchOrder)
 			{
+				pathCheck = check;
 				(alreadyAtDestination, path) = EvalPath(check);
 				if (alreadyAtDestination || path.Count > 0)
-					return;
+					break;
 			}
+
+			moveTarget = path.Count > 0 ? path[0] : destination ?? mobile.ToCell;
+			if (AgentEvents.HasSubscribers)
+				AgentMoveEvents.Path(self, mobile.Locomotor, mobile.ToCell, moveTarget, pathCheck, false, alreadyAtDestination, path);
 		}
 
 		public override bool Tick(Actor self)
@@ -146,6 +158,10 @@ namespace OpenRA.Mods.Common.Activities
 			if (IsCanceling && mobile.CanStayInCell(mobile.ToCell))
 			{
 				path?.Clear();
+
+				// The path is cleared above, so no cells remain for the move_result event.
+				if (AgentEvents.HasSubscribers)
+					AgentMoveEvents.Completed(self, moveOrigin, moveTarget, MoveResult.CompleteCanceled, startTicks, 0);
 
 				mobile.MoveResult = MoveResult.CompleteCanceled;
 				return true;
@@ -157,6 +173,9 @@ namespace OpenRA.Mods.Common.Activities
 			if (alreadyAtDestination)
 			{
 				mobile.MoveResult = MoveResult.CompleteDestinationReached;
+				if (AgentEvents.HasSubscribers)
+					AgentMoveEvents.Completed(self, moveOrigin, moveTarget, mobile.MoveResult, startTicks, path.Count);
+
 				return true;
 			}
 
@@ -166,6 +185,9 @@ namespace OpenRA.Mods.Common.Activities
 					mobile.MoveResult = MoveResult.CompleteDestinationBlocked;
 				else
 					mobile.MoveResult = MoveResult.CompleteDestinationReached;
+
+				if (AgentEvents.HasSubscribers)
+					AgentMoveEvents.Completed(self, moveOrigin, moveTarget, mobile.MoveResult, startTicks, path.Count);
 
 				return true;
 			}
@@ -198,6 +220,9 @@ namespace OpenRA.Mods.Common.Activities
 				if (!shouldTryAgain)
 				{
 					mobile.MoveResult = MoveResult.CompleteDestinationBlocked;
+					if (AgentEvents.HasSubscribers)
+						AgentMoveEvents.Completed(self, moveOrigin, moveTarget, mobile.MoveResult, startTicks, path.Count);
+
 					return true;
 				}
 
@@ -257,6 +282,9 @@ namespace OpenRA.Mods.Common.Activities
 			if (!Util.AreAdjacentCells(mobile.ToCell, nextCell))
 			{
 				(alreadyAtDestination, path) = EvalPath(BlockedByActor.Immovable);
+				if (AgentEvents.HasSubscribers)
+					AgentMoveEvents.Path(self, mobile.Locomotor, mobile.ToCell, destination ?? mobile.ToCell, BlockedByActor.Immovable, true, alreadyAtDestination, path);
+
 				return (null, false);
 			}
 
@@ -298,6 +326,9 @@ namespace OpenRA.Mods.Common.Activities
 				if (!mobile.CanEnterCell(nextCell, ignoreActor, BlockedByActor.Immovable))
 				{
 					(alreadyAtDestination, path) = EvalPath(BlockedByActor.Immovable);
+					if (AgentEvents.HasSubscribers)
+						AgentMoveEvents.Path(self, mobile.Locomotor, mobile.ToCell, destination ?? mobile.ToCell, BlockedByActor.Immovable, true, alreadyAtDestination, path);
+
 					return (null, false);
 				}
 
@@ -323,8 +354,11 @@ namespace OpenRA.Mods.Common.Activities
 
 				// Calculate a new path
 				mobile.RemoveInfluence();
-				var (_, newPath) = EvalPath(BlockedByActor.All);
+				var (newAtDestination, newPath) = EvalPath(BlockedByActor.All);
 				mobile.AddInfluence();
+
+				if (AgentEvents.HasSubscribers)
+					AgentMoveEvents.Path(self, mobile.Locomotor, mobile.ToCell, destination ?? mobile.ToCell, BlockedByActor.All, true, newAtDestination, newPath);
 
 				if (newPath.Count != 0)
 				{

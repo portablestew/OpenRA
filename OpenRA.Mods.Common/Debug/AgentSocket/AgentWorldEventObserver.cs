@@ -42,8 +42,8 @@ namespace OpenRA.Mods.Common
 
 		/// <summary>
 		/// Raises an order event for a resolved order. valid is the result of the validators. The notify runs before the
-		/// world advances, so the current tick is the tick the order takes effect on. That is the D11 effect_tick (issue
-		/// tick + 1), so tick and effect_tick are the same value here.
+		/// world advances, so the current tick is the tick the order resolved on. The D11 ack's min_effect_tick (issue tick
+		/// + 1) is only a lower bound, so this event's effect_tick is the actual tick, which can be later than the ack.
 		/// </summary>
 		public static void Ordered(Order order, int clientId, bool valid)
 		{

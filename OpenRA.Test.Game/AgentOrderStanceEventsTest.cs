@@ -123,7 +123,7 @@ namespace OpenRA.Test
 			Assert.That(Field<uint?>(order, "TargetActor"), Is.Null);
 			Assert.That(Field<bool>(order, "Queued"), Is.False);
 
-			// The ack reports effect_tick as issue tick + 1 (D11). The event lands on that same tick.
+			// The ack's min_effect_tick is issue tick + 1 (D11), a lower bound. Headless has no frame delay, so the event lands on that tick.
 			Assert.That(Field<int>(order, "EffectTick"), Is.EqualTo(issuedAt + 1));
 			Assert.That(Field<int>(order, "Tick"), Is.EqualTo(Field<int>(order, "EffectTick")));
 		}

@@ -21,6 +21,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 		sealed record Envelope(bool Ok, string Cmd, string Error);
 		sealed record PingResponse(bool Ok, string Cmd, int Tick);
 		sealed record SubscriptionV1(bool Ok, string Cmd, string[] Subscribed);
+		sealed record HelpV1(bool Ok, string Cmd, string Banner);
+
+		/// <summary>The command names the dispatcher answers. The banner lists the same names, and a headless test keeps them in step.</summary>
+		public static readonly string[] Names = ["ping", "help", "state", "actors", "maps", "load_map", "order", "subscribe", "unsubscribe"];
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
@@ -58,6 +62,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return cmd switch
 				{
 					"ping" => Ping(cmd),
+					"help" => Serialize(new HelpV1(true, cmd, AgentSocketServer.Banner)),
 					"state" => Run(cmd, () => AgentStateDump.Snapshot(AgentWorldBridge.RequireWorld())),
 					"actors" => Actors(cmd, doc.RootElement),
 					"maps" => Run(cmd, AgentMaps.List),

@@ -35,6 +35,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	public sealed record StanceV1(string Event, int Tick, uint Actor, string Type, string Owner, string From, string To);
 
+	// Metrics is null for no_path, and when getPath returned input the metrics function rejects.
+	public sealed record PathV1(string Event, int Tick, uint Actor, string Type, string Owner, int[] From, int[] To, string Check,
+		bool Repath, string Result, int[][] Cells, PathMetrics Metrics);
+
+	public sealed record MoveResultV1(string Event, int Tick, uint Actor, string Type, string Owner, int[] From, int[] To,
+		string Outcome, int Ticks, int RemainingCells);
+
 	/// <summary>
 	/// Static event hub (D12, P4). Engine hooks call Raise. With no subscriber, or with the socket disabled, Raise returns
 	/// after one volatile read, so an unsubscribed game pays almost nothing. Subscriptions are per connection and are

@@ -22,7 +22,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>Loopback TCP listener that speaks newline-delimited JSON with one response line per request.</summary>
 	public static class AgentSocketServer
 	{
-		public const string Banner = "OpenRA agent debug socket. Send one JSON object per line; one response line per command.\n\n";
+		/// <summary>Generated from the command list and the event table (AgentBanner), so it matches what the server handles.</summary>
+		public static readonly string Banner = AgentBanner.Build();
 
 		static bool started;
 

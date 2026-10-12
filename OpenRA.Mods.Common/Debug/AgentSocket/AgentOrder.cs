@@ -18,14 +18,16 @@ using OpenRA.Traits;
 namespace OpenRA.Mods.Common.AgentSocket
 {
 	// Schema v1. Wire keys are snake_case (AgentSocketCommands.Json).
-	public sealed record OrderV1(bool Ok, string Cmd, int Tick, int EffectTick);
+	// MinEffectTick is a lower bound on the tick the order applies on. Network frame delay can make the real tick later.
+	public sealed record OrderV1(bool Ok, string Cmd, int Tick, int MinEffectTick);
 
 	/// <summary>A parsed order. At most one of Cell, Pos and TargetActor is set. None of them means an untargeted order, such as Stop.</summary>
 	public sealed record OrderRequest(string Order, uint Actor, CPos? Cell, WPos? Pos, uint? TargetActor, bool Queued);
 
 	/// <summary>
 	/// Issues an order for a local-player actor through World.IssueOrder, so it takes the same network and validation path
-	/// as a click (D11). The ack is fixed at effect_tick = tick + 1.
+	/// as a click (D11). The ack reports min_effect_tick = tick + 1, a lower bound: live, the order applied 4 ticks later
+	/// than the ack (ack 506, applied 510) because of the network frame delay.
 	/// </summary>
 	public static class AgentOrder
 	{
