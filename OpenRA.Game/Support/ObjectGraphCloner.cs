@@ -47,16 +47,32 @@ namespace OpenRA.Support
 			BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
 
 		static readonly ConcurrentCache<Type, bool> StructHoldsReferences = new(ComputeStructHoldsReferences);
+		static readonly ConcurrentCache<Type, FieldInfo[]> FieldsByType = new(ComputeFields);
+		static readonly ConcurrentCache<Type, MethodInfo> HashSetAddMethod = new(ComputeHashSetAddMethod);
 
 		readonly Dictionary<object, object> clones = new(ReferenceEqualityComparer.Instance);
 		readonly Func<object, bool> shareInstance;
 		readonly List<string> unsupported = [];
 
 		/// <summary>
+		/// Whether diagnostic field paths are built while cloning. They cost an allocation per field and
+		/// only matter when a value fails to clone, so <see cref="Clone{T}"/> enables them for a retry
+		/// that runs only in that case.
+		/// </summary>
+		bool trackPaths;
+
+		/// <summary>
 		/// Field paths at which a value could not be cloned and was left null in the copy.
 		/// A successful clone leaves this empty.
 		/// </summary>
 		public IReadOnlyList<string> Unsupported => unsupported;
+
+		/// <summary>
+		/// The number of distinct instances registered as clones. A diagnostic for sizing the cost of a
+		/// clone (how large the state graph is) and for reasoning about per-object cloner performance;
+		/// it is not otherwise used by the cloner.
+		/// </summary>
+		public int ClonedObjectCount { get; private set; }
 
 		/// <summary>Creates a cloner with an optional policy for instances that should be shared.</summary>
 		/// <param name="shareInstance">
@@ -70,7 +86,22 @@ namespace OpenRA.Support
 
 		public T Clone<T>(T root)
 		{
-			return (T)CloneValue(root, typeof(T).Name);
+			trackPaths = false;
+			var clone = (T)CloneValue(root, null);
+
+			// If any value failed to clone, re-run with path tracking to attribute each failure to its
+			// field path. The retry is deterministic and fails on the same values again, so the paths
+			// reported describe the original graph.
+			if (unsupported.Count > 0)
+			{
+				unsupported.Clear();
+				clones.Clear();
+				ClonedObjectCount = 0;
+				trackPaths = true;
+				clone = (T)CloneValue(root, typeof(T).Name);
+			}
+
+			return clone;
 		}
 
 		object CloneValue(object value, string path)
@@ -121,7 +152,7 @@ namespace OpenRA.Support
 				return CloneHashSet(value, type, path);
 
 			var clone = RuntimeHelpers.GetUninitializedObject(type);
-			clones.Add(value, clone);
+			RegisterClone(value, clone);
 			CloneFieldsInto(value, clone, type, path);
 			return clone;
 		}
@@ -142,23 +173,23 @@ namespace OpenRA.Support
 				// combined delegate is registered so a second reference to this same multicast is shared.
 				var clonedEntries = new Delegate[invocationList.Length];
 				for (var i = 0; i < invocationList.Length; i++)
-					clonedEntries[i] = (Delegate)CloneDelegate(invocationList[i], invocationList[i].GetType(), $"{path}[{i}]");
+					clonedEntries[i] = (Delegate)CloneDelegate(invocationList[i], invocationList[i].GetType(), trackPaths ? $"{path}[{i}]" : null);
 
 				var combined = Delegate.Combine(clonedEntries);
-				clones.Add(del, combined);
+				RegisterClone(del, combined);
 				return combined;
 			}
 
 			// A static method has no target to clone; the delegate is immutable and safe to share.
 			if (del.Target == null)
 			{
-				clones.Add(del, del);
+				RegisterClone(del, del);
 				return del;
 			}
 
-			var clonedTarget = CloneValue(del.Target, $"{path}.Target");
+			var clonedTarget = CloneValue(del.Target, trackPaths ? $"{path}.Target" : null);
 			var rebuilt = Delegate.CreateDelegate(type, clonedTarget, del.Method);
-			clones.Add(del, rebuilt);
+			RegisterClone(del, rebuilt);
 			return rebuilt;
 		}
 
@@ -172,13 +203,21 @@ namespace OpenRA.Support
 
 			var elementType = type.GetElementType();
 			var clone = Array.CreateInstance(elementType, array.Length);
-			clones.Add(array, clone);
+			RegisterClone(array, clone);
 
 			if (elementType.IsPrimitive || elementType.IsEnum)
 				Array.Copy(array, clone, array.Length);
+			else if (!elementType.IsValueType)
+			{
+				// Reference elements: iterate as object[] so neither GetValue nor SetValue boxes.
+				var source = (object[])array;
+				var target = (object[])clone;
+				for (var i = 0; i < source.Length; i++)
+					target[i] = CloneValue(source[i], trackPaths ? $"{path}[{i}]" : null);
+			}
 			else
 				for (var i = 0; i < array.Length; i++)
-					clone.SetValue(CloneValue(array.GetValue(i), $"{path}[{i}]"), i);
+					clone.SetValue(CloneValue(array.GetValue(i), trackPaths ? $"{path}[{i}]" : null), i);
 
 			return clone;
 		}
@@ -191,10 +230,10 @@ namespace OpenRA.Support
 			// A non-default comparer is carried over (see CreateWithComparer) so lookup semantics - e.g.
 			// case-insensitive string keys - survive the clone.
 			var clone = (IDictionary)CreateWithComparer(type, dictionary);
-			clones.Add(dictionary, clone);
+			RegisterClone(dictionary, clone);
 
 			foreach (DictionaryEntry entry in dictionary)
-				clone.Add(CloneValue(entry.Key, $"{path}.Key"), CloneValue(entry.Value, $"{path}.Value"));
+				clone.Add(CloneValue(entry.Key, trackPaths ? $"{path}.Key" : null), CloneValue(entry.Value, trackPaths ? $"{path}.Value" : null));
 
 			return clone;
 		}
@@ -203,14 +242,24 @@ namespace OpenRA.Support
 		{
 			// Rebuilt for the same reason as a dictionary, comparer included.
 			var clone = CreateWithComparer(type, set);
-			clones.Add(set, clone);
+			RegisterClone(set, clone);
 
-			var add = type.GetMethod(nameof(HashSet<object>.Add), BindingFlags.Instance | BindingFlags.Public);
+			var add = HashSetAddMethod[type];
 			var index = 0;
 			foreach (var item in (IEnumerable)set)
-				add.Invoke(clone, [CloneValue(item, $"{path}[{index++}]")]);
+				add.Invoke(clone, [CloneValue(item, trackPaths ? $"{path}[{index++}]" : null)]);
 
 			return clone;
+		}
+
+		/// <summary>
+		/// Records that <paramref name="clone"/> is the copy of <paramref name="original"/> in the clone
+		/// map, so later references resolve to it, and counts it.
+		/// </summary>
+		void RegisterClone(object original, object clone)
+		{
+			clones.Add(original, clone);
+			ClonedObjectCount++;
 		}
 
 		/// <summary>
@@ -238,10 +287,26 @@ namespace OpenRA.Support
 
 		void CloneFieldsInto(object original, object clone, Type type, string path)
 		{
-			// DeclaredOnly walking the hierarchy, so that private fields of base classes are included.
+			// Fields per type are cached: GetFields allocates and walks metadata on every call, which the
+			// per-object path cannot afford, and the result is identical for every instance of a type.
+			foreach (var field in FieldsByType[type])
+				field.SetValue(clone, CloneValue(field.GetValue(original), trackPaths ? $"{path}.{field.Name}" : null));
+		}
+
+		static FieldInfo[] ComputeFields(Type type)
+		{
+			// DeclaredOnly walking the hierarchy, so that private fields of base classes are included,
+			// own fields first - the same order a per-instance walk produced.
+			var fields = new List<FieldInfo>();
 			for (var t = type; t != null && t != typeof(object); t = t.BaseType)
-				foreach (var field in t.GetFields(FieldFlags))
-					field.SetValue(clone, CloneValue(field.GetValue(original), $"{path}.{field.Name}"));
+				fields.AddRange(t.GetFields(FieldFlags));
+
+			return fields.ToArray();
+		}
+
+		static MethodInfo ComputeHashSetAddMethod(Type type)
+		{
+			return type.GetMethod(nameof(HashSet<object>.Add), BindingFlags.Instance | BindingFlags.Public);
 		}
 
 		static bool ComputeStructHoldsReferences(Type type)

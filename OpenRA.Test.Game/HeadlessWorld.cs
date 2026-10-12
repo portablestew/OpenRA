@@ -224,6 +224,13 @@ namespace OpenRA.Test
 		/// <summary>Number of world ticks advanced so far.</summary>
 		public int TicksAdvanced { get; private set; }
 
+		/// <summary>
+		/// Size of the state graph copied by the most recent <see cref="Fork"/>: how many distinct
+		/// instances the cloner registered. A diagnostic for reasoning about fork cost and what a
+		/// per-state-object cloner optimization would save.
+		/// </summary>
+		public int LastForkClonedObjectCount { get; private set; }
+
 		HeadlessWorld(World world, OrderManager om, Player localPlayer, Player enemyPlayer)
 		{
 			World = world;
@@ -267,6 +274,7 @@ namespace OpenRA.Test
 			// The OrderManager is part of the cloned graph, so the fork already has its own independent OM and
 			// EchoConnection (sharing no state with the parent) while preserving the parent's frame counters.
 			var forkedOm = forkedWorld.OrderManager;
+			LastForkClonedObjectCount = cloner.ClonedObjectCount;
 
 			// Resolve the fork's players by the same client-index lookup Create uses, so the wrapper's
 			// LocalPlayer/EnemyPlayer point at the cloned Player instances rather than the parent's.
