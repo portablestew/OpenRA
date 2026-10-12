@@ -50,6 +50,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					"actors" => Actors(cmd, doc.RootElement),
 					"maps" => Run(cmd, AgentMaps.List),
 					"load_map" => LoadMap(cmd, doc.RootElement),
+					"order" => IssueOrder(cmd, doc.RootElement),
 					_ => Error(cmd, "unknown command"),
 				};
 			}
@@ -83,6 +84,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 			{
 				return Error(cmd, e.Message);
 			}
+		}
+
+		/// <summary>Parses the order on the socket thread, then validates and issues it on the game thread.</summary>
+		static string IssueOrder(string cmd, JsonElement root)
+		{
+			var error = AgentOrder.Parse(root, out var request);
+			if (error != null)
+				return Error(cmd, error);
+
+			return Run(cmd, () => AgentOrder.Issue(AgentWorldBridge.RequireWorld(), request));
 		}
 
 		/// <summary>Absent or null is no filter. Any non-string value is rejected.</summary>

@@ -61,7 +61,7 @@ namespace OpenRA.Test
 			.GetMethod("Handle", BindingFlags.Public | BindingFlags.Static));
 
 		/// <summary>Runs one request line on a worker thread while this thread pumps the game loop, and returns the response line.</summary>
-		static JsonDocument Request(string line)
+		internal static JsonDocument Request(string line)
 		{
 			var request = Task.Run(() => (string)Handle.Value.Invoke(null, [line]));
 
