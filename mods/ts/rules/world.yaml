@@ -235,6 +235,7 @@ World:
 	Inherits: ^BaseWorld
 	ChatCommands:
 	DevCommands:
+	AgentWorldBridge:
 	AutoSave:
 	DebugVisualizationCommands:
 	PathFinderOverlay:
