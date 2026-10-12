@@ -19,7 +19,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		sealed record Envelope(bool Ok, string Cmd, string Error);
 		sealed record PingResponse(bool Ok, string Cmd, int Tick);
 
-		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
 		/// <summary>Parses one request line and returns the single response line for it.</summary>
 		public static string Handle(string line)
@@ -46,6 +46,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return cmd switch
 				{
 					"ping" => Ping(cmd),
+					"state" => Run(cmd, () => AgentStateDump.Snapshot(AgentWorldBridge.RequireWorld())),
+					"actors" => Actors(cmd, doc.RootElement),
+					"maps" => Run(cmd, AgentMaps.List),
+					"load_map" => LoadMap(cmd, doc.RootElement),
 					_ => Error(cmd, "unknown command"),
 				};
 			}
@@ -54,6 +58,45 @@ namespace OpenRA.Mods.Common.AgentSocket
 		static string Ping(string cmd)
 		{
 			return Run(cmd, () => new PingResponse(true, cmd, AgentWorldBridge.RequireWorld().WorldTick));
+		}
+
+		/// <summary>Reads the optional owner and type filters on the socket thread, then lists the matching units on the game thread.</summary>
+		static string Actors(string cmd, JsonElement root)
+		{
+			if (!TryGetOptionalString(root, "owner", out var owner) || !TryGetOptionalString(root, "type", out var type))
+				return Error(cmd, "owner and type must be strings");
+
+			return Run(cmd, () => AgentStateDump.Actors(AgentWorldBridge.RequireWorld(), owner, type));
+		}
+
+		/// <summary>Waits for the new world on the socket thread, so the game thread is never blocked for the 60 s load.</summary>
+		static string LoadMap(string cmd, JsonElement root)
+		{
+			if (!root.TryGetProperty("map", out var element) || element.ValueKind != JsonValueKind.String)
+				return Error(cmd, "map must be a string");
+
+			try
+			{
+				return JsonSerializer.Serialize(AgentLoadMap.Load(element.GetString()), Json);
+			}
+			catch (Exception e)
+			{
+				return Error(cmd, e.Message);
+			}
+		}
+
+		/// <summary>Absent or null is no filter. Any non-string value is rejected.</summary>
+		static bool TryGetOptionalString(JsonElement root, string name, out string value)
+		{
+			value = null;
+			if (!root.TryGetProperty(name, out var element) || element.ValueKind == JsonValueKind.Null)
+				return true;
+
+			if (element.ValueKind != JsonValueKind.String)
+				return false;
+
+			value = element.GetString();
+			return true;
 		}
 
 		/// <summary>Runs the request on the game thread. Any failure becomes an error envelope so the game keeps running.</summary>

@@ -126,6 +126,8 @@ namespace OpenRA
 
 		public bool IsReplay => OrderManager.Connection is ReplayConnection;
 
+		public int NetFrameNumber => OrderManager.NetFrameNumber;
+
 		public bool IsLoadingGameSave => OrderManager.NetFrameNumber <= OrderManager.GameSaveLastFrame;
 
 		public int GameSaveLoadingPercentage => OrderManager.NetFrameNumber * 100 / OrderManager.GameSaveLastFrame;
