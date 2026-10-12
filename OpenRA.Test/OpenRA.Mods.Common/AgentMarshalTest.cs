@@ -10,6 +10,8 @@
 #endregion
 
 using System;
+using System.Collections.Concurrent;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -60,6 +62,58 @@ namespace OpenRA.Test
 
 			// The abandoned request stays queued until pumped; run it so it cannot leak into later tests.
 			Game.PerformDelayedActions();
+		}
+
+		[TestCase(TestName = "Two worker threads issuing 200 requests each run every handler on the pumping thread and return each result to its own caller")]
+		public void ConcurrentRequestsRunOnPumpingThreadAndReturnToCaller()
+		{
+			const int Workers = 2;
+			const int RequestsPerWorker = 200;
+
+			var loopThread = Environment.CurrentManagedThreadId;
+			var callerThreads = new ConcurrentBag<int>();
+			var handlerThreads = new ConcurrentBag<int>();
+
+			// Each worker sends its requests one after another, so the requests of both workers overlap on the queue.
+			var workers = Enumerable.Range(0, Workers).Select(worker => Task.Run(() =>
+			{
+				callerThreads.Add(Environment.CurrentManagedThreadId);
+				return Enumerable.Range(0, RequestsPerWorker).Select(i =>
+				{
+					var expected = worker * RequestsPerWorker + i;
+					var echoed = AgentMarshal.ExecuteOnGameThread(() =>
+					{
+						handlerThreads.Add(Environment.CurrentManagedThreadId);
+						return expected;
+					});
+					return (Expected: expected, Echoed: echoed);
+				}).ToArray();
+			})).ToArray();
+
+			var all = Task.WhenAll(workers);
+			var deadline = DateTime.UtcNow.AddSeconds(60);
+			while (!all.IsCompleted && DateTime.UtcNow < deadline)
+			{
+				Game.PerformDelayedActions();
+				Thread.Sleep(1);
+			}
+
+			Assert.That(all.IsCompleted, Is.True, "The workers did not finish within 60 s, so some requests were lost or never pumped.");
+			var results = all.GetAwaiter().GetResult().SelectMany(r => r).ToList();
+
+			Assert.That(results, Has.Count.EqualTo(Workers * RequestsPerWorker), "Some requests did not return to their caller.");
+			Assert.That(results.Where(r => r.Echoed != r.Expected).ToList(), Is.Empty,
+				"A caller received a result that belonged to a different request.");
+
+			Assert.That(callerThreads.Distinct().ToArray(), Has.Length.EqualTo(Workers),
+				"The requests were not issued from the two worker threads.");
+			Assert.That(callerThreads, Does.Not.Contain(loopThread),
+				"A worker ran on the pumping thread, so the requests did not cross threads.");
+
+			Assert.That(handlerThreads, Has.Count.EqualTo(Workers * RequestsPerWorker),
+				"Some handlers did not run exactly once.");
+			Assert.That(handlerThreads.Distinct().ToArray(), Is.EqualTo(new[] { loopThread }),
+				"A handler ran on a thread other than the one pumping the game loop.");
 		}
 	}
 }

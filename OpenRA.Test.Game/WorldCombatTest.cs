@@ -150,5 +150,33 @@ namespace OpenRA.Test
 			Assert.That(b.Hashes, Is.EqualTo(a.Hashes),
 				"Two same-seed worlds fighting the identical battle produced different SyncHash sequences.");
 		}
+
+		[TestCase(TestName = "The identical fight plays out identically with the agent socket off, on without a subscriber, and on with a subscriber")]
+		public void CombatIsDeterministicAcrossAgentSocketConfigurations()
+		{
+			var off = AgentSocketConfig.Execute(agentSocket: false, subscribe: false, () => RunCombat(0xC0FFEE));
+			var onIdle = AgentSocketConfig.Execute(agentSocket: true, subscribe: false, () => RunCombat(0xC0FFEE));
+			var subscribed = AgentSocketConfig.Execute(agentSocket: true, subscribe: true, () => RunCombat(0xC0FFEE));
+
+			Assert.That(off.Result.Survivor, Is.AnyOf(Survivor.Mine, Survivor.Enemy),
+				"The flag-off fight did not resolve to a single survivor, so there is nothing to compare.");
+
+			// Without these checks a subscriber that never received anything would pass the comparison without the
+			// event path having run at all.
+			Assert.That(onIdle.Events, Is.Zero, "A fight with no subscriber queued events.");
+			Assert.That(subscribed.Events, Is.GreaterThan(0),
+				"The subscribed fight queued no events, so the comparison did not exercise the event path.");
+
+			AssertSameFight(off.Result, onIdle.Result, "The flag on with no subscriber");
+			AssertSameFight(off.Result, subscribed.Result, "The flag on with a subscriber");
+		}
+
+		static void AssertSameFight(CombatOutcome expected, CombatOutcome actual, string config)
+		{
+			Assert.That(actual.Survivor, Is.EqualTo(expected.Survivor), $"{config} changed the combat winner.");
+			Assert.That(actual.ResolvedAtTick, Is.EqualTo(expected.ResolvedAtTick), $"{config} changed the tick the kill happened on.");
+			Assert.That(actual.Hashes, Is.EqualTo(expected.Hashes),
+				$"{config} produced a different SyncHash sequence. The agent socket must not change the simulation.");
+		}
 	}
 }

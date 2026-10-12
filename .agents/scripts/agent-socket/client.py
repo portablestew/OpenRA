@@ -12,13 +12,16 @@ send: each argument is one JSON object; prints its response line. Exit 0 only if
 raw:  sends the text verbatim plus a newline; prints the next response line. Exit 0 if one arrived.
 listen: subscribes to event groups, writes each event line to FILE, and optionally sends a command every S seconds
       (--interleave). Prints event counts by event name and responses=/missing=. Exit 0 only if the subscribe reply
-      and every interleaved response are ok, and none is missing.
+      and every interleaved response are ok, and none is missing. --owner sends that player name as the server's owner filter.
+spam: sends --cmd one request at a time on each of --conns connections for --seconds, and prints ok/err/missing per
+      connection. Exit 0 only if every reply is ok, none is missing, and each connection got at least one reply.
 """
 
 import argparse
 import json
 import socket
 import sys
+import threading
 import time
 from collections import Counter
 
@@ -136,7 +139,10 @@ def cmd_listen(args):
         buf = bytearray()
         listener = Listener(out)
         if groups:
-            send_line(f, json.dumps({"cmd": "subscribe", "events": groups}))
+            request = {"cmd": "subscribe", "events": groups}
+            if args.owner:
+                request["owner"] = args.owner
+            send_line(f, json.dumps(request))
         subscribing = bool(groups)
 
         start = time.monotonic()
@@ -167,6 +173,64 @@ def cmd_listen(args):
         return 0 if not listener.failed and missing == 0 and (not groups or listener.subscribe_ok) else 1
 
 
+def spam_worker(args, index, results):
+    """Sends args.cmd one request at a time on its own connection until the time runs out. Each request must get one response."""
+    ok = err = missing = 0
+    first_error = None
+    try:
+        sock, _ = connect(args)
+    except OSError as ex:
+        results[index] = (0, 0, 1, f"connect failed: {ex}")
+        return
+
+    with sock:
+        sock.settimeout(args.timeout)
+        buf = bytearray()
+        end = time.monotonic() + args.seconds
+        try:
+            while time.monotonic() < end:
+                sock.sendall(args.cmd.encode("utf-8") + b"\n")
+                # Events from this connection's subscriptions are skipped; only the reply to this request counts.
+                while True:
+                    line = next_line(sock, buf)
+                    if line is None:
+                        missing += 1
+                        break
+                    try:
+                        obj = json.loads(line)
+                    except ValueError:
+                        obj = None
+                    if isinstance(obj, dict) and "ok" in obj:
+                        if obj["ok"] is True:
+                            ok += 1
+                        else:
+                            err += 1
+                            first_error = first_error or line.strip()
+                        break
+        except (ConnectionError, OSError) as ex:
+            missing += 1
+            first_error = first_error or f"connection lost: {ex}"
+
+    results[index] = (ok, err, missing, first_error)
+
+
+def cmd_spam(args):
+    results = [None] * args.conns
+    threads = [threading.Thread(target=spam_worker, args=(args, i, results)) for i in range(args.conns)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    failed = False
+    for i, (ok, err, missing, first_error) in enumerate(results):
+        print(f"conn={i} ok={ok} err={err} missing={missing}")
+        if first_error:
+            print(f"conn={i} first_error={first_error}")
+        failed = failed or err != 0 or missing != 0 or ok == 0
+    return 1 if failed else 0
+
+
 def cmd_raw(args):
     sock, f = connect(args)
     with sock:
@@ -192,7 +256,14 @@ def main(argv):
     p_listen.add_argument("--out", required=True, help="file that receives the event lines")
     p_listen.add_argument("--interleave", help="JSON command to send on a timer")
     p_listen.add_argument("--every", type=float, default=5.0, help="seconds between interleaved commands")
+    p_listen.add_argument("--owner", help="only events whose owner is this player name")
     p_listen.set_defaults(func=cmd_listen)
+
+    p_spam = sub.add_parser("spam", help="send one command repeatedly on one or more connections and count replies")
+    p_spam.add_argument("--conns", type=int, default=1, help="number of concurrent connections")
+    p_spam.add_argument("--cmd", required=True, help="JSON command to repeat")
+    p_spam.add_argument("--seconds", type=float, required=True, help="how long each connection keeps sending")
+    p_spam.set_defaults(func=cmd_spam)
 
     p_raw = sub.add_parser("raw", help="send text verbatim and print the next response")
     p_raw.add_argument("text")

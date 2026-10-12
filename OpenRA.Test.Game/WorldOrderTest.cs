@@ -140,6 +140,34 @@ namespace OpenRA.Test
 				"order execution is not deterministic.");
 		}
 
+		[TestCase(TestName = "A move order plays out identically with the agent socket off, on without a subscriber, and on with a subscriber")]
+		public void MoveOrderIsDeterministicAcrossAgentSocketConfigurations()
+		{
+			var off = AgentSocketConfig.Execute(agentSocket: false, subscribe: false, () => RunMoveToCompletion(0x4242));
+			var onIdle = AgentSocketConfig.Execute(agentSocket: true, subscribe: false, () => RunMoveToCompletion(0x4242));
+			var subscribed = AgentSocketConfig.Execute(agentSocket: true, subscribe: true, () => RunMoveToCompletion(0x4242));
+
+			Assert.That(off.Result.ArrivedAt, Is.Not.Null, "The flag-off run never arrived, so there is nothing to compare.");
+
+			// Without these checks a subscriber that never received anything would pass the comparison without the
+			// event path having run at all.
+			Assert.That(onIdle.Events, Is.Zero, "A run with no subscriber queued events.");
+			Assert.That(subscribed.Events, Is.GreaterThan(0),
+				"The subscribed run queued no events, so the comparison did not exercise the event path.");
+
+			AssertSamePlayout(off.Result, onIdle.Result, "The flag on with no subscriber");
+			AssertSamePlayout(off.Result, subscribed.Result, "The flag on with a subscriber");
+		}
+
+		static void AssertSamePlayout(MoveResult expected, MoveResult actual, string config)
+		{
+			Assert.That(actual.Start, Is.EqualTo(expected.Start), $"{config} picked a different start cell.");
+			Assert.That(actual.Destination, Is.EqualTo(expected.Destination), $"{config} picked a different destination.");
+			Assert.That(actual.ArrivedAt, Is.EqualTo(expected.ArrivedAt), $"{config} took a different number of ticks to arrive.");
+			Assert.That(actual.Hashes, Is.EqualTo(expected.Hashes),
+				$"{config} produced a different SyncHash sequence. The agent socket must not change the simulation.");
+		}
+
 		sealed record MoveResult(int? ArrivedAt, List<int> Hashes, CPos Start, CPos Destination);
 
 		/// <summary>Runs a move scenario to arrival, recording the SyncHash after every ticked frame.</summary>
