@@ -11,9 +11,9 @@
     With -All it additionally sweeps up untracked OpenRA / netcoredbg processes.
 
 .EXAMPLE
-    .kiro\scripts\build\kill-game.ps1
+    .agents\scripts\build\kill-game.ps1
 .EXAMPLE
-    .kiro\scripts\build\kill-game.ps1 -All
+    .agents\scripts\build\kill-game.ps1 -All
 #>
 [CmdletBinding()]
 param(
@@ -102,7 +102,7 @@ if ($killed.Count -gt 0) {
 else {
     Write-Host 'Nothing was running.' -ForegroundColor DarkGray
     if (-not $All) {
-        Write-Host 'If you suspect a stray instance, try: .kiro\scripts\build\kill-game.ps1 -All' -ForegroundColor DarkGray
+        Write-Host 'If you suspect a stray instance, try: .agents\scripts\build\kill-game.ps1 -All' -ForegroundColor DarkGray
     }
 }
 exit 0

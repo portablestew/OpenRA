@@ -96,7 +96,7 @@ For a process that has already crashed — which no live debugger can attach to 
 analyse its dump:
 
 ```
-run_shell(command=".kiro/scripts/openra_debug/dump.py", args=["analyze"])
+run_shell(command=".agents/scripts/openra_debug/dump.py", args=["analyze"])
 ```
 Newest dump by default: prints path/size/timestamp, pending exception, managed
 threads, and the current stack. `--path`, `--command SOS`, `--lines`, `--thread N`.
@@ -120,7 +120,7 @@ Full transcript always goes to a log. `dump.py collect` snapshots a running game
 - **Crash dumps are suppressed while attached**, so a crash inside a session
   window produces no dump — the stop is reported instead.
 - **Recovery:** if a session ever leaves the game halted (e.g. netcoredbg itself
-  hung), `.kiro\scripts\build\kill-game.ps1 -All` clears it.
+  hung), `.agents\scripts\build\kill-game.ps1 -All` clears it.
 
 ## Why it is safe to kill your snippet
 

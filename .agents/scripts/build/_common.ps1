@@ -1,9 +1,9 @@
-# Shared helpers for the .kiro/scripts/build game scripts.
+# Shared helpers for the .agents/scripts/build game scripts.
 # Dot-source this file; it defines paths and state/status helpers.
 
 Set-StrictMode -Version Latest
 
-# This file lives in <repo>/.kiro/scripts/build, so the repo root is three up.
+# This file lives in <repo>/.agents/scripts/build, so the repo root is three up.
 $script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 # Runtime artifacts live under .pyddock/tmp (already git-ignored) so nothing
 # extra needs to be excluded from source control.
@@ -18,7 +18,7 @@ $script:DebugStateFile = Join-Path $RunDir 'debug.json'
 $script:Solution  = Join-Path $RepoRoot 'OpenRA.slnx'
 $script:GameDll   = Join-Path $RepoRoot 'bin\OpenRA.dll'
 
-function Initialize-KiroDirs {
+function Initialize-RunDirs {
     foreach ($d in @($RunDir, $LogDir, $DumpDir)) {
         if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
     }
@@ -39,7 +39,7 @@ function Get-GameState {
 }
 
 function Save-GameState($State) {
-    Initialize-KiroDirs
+    Initialize-RunDirs
     $State | ConvertTo-Json -Depth 5 | Set-Content -Path $StateFile -Encoding UTF8
 }
 
@@ -189,7 +189,7 @@ function Show-GameStatus {
         else {
             Write-Host "  Stale debug state (netcoredbg PID $dbgPid is gone)." -ForegroundColor Yellow
             Write-Host '    A session died without cleaning up. Safe to remove:' -ForegroundColor DarkGray
-            Write-Host '    .kiro\scripts\build\kill-game.ps1 -All' -ForegroundColor DarkGray
+            Write-Host '    .agents\scripts\build\kill-game.ps1 -All' -ForegroundColor DarkGray
         }
     }
     elseif ($live) {
@@ -232,7 +232,7 @@ function Show-GameStatus {
         Write-Host ("  $tag{0}  {1:N1} MB  {2}" -f $d.Name, ($d.Length / 1MB), $d.LastWriteTime) -ForegroundColor $col
     }
     if ($dumps) {
-        Write-Host '  Analyse with: .kiro\scripts\debug\dump.py analyze' -ForegroundColor DarkGray
+        Write-Host '  Analyse with: .agents\scripts\openra_debug\dump.py analyze' -ForegroundColor DarkGray
     }
     Write-Host ''
 }

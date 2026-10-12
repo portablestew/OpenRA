@@ -16,11 +16,11 @@
     trait code we commonly touch: ra, cnc, d2k.
 
 .EXAMPLE
-    .kiro\scripts\build\check-yaml.ps1
+    .agents\scripts\build\check-yaml.ps1
 .EXAMPLE
-    .kiro\scripts\build\check-yaml.ps1 ra
+    .agents\scripts\build\check-yaml.ps1 ra
 .EXAMPLE
-    .kiro\scripts\build\check-yaml.ps1 ra cnc d2k
+    .agents\scripts\build\check-yaml.ps1 ra cnc d2k
 #>
 
 [CmdletBinding()]
@@ -32,7 +32,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# This file lives in <repo>/.kiro/scripts/build, so the repo root is three up.
+# This file lives in <repo>/.agents/scripts/build, so the repo root is three up.
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $utility = Join-Path $repoRoot 'bin\OpenRA.Utility.exe'
 

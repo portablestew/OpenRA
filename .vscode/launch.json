@@ -47,12 +47,12 @@
 		},
 		{
 			// Attaches directly to a game already launched by
-			// .kiro/scripts/build/build-and-run.ps1 (which starts no debugger of
+			// .agents/scripts/build/build-and-run.ps1 (which starts no debugger of
 			// its own). Pick the "dotnet" process running bin/OpenRA.dll.
 			//
 			// CoreCLR allows only ONE debugger per process, so this fails while a
-			// .kiro/scripts/debug/dbg.py probe holds the game. Check first with
-			// .kiro/scripts/build/status-game.ps1.
+			// an openra_debug session holds the game (see .agents/steering/debug.md). Check first with
+			// .agents/scripts/build/status-game.ps1.
 			"name": "Attach (OpenRA)",
 			"type": "coreclr",
 			"request": "attach",

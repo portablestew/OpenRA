@@ -20,29 +20,29 @@
               (attaches vsdbg directly by PID)
 
 .EXAMPLE
-    .kiro\scripts\build\build-and-run.ps1 Game.Mod=ra
+    .agents\scripts\build\build-and-run.ps1 Game.Mod=ra
 .EXAMPLE
-    .kiro\scripts\build\build-and-run.ps1 -Build
+    .agents\scripts\build\build-and-run.ps1 -Build
     # Builds the whole solution (game + utility + all mod assemblies) and exits
     # without launching anything. Use this to verify the code still compiles.
     # Exit 0 means the build succeeded, non-zero means it failed.
 .EXAMPLE
-    .kiro\scripts\build\build-and-run.ps1 -SkipBuild Game.Mod=ra
+    .agents\scripts\build\build-and-run.ps1 -SkipBuild Game.Mod=ra
 .EXAMPLE
-    .kiro\scripts\build\build-and-run.ps1 -Configuration Release Game.Mod=cnc Game.Fullscreen=false
+    .agents\scripts\build\build-and-run.ps1 -Configuration Release Game.Mod=cnc Game.Fullscreen=false
 .EXAMPLE
-    .kiro\scripts\build\build-and-run.ps1 -Tests
+    .agents\scripts\build\build-and-run.ps1 -Tests
     # Builds OpenRA.Test and runs the unit test suite instead of launching the
     # game. Exits 0 if every test passed, non-zero otherwise. This mirrors what
     # CI runs on Windows (make.ps1 tests). Combine with -SkipBuild to reuse the
     # existing bin\OpenRA.Test.dll.
 .EXAMPLE
-    .kiro\scripts\build\build-and-run.ps1 -Tests -Filter ActivityCloneTest
+    .agents\scripts\build\build-and-run.ps1 -Tests -Filter ActivityCloneTest
     # Runs only the tests whose fully-qualified name contains "ActivityCloneTest".
     # -Filter is passed to `dotnet test --filter`, so any NUnit filter expression
     # works, e.g. -Filter "FullyQualifiedName~Fork|FullyQualifiedName~Clone".
 .EXAMPLE
-    .kiro\scripts\build\build-and-run.ps1 -Tests -SkipBuild -Filter MersenneTwister -PerTest
+    .agents\scripts\build\build-and-run.ps1 -Tests -SkipBuild -Filter MersenneTwister -PerTest
     # Reuses the existing test build, runs just the matching tests, and prints
     # each test name and result instead of only the summary.
 #>
@@ -257,8 +257,8 @@ if (Test-GameRunning) {
     Write-Host 'OpenRA is already running.' -ForegroundColor Yellow
     Show-GameStatus
     Write-Host 'Not launching a second instance.' -ForegroundColor Yellow
-    Write-Host 'To stop it:   .kiro\scripts\build\kill-game.ps1' -ForegroundColor Yellow
-    Write-Host 'For status:   .kiro\scripts\build\status-game.ps1' -ForegroundColor Yellow
+    Write-Host 'To stop it:   .agents\scripts\build\kill-game.ps1' -ForegroundColor Yellow
+    Write-Host 'For status:   .agents\scripts\build\status-game.ps1' -ForegroundColor Yellow
     exit 1
 }
 
@@ -282,7 +282,7 @@ if (-not (Test-Path $GameDll)) {
 }
 
 # --- 3. launch ------------------------------------------------------------
-Initialize-KiroDirs
+Initialize-RunDirs
 
 if (-not $GameArgs -or $GameArgs.Count -eq 0) {
     $GameArgs = @('Game.Mod=ra')
@@ -310,7 +310,7 @@ $gameLaunch = Start-Detached -FilePath 'dotnet' `
 
 if (-not $gameLaunch) {
     Write-Host 'ERROR: game process failed to start.' -ForegroundColor Red
-    Write-Host 'Check OpenRA logs via .kiro\scripts\build\status-game.ps1' -ForegroundColor Yellow
+    Write-Host 'Check OpenRA logs via .agents\scripts\build\status-game.ps1' -ForegroundColor Yellow
     exit 1
 }
 $gamePid = $gameLaunch.TargetPid
@@ -319,7 +319,7 @@ $gamePid = $gameLaunch.TargetPid
 Start-Sleep -Milliseconds 400
 if (-not (Get-LiveProcess $gamePid 'dotnet*')) {
     Write-Host 'ERROR: game exited immediately after launch.' -ForegroundColor Red
-    Write-Host 'Check OpenRA logs via .kiro\scripts\build\status-game.ps1' -ForegroundColor Yellow
+    Write-Host 'Check OpenRA logs via .agents\scripts\build\status-game.ps1' -ForegroundColor Yellow
     exit 1
 }
 
@@ -354,6 +354,6 @@ Write-Host "  dumps          : .pyddock\tmp\dumps\"
 Write-Host ''
 Write-Host 'Debug (agent) : run_python -> from openra_debug import session' -ForegroundColor DarkGray
 Write-Host 'Debug (human) : VS Code -> Run and Debug -> "Attach (OpenRA)"' -ForegroundColor DarkGray
-Write-Host 'Status        : .kiro\scripts\build\status-game.ps1' -ForegroundColor DarkGray
-Write-Host 'Stop          : .kiro\scripts\build\kill-game.ps1' -ForegroundColor DarkGray
+Write-Host 'Status        : .agents\scripts\build\status-game.ps1' -ForegroundColor DarkGray
+Write-Host 'Stop          : .agents\scripts\build\kill-game.ps1' -ForegroundColor DarkGray
 exit 0

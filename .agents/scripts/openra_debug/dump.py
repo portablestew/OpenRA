@@ -2,11 +2,11 @@
 """Collect and analyse OpenRA crash dumps via dotnet-dump.
 
   # what happened in the most recent crash
-  .kiro/scripts/openra_debug/dump.py analyze
+  .agents/scripts/openra_debug/dump.py analyze
 
   # snapshot a running game without stopping it for long, then read its stacks
-  .kiro/scripts/openra_debug/dump.py collect
-  .kiro/scripts/openra_debug/dump.py analyze --command "clrstack -all"
+  .agents/scripts/openra_debug/dump.py collect
+  .agents/scripts/openra_debug/dump.py analyze --command "clrstack -all"
 
 analyze reads a crash dump from an already-dead process - the one thing no live
 debugger can do. For a *running* game prefer the openra_debug library
@@ -94,7 +94,7 @@ def resolve_dump(explicit: str | None) -> tuple[Path, int]:
             "  Crash dumps appear there automatically when the game dies with no "
             "debugger attached.\n"
             "  To snapshot a running game instead: "
-            ".kiro\\scripts\\debug\\dump.py collect"
+            ".agents\\scripts\\openra_debug\\dump.py collect"
         )
     return dumps[0], len(dumps)
 
@@ -207,7 +207,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
 
     print("\n== Collected " + "=" * 51)
     describe(out, 0)
-    print(f"\n  Analyse with: .kiro\\scripts\\debug\\dump.py analyze --path {paths.rel(out)}")
+    print(f"\n  Analyse with: .agents\\scripts\\openra_debug\\dump.py analyze --path {paths.rel(out)}")
     return 0
 
 

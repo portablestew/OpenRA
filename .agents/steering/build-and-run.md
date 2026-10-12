@@ -6,41 +6,41 @@ description: How to build, run, check status, and stop the OpenRA game; where it
 
 # Build and run OpenRA
 
-Everything under `.kiro/scripts/` is allow-listed for `run_shell`. `command` is the
+Everything under `.agents/scripts/` is allow-listed for `run_shell`. `command` is the
 script path; `args` are the script's own args. `.ps1` and `.py` are both invoked
 directly (pyddock maps the interpreter).
 
 ## Build only (compile check, don't run anything)
 ```
-run_shell(command=".kiro/scripts/build/build-and-run.ps1", args=["-Build"])
+run_shell(command=".agents/scripts/build/build-and-run.ps1", args=["-Build"])
 ```
 Exit 0 means it compiled.
 
 ## Build and run the game
 ```
-run_shell(command=".kiro/scripts/build/build-and-run.ps1", args=["Game.Mod=ra"])
+run_shell(command=".agents/scripts/build/build-and-run.ps1", args=["Game.Mod=ra"])
 ```
 
 ## Build and run unit tests (not the game)
 ```
-run_shell(command=".kiro/scripts/build/build-and-run.ps1", args=["-Tests"])
+run_shell(command=".agents/scripts/build/build-and-run.ps1", args=["-Tests"])
 ```
 Exit 0 means every test passed. Test-only flags (require `-Tests`):
 - `-Filter <expr>` — run a subset. Bare name = substring match; else NUnit syntax, e.g. `FullyQualifiedName~Clone|TestCategory=Fast`.
 - `-PerTest` — print each test's name and result, not just the summary.
 ```
-run_shell(command=".kiro/scripts/build/build-and-run.ps1",
+run_shell(command=".agents/scripts/build/build-and-run.ps1",
           args=["-Tests", "-Filter", "ActivityCloneTest", "-PerTest"])
 ```
 
 ## Check status (game process, debugger availability, recent logs, crash dumps)
 ```
-run_shell(command=".kiro/scripts/build/status-game.ps1", args=[])
+run_shell(command=".agents/scripts/build/status-game.ps1", args=[])
 ```
 
 ## Stop the game
 ```
-run_shell(command=".kiro/scripts/build/kill-game.ps1", args=[])
+run_shell(command=".agents/scripts/build/kill-game.ps1", args=[])
 ```
 Add `-All` to also sweep stray game/debugger processes. This is also the recovery
 path if a debug session ever leaves the game halted.

@@ -1,5 +1,5 @@
 [imports]
-openra_debug = ".kiro/scripts/openra_debug"
+openra_debug = ".agents/scripts/openra_debug"
 
 [shell.netcoredbg]
 mode = "deny"
@@ -13,7 +13,7 @@ allow = [
 ]
 
 [shell.scripts]
-command = "(\\.[/\\\\])?\\.kiro[/\\\\]scripts[/\\\\].+"
+command = "(\\.[/\\\\])?\\.agents[/\\\\]scripts[/\\\\].+"
 mode = "allow"
 deny = []
 arg_paths = "workspace"

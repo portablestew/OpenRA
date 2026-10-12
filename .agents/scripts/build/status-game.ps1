@@ -9,7 +9,7 @@
     _common.ps1) with `build-and-run.ps1 -Status`.
 
 .EXAMPLE
-    .kiro\scripts\build\status-game.ps1
+    .agents\scripts\build\status-game.ps1
 #>
 [CmdletBinding()]
 param()

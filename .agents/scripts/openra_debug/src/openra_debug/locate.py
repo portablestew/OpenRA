@@ -56,7 +56,7 @@ def read_game_state() -> dict:
     if not paths.GAME_STATE.exists():
         raise LocateError(
             "No tracked game session.\n"
-            "  Start one with: .kiro\\scripts\\build\\build-and-run.ps1 Game.Mod=ra"
+            "  Start one with: .agents\\scripts\\build\\build-and-run.ps1 Game.Mod=ra"
         )
     try:
         return json.loads(paths.GAME_STATE.read_text(encoding="utf-8-sig"))
@@ -211,7 +211,7 @@ def resolve_game_pid() -> int:
     if not pid_alive(pid):
         raise LocateError(
             f"Tracked game (PID {pid}) is not running - the state file is stale.\n"
-            "  Relaunch with: .kiro\\scripts\\build\\build-and-run.ps1 Game.Mod=ra"
+            "  Relaunch with: .agents\\scripts\\build\\build-and-run.ps1 Game.Mod=ra"
         )
 
     # (2) start-time match: defeats PID reuse.
@@ -228,7 +228,7 @@ def resolve_game_pid() -> int:
                 f"    tracked StartTime : {recorded.isoformat()}\n"
                 f"    actual created    : {actual.isoformat()}\n"
                 "  Relaunch the game to refresh the tracked session:\n"
-                "    .kiro\\scripts\\build\\build-and-run.ps1 Game.Mod=ra"
+                "    .agents\\scripts\\build\\build-and-run.ps1 Game.Mod=ra"
             )
 
     # (3) image identity. Two levels, depending on what we can see:
@@ -249,7 +249,7 @@ def resolve_game_pid() -> int:
                 f"    exe : {exe}\n"
                 "  The PID was almost certainly recycled onto an unrelated process. "
                 "Relaunch:\n"
-                "    .kiro\\scripts\\build\\build-and-run.ps1 Game.Mod=ra"
+                "    .agents\\scripts\\build\\build-and-run.ps1 Game.Mod=ra"
             )
 
     if cmdline:
@@ -263,7 +263,7 @@ def resolve_game_pid() -> int:
                 f"    cmdline : {' '.join(cmdline[:6])}\n"
                 f"    expected a reference to {paths.rel(paths.GAME_DLL)}\n"
                 "  The tracked session is stale or the PID was reused. Relaunch:\n"
-                "    .kiro\\scripts\\build\\build-and-run.ps1 Game.Mod=ra"
+                "    .agents\\scripts\\build\\build-and-run.ps1 Game.Mod=ra"
             )
 
     return pid

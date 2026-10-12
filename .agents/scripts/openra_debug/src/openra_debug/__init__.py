@@ -1,7 +1,7 @@
 """Agent-facing live debugger for a running OpenRA game.
 
 Attaches netcoredbg to the game process tracked by
-``.kiro/scripts/build/build-and-run.ps1`` and drives it over its CLI interpreter,
+``.agents/scripts/build/build-and-run.ps1`` and drives it over its CLI interpreter,
 so an agent can set breakpoints, inspect state, and read stacks from inside a
 ``run_python`` snippet:
 
@@ -18,7 +18,7 @@ so an agent can set breakpoints, inspect state, and read stacks from inside a
         dbg.resume()
 
 Design notes that matter for safe use live in the public API below and in
-``.kiro/steering/debug.md``. The short version: the game is *halted* whenever it
+``.agents/steering/debug.md``. The short version: the game is *halted* whenever it
 is stopped at a breakpoint, and a session has a bounded lifetime — do the
 inspection and let the ``with`` block exit promptly.
 
