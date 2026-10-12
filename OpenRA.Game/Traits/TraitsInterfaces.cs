@@ -376,6 +376,23 @@ namespace OpenRA.Traits
 	public interface INotifyGameLoaded { void GameLoaded(World w); }
 	public interface INotifyGameSaved { void GameSaved(World w, bool isAutoSave); }
 
+	/// <summary>
+	/// Implemented by world traits that must re-bind when a forked snapshot is adopted as the live
+	/// game state (see <see cref="WorldForks"/>). Unlike <see cref="IWorldLoaded"/>, which runs once
+	/// against the world being constructed, this runs on the already-initialized clone that is
+	/// replacing the previous live world, so implementations must not repeat one-time side effects
+	/// (palette loading, asset registration) - only swap references that point at the old world or
+	/// rebuild purely visual state such as the widget tree.
+	/// </summary>
+	public interface IWorldAdopted { void WorldAdopted(World w, WorldRenderer wr); }
+
+	/// <summary>
+	/// Implemented by traits that own a live <see cref="OpenRA.Scripting.ScriptContext"/>, so the fork
+	/// window can refuse to snapshot a world whose Lua scripts would end up sharing native interpreter
+	/// state with the fork.
+	/// </summary>
+	public interface IOwnsScriptContext { OpenRA.Scripting.ScriptContext ScriptContext { get; } }
+
 	public interface IGameSaveTraitData
 	{
 		List<MiniYamlNode> IssueTraitData(Actor self);

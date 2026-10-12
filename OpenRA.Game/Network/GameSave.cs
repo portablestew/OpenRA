@@ -86,6 +86,13 @@ namespace OpenRA.Network
 		// Loaded from file and updated during gameplay
 		public int LastOrdersFrame { get; private set; }
 		public int LastSyncFrame { get; private set; }
+
+		/// <summary>
+		/// Depth of the order buffer backing this save, in bytes: every order the server has received
+		/// since the save's baseline. Read live for <see cref="WorldForks"/> snapshot bookkeeping.
+		/// </summary>
+		public long BufferedOrderBytes => ordersStream.Length;
+
 		byte[] lastSyncPacket = [];
 
 		// Loaded from file or set on game start

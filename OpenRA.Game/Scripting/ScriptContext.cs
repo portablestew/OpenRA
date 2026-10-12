@@ -127,6 +127,13 @@ namespace OpenRA.Scripting
 		public World World { get; }
 		public WorldRenderer WorldRenderer { get; }
 
+		/// <summary>
+		/// True if any map scripts were loaded into this context. An unscripted map still gets a context
+		/// (it hosts the global bindings), but its runtime is inert; a scripted one owns live interpreter
+		/// state that a deep clone would silently share with the original.
+		/// </summary>
+		public bool HasScripts { get; }
+
 		readonly MemoryConstrainedLuaRuntime runtime;
 		readonly LuaFunction tick;
 
@@ -147,6 +154,8 @@ namespace OpenRA.Scripting
 
 			World = world;
 			WorldRenderer = worldRenderer;
+			var scriptList = scripts.ToList();
+			HasScripts = scriptList.Count > 0;
 			knownActorCommands = Game.ModData.ObjectCreator
 				.GetTypesImplementing<ScriptActorProperties>()
 				.ToArray();
@@ -216,7 +225,7 @@ namespace OpenRA.Scripting
 
 			try
 			{
-				foreach (var script in scripts)
+				foreach (var script in scriptList)
 					runtime.DoBuffer(world.Map.Open(script).ReadAllText(), script).Dispose();
 			}
 			catch (Exception e)

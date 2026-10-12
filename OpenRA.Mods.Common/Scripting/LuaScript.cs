@@ -28,11 +28,13 @@ namespace OpenRA.Mods.Common.Scripting
 		public override object Create(ActorInitializer init) { return new LuaScript(this); }
 	}
 
-	public class LuaScript : ITick, IWorldLoaded, INotifyActorDisposing
+	public class LuaScript : ITick, IWorldLoaded, INotifyActorDisposing, IOwnsScriptContext
 	{
 		readonly LuaScriptInfo info;
 		public ScriptContext Context;
 		bool disposed;
+
+		ScriptContext IOwnsScriptContext.ScriptContext => Context;
 
 		public LuaScript(LuaScriptInfo info)
 		{

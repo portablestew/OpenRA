@@ -37,6 +37,11 @@ namespace OpenRA
 
 		public void OnKeyInput(KeyInput input)
 		{
+			// The rolling-rewind key is handled above the widget tree so it shadows any widget binding
+			// on the same key (bare F6 = Production06 / StatisticsCombat) while a live game runs.
+			if (WorldForks.HandleKeyInput(input))
+				return;
+
 			Sync.RunUnsynced(world, () => Ui.HandleKeyPress(input));
 		}
 

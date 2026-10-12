@@ -37,7 +37,7 @@ namespace OpenRA.Mods.Common.Traits
 		public override object Create(ActorInitializer init) { return new LoadWidgetAtGameStart(this); }
 	}
 
-	public class LoadWidgetAtGameStart : IWorldLoaded, INotifyGameLoading, INotifyGameLoaded
+	public class LoadWidgetAtGameStart : IWorldLoaded, INotifyGameLoading, INotifyGameLoaded, IWorldAdopted
 	{
 		readonly LoadWidgetAtGameStartInfo info;
 		Widget root;
@@ -77,6 +77,26 @@ namespace OpenRA.Mods.Common.Traits
 			// The Lua API requires the UI to available, so hide it instead
 			if (world.IsLoadingGameSave)
 				root.IsVisible = () => false;
+		}
+
+		/// <summary>
+		/// A forked snapshot is replacing the live world (<see cref="WorldForks"/>): the widget tree
+		/// captured the outgoing world in its logic closures, so rebuild it against the restored world
+		/// exactly as <see cref="IWorldLoaded.WorldLoaded"/> did at game start. The widget name comes
+		/// from this trait's configuration, which is why the reload lives here rather than in the engine.
+		/// </summary>
+		void IWorldAdopted.WorldAdopted(World world, WorldRenderer wr)
+		{
+			if (world.IsHeadless)
+				return;
+
+			if (info.ClearRoot)
+				Ui.ResetAll();
+
+			var widget = world.Type == WorldType.Shellmap ? info.ShellmapRoot :
+				world.Type == WorldType.Editor ? info.EditorRoot : info.IngameRoot;
+
+			root = Game.LoadWidget(world, widget, Ui.Root, []);
 		}
 
 		void INotifyGameLoaded.GameLoaded(World world)

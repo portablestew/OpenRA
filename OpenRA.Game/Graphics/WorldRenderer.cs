@@ -27,17 +27,23 @@ namespace OpenRA.Graphics
 
 		public readonly Size TileSize;
 		public readonly int TileScale;
-		public readonly World World;
+
+		/// <summary>
+		/// The world currently drawn. Mutable so <see cref="WorldForks"/> can adopt a restored fork
+		/// snapshot in place; use <see cref="AdoptWorld"/> rather than assigning it directly.
+		/// </summary>
+		public World World { get; private set; }
+
 		public Viewport Viewport { get; }
-		public readonly ITerrainLighting TerrainLighting;
+		public ITerrainLighting TerrainLighting { get; private set; }
 
 		public event Action PaletteInvalidated = null;
 
 		readonly HashSet<Actor> onScreenActors = [];
 		readonly HardwarePalette palette = new();
 		readonly Dictionary<string, PaletteReference> palettes = [];
-		readonly IRenderTerrain terrainRenderer;
-		readonly Lazy<DebugVisualizations> debugVis;
+		IRenderTerrain terrainRenderer;
+		Lazy<DebugVisualizations> debugVis;
 		readonly Func<string, PaletteReference> createPaletteReference;
 		readonly bool enableDepthBuffer;
 
@@ -46,8 +52,8 @@ namespace OpenRA.Graphics
 		readonly List<IFinalizedRenderable> preparedAnnotationRenderables = [];
 
 		readonly List<IRenderable> renderablesBuffer = [];
-		readonly IRenderer[] renderers;
-		readonly IRenderPostProcessPass[] postProcessPasses;
+		IRenderer[] renderers;
+		IRenderPostProcessPass[] postProcessPasses;
 		long[] renderablesKeysBuffer = [];
 
 		internal WorldRenderer(ModData modData, World world)
@@ -76,6 +82,34 @@ namespace OpenRA.Graphics
 			debugVis = Exts.Lazy(world.WorldActor.TraitOrDefault<DebugVisualizations>);
 
 			postProcessPasses = world.WorldActor.TraitsImplementing<IRenderPostProcessPass>().ToArray();
+		}
+
+		/// <summary>
+		/// Re-binds the renderer to a different world instance: the forked snapshot adopted by
+		/// <see cref="WorldForks"/>. The renderer itself is kept - palettes and the viewport are
+		/// map/player derived, and the fork aliases every OpenRA.Graphics instance (including this
+		/// renderer) rather than cloning it, which is also why render traits on the fork that cached a
+		/// WorldRenderer still point here. Only the per-world, trait-derived caches are re-queried from
+		/// the new world's WorldActor; those cloned traits carry the same initialized state as the
+		/// originals but reference the fork's world. Renderable queues naming the outgoing world's
+		/// actors are dropped.
+		/// </summary>
+		internal void AdoptWorld(World world)
+		{
+			World = world;
+
+			onScreenActors.Clear();
+			preparedRenderables.Clear();
+			preparedOverlayRenderables.Clear();
+			preparedAnnotationRenderables.Clear();
+
+			TerrainLighting = world.WorldActor.TraitOrDefault<ITerrainLighting>();
+			renderers = world.WorldActor.TraitsImplementing<IRenderer>().ToArray();
+			terrainRenderer = world.WorldActor.TraitOrDefault<IRenderTerrain>();
+			debugVis = Exts.Lazy(world.WorldActor.TraitOrDefault<DebugVisualizations>);
+			postProcessPasses = world.WorldActor.TraitsImplementing<IRenderPostProcessPass>().ToArray();
+
+			RefreshPalette();
 		}
 
 		public void BeginFrame()

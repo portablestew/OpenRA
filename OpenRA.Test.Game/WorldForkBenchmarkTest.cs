@@ -9,6 +9,7 @@
  */
 #endregion
 
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -126,6 +127,81 @@ namespace OpenRA.Test
 				$"world from scratch (median {createMedian:F1} ms). Forking must stay the cheap way to reach " +
 				"a state for MCTS rollouts; if this trips, the cloner needs optimizing (compiled per-type " +
 				"copiers) or Create has become cheaper for a reason worth understanding.");
+		}
+
+		/// <summary>
+		/// Retained heap cost of one entry in the rolling rewind window (<see cref="WorldForks"/>): capture
+		/// several snapshots through the real capture path while the parent world is alive, force full
+		/// collections on both sides of the captures, and divide the heap delta by the sample count. The
+		/// assets a snapshot aliases (map, rules, graphics) were already retained before the first capture,
+		/// so the delta is exactly what one window entry costs - the number that decides whether a window
+		/// of 64 fits in memory.
+		/// <para>
+		/// Like the throughput benchmark this reports rather than guards, and it is <c>[Explicit]</c> for
+		/// the same reason. Run it deliberately:
+		/// <code>dotnet test OpenRA.Test.Game --filter "FullyQualifiedName~RollingWindowMemoryFootprint"</code>
+		/// </para>
+		/// </summary>
+		[Test]
+		[Explicit("Memory benchmark: reports the retained bytes per forked snapshot instead of guarding " +
+			"them, and forces full GCs while holding a window's worth of forks. Run deliberately with: " +
+			"dotnet test OpenRA.Test.Game --filter \"FullyQualifiedName~RollingWindowMemoryFootprint\"")]
+		public void RollingWindowMemoryFootprint()
+		{
+			const int Samples = 8;
+
+			// Warm the cloner's reflection paths, the JIT and the file caches without measuring anything.
+			using (var warm = HeadlessWorld.Create(Seed))
+			{
+				SetUpCombat(warm);
+				Assert.That(WorldForks.Capture(warm.OrderManager, 0), Is.True, "The warm-up capture was refused.");
+			}
+
+			WorldForks.Clear(0);
+
+			using var parent = HeadlessWorld.Create(Seed);
+			SetUpCombat(parent);
+
+			try
+			{
+				GC.Collect();
+				GC.WaitForPendingFinalizers();
+				var before = GC.GetTotalMemory(true);
+
+				for (var i = 0; i < Samples; i++)
+					Assert.That(WorldForks.Capture(parent.OrderManager, i * WorldForks.CaptureIntervalMs), Is.True,
+						$"Capture {i} was refused.");
+
+				GC.Collect();
+				GC.WaitForPendingFinalizers();
+				var after = GC.GetTotalMemory(true);
+
+				// The object count comes from the headless fork path over the same state; it sizes the
+				// graph whose retained bytes were just measured.
+				using (parent.Fork()) { }
+				var objects = parent.LastForkClonedObjectCount;
+
+				var perFork = (after - before) / Samples;
+				var window = perFork * WorldForks.Capacity;
+
+				TestContext.Progress.WriteLine(string.Empty);
+				TestContext.Progress.WriteLine($"== Rolling rewind window memory (scenario at tick {TicksBeforeFork}) ==");
+				TestContext.Progress.WriteLine($"  per snapshot:      {perFork:N0} bytes ({(double)perFork / objects:F0} bytes/object, {objects:N} objects)");
+				TestContext.Progress.WriteLine($"  window of {WorldForks.Capacity,2}:       {window:N0} bytes ({window / (1024.0 * 1024.0):F0} MiB)");
+				var scaledLow = 2 * window / (1024.0 * 1024.0);
+				var scaledHigh = 4 * window / (1024.0 * 1024.0);
+				TestContext.Progress.WriteLine($"  x2-x4 map scale:   {scaledLow:F0}-{scaledHigh:F0} MiB " +
+					"(a full skirmish map clones more state)");
+
+				Assert.That(perFork, Is.GreaterThan(0),
+					"The measured heap delta was not positive, so the benchmark captured nothing.");
+				Assert.That(objects, Is.GreaterThan(0),
+					"The fork cloned nothing, so the per-object figures would divide by zero.");
+			}
+			finally
+			{
+				WorldForks.Clear(0);
+			}
 		}
 
 		/// <summary>

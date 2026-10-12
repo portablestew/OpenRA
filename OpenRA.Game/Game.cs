@@ -50,6 +50,12 @@ namespace OpenRA
 		internal static OrderManager OrderManager;
 		static Server.Server server;
 
+		/// <summary>The renderer owning the currently drawn world, for <see cref="WorldForks"/> restore.</summary>
+		internal static WorldRenderer GetActiveWorldRenderer() => worldRenderer;
+
+		/// <summary>The in-process server hosting the current game, if any (null on remote servers).</summary>
+		internal static Server.Server GetActiveServer() => server;
+
 		public static MersenneTwister CosmeticRandom = new(); // not synced
 
 		public static Renderer Renderer;
@@ -91,6 +97,10 @@ namespace OpenRA
 			// Refresh static classes before the game starts.
 			TextNotificationsManager.Clear();
 			UnitOrders.Clear();
+
+			// The previous game's fork snapshots share its Map and order pipeline and must not leak
+			// into the game this connection will host.
+			WorldForks.Clear(RunTime);
 
 			// HACK: The shellmap World and OrderManager are owned by the main menu's WorldRenderer instead of Game.
 			// This allows us to switch Game.OrderManager from the shellmap to the new network connection when joining
@@ -195,6 +205,9 @@ namespace OpenRA
 
 		internal static void StartGame(Map map, WorldType type)
 		{
+			// Any snapshots from the outgoing world are dead with it (they share its Map).
+			WorldForks.Clear(RunTime);
+
 			// Dispose of the old world before creating a new one.
 			worldRenderer?.Dispose();
 
@@ -686,6 +699,10 @@ namespace OpenRA
 			InnerLogicTick(OrderManager);
 			if (worldRenderer != null && OrderManager.World != worldRenderer.World)
 				InnerLogicTick(worldRenderer.World.OrderManager);
+
+			// Between logic ticks (frame-end tasks drained) is the clean fork boundary: capture the
+			// rolling rewind snapshot when one is due.
+			WorldForks.MaybeSnapshot(OrderManager, RunTime);
 		}
 
 		public static void PerformDelayedActions()
@@ -1021,6 +1038,15 @@ namespace OpenRA
 				benchmark.Write();
 				Exit();
 			}
+		}
+
+		/// <summary>
+		/// Re-hooks engine state that was attached to the outgoing live world when <see cref="WorldForks"/>
+		/// swaps in a restored snapshot.
+		/// </summary>
+		internal static void OnWorldReplaced(World newWorld)
+		{
+			newWorld.GameOver += FinishBenchmark;
 		}
 	}
 

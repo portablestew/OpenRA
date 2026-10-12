@@ -176,21 +176,34 @@ namespace OpenRA.Support
 					clonedEntries[i] = (Delegate)CloneDelegate(invocationList[i], invocationList[i].GetType(), trackPaths ? $"{path}[{i}]" : null);
 
 				var combined = Delegate.Combine(clonedEntries);
-				RegisterClone(del, combined);
-				return combined;
+				return RegisterClone(del, combined);
 			}
 
 			// A static method has no target to clone; the delegate is immutable and safe to share.
 			if (del.Target == null)
-			{
-				RegisterClone(del, del);
-				return del;
-			}
+				return RegisterClone(del, del);
 
 			var clonedTarget = CloneValue(del.Target, trackPaths ? $"{path}.Target" : null);
-			var rebuilt = Delegate.CreateDelegate(type, clonedTarget, del.Method);
-			RegisterClone(del, rebuilt);
-			return rebuilt;
+
+			// CreateDelegate(type, firstArgument, method) requires a runtime MethodInfo. A delegate
+			// over a non-runtime method (a DynamicMethod, which is what expression trees compile to)
+			// cannot be rebound onto the cloned target - its body may capture or bypass the original
+			// closure - so record it as uncloneable like any other unsupported value. The retry then
+			// attributes it to its field path and callers refuse the fork instead of crashing.
+			Delegate rebuilt;
+			try
+			{
+				rebuilt = Delegate.CreateDelegate(type, clonedTarget, del.Method);
+			}
+			catch (ArgumentException)
+			{
+				unsupported.Add(trackPaths
+					? $"{path} (delegate over non-runtime method {del.Method.GetType().Name})"
+					: "delegate over a non-runtime method");
+				return null;
+			}
+
+			return RegisterClone(del, rebuilt);
 		}
 
 		object CloneArray(Array array, Type type, string path)
@@ -254,12 +267,22 @@ namespace OpenRA.Support
 
 		/// <summary>
 		/// Records that <paramref name="clone"/> is the copy of <paramref name="original"/> in the clone
-		/// map, so later references resolve to it, and counts it.
+		/// map, so later references resolve to it, and counts it. Returns the registered clone.
+		/// <para>
+		/// A delegate is registered only after its target graph is cloned, so a cycle back through the
+		/// delegate (its closure capturing the object whose field holds it) re-enters before the first
+		/// registration completes. The registration that finishes first wins and later attempts return
+		/// it, so every reference to the original resolves to one clone instead of a split identity.
+		/// </para>
 		/// </summary>
-		void RegisterClone(object original, object clone)
+		object RegisterClone(object original, object clone)
 		{
+			if (clones.TryGetValue(original, out var existing))
+				return existing;
+
 			clones.Add(original, clone);
 			ClonedObjectCount++;
+			return clone;
 		}
 
 		/// <summary>
