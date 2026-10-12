@@ -1,0 +1,37 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "mcp": {
+    "chat-mother-forker": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--refresh",
+        "chat-mother-forker"
+      ],
+      "autoApprove": [
+        "chat_checkpoint",
+        "chat_fork",
+        "chat_search"
+      ],
+      "enabled": true
+    },
+    "pyddock": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--refresh",
+        "pyddock",
+        "serve"
+      ],
+      "autoApprove": [
+        "run_python",
+        "run_shell",
+        "fs_readfile",
+        "fs_stat",
+        "fs_append",
+        "fs_delete",
+        "fs_str_replace"
+      ]
+    }
+  }
+}
