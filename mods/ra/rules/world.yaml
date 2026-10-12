@@ -162,6 +162,7 @@ World:
 	ChatCommands:
 	DevCommands:
 	AgentWorldBridge:
+	AgentWorldEventObserver:
 	DebugVisualizationCommands:
 	PathFinderOverlay:
 	HierarchicalPathFinderOverlay:

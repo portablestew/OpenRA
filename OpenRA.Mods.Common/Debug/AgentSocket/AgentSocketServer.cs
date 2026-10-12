@@ -9,7 +9,9 @@
  */
 #endregion
 
+using System;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -79,19 +81,55 @@ namespace OpenRA.Mods.Common.AgentSocket
 			catch (SocketException) { }
 		}
 
-		/// <summary>Writes the banner, then answers each non-blank input line with exactly one response line.</summary>
+		/// <summary>
+		/// Writes the banner, then answers each non-blank input line with exactly one response line. Event lines for this
+		/// connection's subscriptions come from a second thread, so responses and events share one write lock.
+		/// </summary>
 		public static void Serve(TextReader reader, TextWriter writer)
 		{
-			writer.Write(Banner);
+			var subscriber = new AgentEventSubscriber();
+			var writeGate = new object();
+			var events = new Thread(() => PumpEvents(subscriber, writer, writeGate)) { Name = "Agent socket events", IsBackground = true };
 
-			string line;
-			while ((line = reader.ReadLine()) != null)
+			lock (writeGate)
+				writer.Write(Banner);
+
+			events.Start();
+			try
 			{
-				if (line.Trim().Length == 0)
-					continue;
+				string line;
+				while ((line = reader.ReadLine()) != null)
+				{
+					if (line.Trim().Length == 0)
+						continue;
 
-				writer.WriteLine(AgentSocketCommands.Handle(line));
+					var response = AgentSocketCommands.Handle(line, subscriber);
+					lock (writeGate)
+						writer.WriteLine(response);
+				}
 			}
+			finally
+			{
+				subscriber.Close();
+				events.Join();
+			}
+		}
+
+		/// <summary>Serializes queued events on this connection's thread, so the game thread only enqueues DTOs.</summary>
+		static void PumpEvents(AgentEventSubscriber subscriber, TextWriter writer, object writeGate)
+		{
+			try
+			{
+				while (subscriber.Take() is { } batch)
+				{
+					var lines = batch.Select(AgentSocketCommands.Serialize).ToArray();
+					lock (writeGate)
+						foreach (var line in lines)
+							writer.WriteLine(line);
+				}
+			}
+			catch (IOException) { }
+			catch (ObjectDisposedException) { }
 		}
 	}
 }

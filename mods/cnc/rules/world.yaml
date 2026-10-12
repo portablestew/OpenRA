@@ -153,6 +153,7 @@ World:
 	ChatCommands:
 	DevCommands:
 	AgentWorldBridge:
+	AgentWorldEventObserver:
 	DebugVisualizationCommands:
 	PathFinderOverlay:
 	AutoSave:

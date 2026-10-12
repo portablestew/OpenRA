@@ -153,6 +153,7 @@ Player:
 		InvalidTargets: Structure
 		NotifyInterval: 10000
 	PlayerStatistics:
+	AgentPlayerEventObserver:
 	PlaceBeacon:
 	ProvidesTechPrerequisite@infonly:
 		Name: options-tech-level.infantry-only

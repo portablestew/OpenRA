@@ -142,6 +142,7 @@ Player:
 		ExcludeDamageTypes: SpiceExplosion
 		TextNotification: notification-harvester-under-attack
 	PlayerStatistics:
+	AgentPlayerEventObserver:
 	PlaceBeacon:
 	ProvidesPrerequisite@atreides:
 		Prerequisite: player.atreides

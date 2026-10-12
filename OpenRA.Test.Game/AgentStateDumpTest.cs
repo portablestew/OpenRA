@@ -63,7 +63,7 @@ namespace OpenRA.Test
 		/// <summary>Runs one request line on a worker thread while this thread pumps the game loop, and returns the response line.</summary>
 		internal static JsonDocument Request(string line)
 		{
-			var request = Task.Run(() => (string)Handle.Value.Invoke(null, [line]));
+			var request = Task.Run(() => (string)Handle.Value.Invoke(null, [line, null]));
 
 			var deadline = DateTime.UtcNow.AddSeconds(10);
 			while (!request.IsCompleted && DateTime.UtcNow < deadline)

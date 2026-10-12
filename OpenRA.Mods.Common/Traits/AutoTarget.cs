@@ -13,6 +13,7 @@ using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Linq;
+using OpenRA.Mods.Common.AgentSocket;
 using OpenRA.Primitives;
 using OpenRA.Traits;
 
@@ -163,6 +164,9 @@ namespace OpenRA.Mods.Common.Traits
 			var oldStance = Stance;
 			Stance = PredictedStance = value;
 			ApplyStanceCondition(self);
+
+			if (AgentEvents.HasSubscribers)
+				AgentWorldEventObserver.Stanced(self, oldStance, Stance);
 
 			foreach (var nsc in notifyStanceChanged)
 				nsc.StanceChanged(self, this, oldStance, Stance);

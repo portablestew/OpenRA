@@ -9,6 +9,7 @@
  */
 #endregion
 
+using OpenRA.Mods.Common.AgentSocket;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Primitives;
 using OpenRA.Traits;
@@ -123,6 +124,9 @@ namespace OpenRA.Mods.Common.Activities
 
 				foreach (var t in enterActor.TraitsImplementing<INotifyCapture>())
 					t.OnCapture(enterActor, self, oldOwner, self.Owner, captures.Info.CaptureTypes);
+
+				if (AgentEvents.HasSubscribers)
+					AgentPlayerEventObserver.Captured(enterActor, self, oldOwner, self.Owner);
 
 				if (self.Owner.RelationshipWith(oldOwner).HasRelationship(captures.Info.PlayerExperienceRelationships))
 					self.Owner.PlayerActor.TraitOrDefault<PlayerExperience>()?.GiveExperience(captures.Info.PlayerExperience);

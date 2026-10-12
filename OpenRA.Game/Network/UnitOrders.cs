@@ -9,6 +9,7 @@
  */
 #endregion
 
+using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Linq;
@@ -414,12 +415,21 @@ namespace OpenRA.Network
 			}
 		}
 
+		/// <summary>
+		/// Raised for every order with a live subject, after the validators have run (valid is their result), before the
+		/// order resolves. Null unless the agent socket sets it (D3). Must not change synced state.
+		/// </summary>
+		public static Action<Order, int, bool> OrderResolving;
+
 		static void ResolveOrder(Order order, World world, OrderManager orderManager, int clientId)
 		{
 			if (order.Subject == null || order.Subject.IsDead)
 				return;
 
-			if (world.OrderValidators.All(vo => vo.OrderValidation(orderManager, world, clientId, order)))
+			var valid = world.OrderValidators.All(vo => vo.OrderValidation(orderManager, world, clientId, order));
+			OrderResolving?.Invoke(order, clientId, valid);
+
+			if (valid)
 				order.Subject.ResolveOrder(order);
 		}
 

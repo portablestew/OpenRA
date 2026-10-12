@@ -124,6 +124,7 @@ Player:
 	HarvesterAttackNotifier:
 		TextNotification: notification-harvester-under-attack
 	PlayerStatistics:
+	AgentPlayerEventObserver:
 	PlaceBeacon:
 		Palette: effect
 		IsPlayerPalette: false

@@ -10,6 +10,8 @@
 #endregion
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 
 namespace OpenRA.Mods.Common.AgentSocket
@@ -18,11 +20,21 @@ namespace OpenRA.Mods.Common.AgentSocket
 	{
 		sealed record Envelope(bool Ok, string Cmd, string Error);
 		sealed record PingResponse(bool Ok, string Cmd, int Tick);
+		sealed record SubscriptionV1(bool Ok, string Cmd, string[] Subscribed);
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
-		/// <summary>Parses one request line and returns the single response line for it.</summary>
-		public static string Handle(string line)
+		/// <summary>Serializes a response or event DTO to one JSON line, without the terminator.</summary>
+		public static string Serialize(object value)
+		{
+			return JsonSerializer.Serialize(value, Json);
+		}
+
+		/// <summary>
+		/// Parses one request line and returns the single response line for it. subscriber is the calling connection's
+		/// subscription state; it is null only where no connection exists, and subscribe then returns an error.
+		/// </summary>
+		public static string Handle(string line, AgentEventSubscriber subscriber)
 		{
 			JsonDocument doc;
 			try
@@ -51,6 +63,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 					"maps" => Run(cmd, AgentMaps.List),
 					"load_map" => LoadMap(cmd, doc.RootElement),
 					"order" => IssueOrder(cmd, doc.RootElement),
+					"subscribe" => Subscribe(cmd, doc.RootElement, subscriber),
+					"unsubscribe" => Unsubscribe(cmd, doc.RootElement, subscriber),
 					_ => Error(cmd, "unknown command"),
 				};
 			}
@@ -94,6 +108,70 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return Error(cmd, error);
 
 			return Run(cmd, () => AgentOrder.Issue(AgentWorldBridge.RequireWorld(), request));
+		}
+
+		/// <summary>Adds the named event groups. Runs on the connection thread: the subscription state is not game state.</summary>
+		static string Subscribe(string cmd, JsonElement root, AgentEventSubscriber subscriber)
+		{
+			if (subscriber == null)
+				return Error(cmd, "events need a connection");
+
+			if (!root.TryGetProperty("events", out var element) || element.ValueKind != JsonValueKind.Array || element.GetArrayLength() == 0)
+				return Error(cmd, "events must be a non-empty array of group names");
+
+			if (!TryGetGroups(element, out var names, out var error))
+				return Error(cmd, error);
+
+			if (!TryGetOptionalString(root, "owner", out var owner))
+				return Error(cmd, "owner must be a string");
+
+			return Serialize(new SubscriptionV1(true, cmd, subscriber.Subscribe(names, owner)));
+		}
+
+		/// <summary>Removes the named event groups, or every group with {"all":true}.</summary>
+		static string Unsubscribe(string cmd, JsonElement root, AgentEventSubscriber subscriber)
+		{
+			if (subscriber == null)
+				return Error(cmd, "events need a connection");
+
+			if (root.TryGetProperty("all", out var all) && all.ValueKind == JsonValueKind.True)
+				return Serialize(new SubscriptionV1(true, cmd, subscriber.Unsubscribe(null)));
+
+			if (!root.TryGetProperty("events", out var element) || element.ValueKind != JsonValueKind.Array)
+				return Error(cmd, "unsubscribe needs events, or all:true");
+
+			if (!TryGetGroups(element, out var names, out var error))
+				return Error(cmd, error);
+
+			return Serialize(new SubscriptionV1(true, cmd, subscriber.Unsubscribe(names)));
+		}
+
+		/// <summary>Checks every name before any is applied, so a bad name changes nothing.</summary>
+		static bool TryGetGroups(JsonElement element, out string[] names, out string error)
+		{
+			names = null;
+			error = null;
+			var list = new List<string>();
+			foreach (var item in element.EnumerateArray())
+			{
+				if (item.ValueKind != JsonValueKind.String)
+				{
+					error = "event group names must be strings";
+					return false;
+				}
+
+				var name = item.GetString();
+				if (!AgentEvents.Groups.Contains(name))
+				{
+					error = $"unknown event group '{name}'";
+					return false;
+				}
+
+				list.Add(name);
+			}
+
+			names = list.ToArray();
+			return true;
 		}
 
 		/// <summary>Absent or null is no filter. Any non-string value is rejected.</summary>

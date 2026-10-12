@@ -59,6 +59,7 @@ Player:
 		DisplayOrder: 8
 		Prerequisites: global-C17-stealth
 	PlayerStatistics:
+	AgentPlayerEventObserver:
 	FrozenActorLayer:
 	PlaceBeacon:
 	ProvidesTechPrerequisite@low:

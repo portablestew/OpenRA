@@ -12,6 +12,7 @@
 using System;
 using OpenRA.Graphics;
 using OpenRA.Mods.Common.AgentSocket;
+using OpenRA.Network;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common
@@ -40,6 +41,8 @@ namespace OpenRA.Mods.Common
 		public void WorldLoaded(World w, WorldRenderer wr)
 		{
 			Enabled = Game.Settings.Debug.AgentSocket;
+			AgentEvents.Enabled = Enabled;
+			UnitOrders.OrderResolving = Enabled ? AgentWorldEventObserver.Ordered : null;
 			if (!Enabled)
 				return;
 
