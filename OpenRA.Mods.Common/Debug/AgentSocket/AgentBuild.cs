@@ -43,7 +43,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// Queues an item in the local player's production queue as a real StartProduction order, so it takes the same path as the
 	/// build palette. The item must be buildable now in a queue with a producer: the same BuildableItems set the production
 	/// command reports. Failures are checked in this order: unknown item, no queue, disabled producer, unmet prerequisites,
-	/// unaffordable. Only the first of these applies.
+	/// unaffordable, queue or build limit reached. Only the first of these applies.
 	/// </summary>
 	public static class AgentBuild
 	{
@@ -69,25 +69,29 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var item = request.Item;
 
 			if (!world.Map.Rules.Actors.TryGetValue(item, out var info))
-				throw Refused($"unknown item '{item}'", production);
+				throw Refused(world, $"unknown item '{item}'", production);
 
 			// An actor with no Buildable trait has no queue type, so no queue builds it.
 			var buildable = info.TraitInfoOrDefault<BuildableInfo>();
 			var candidates = production.Queues.Where(q => buildable != null && buildable.Queue.Contains(q.QueueType)).ToArray();
 
 			if (candidates.Length == 0)
-				throw Refused($"no queue builds '{item}': no owned producer makes its queue", production);
+				throw Refused(world, $"no queue builds '{item}': no owned producer makes its queue", production);
 
 			if (candidates.All(q => !q.Enabled))
-				throw Refused($"the producer for '{item}' is disabled", production);
+				throw Refused(world, $"the producer for '{item}' is disabled", production);
 
 			var queue = candidates.FirstOrDefault(q => q.Enabled && q.Options.Any(o => o.Name == item && o.Buildable));
 			if (queue == null)
-				throw Refused($"'{item}' is not buildable now: its prerequisites are not met", production);
+				throw Refused(world, $"'{item}' is not buildable now: its prerequisites are not met", production);
 
 			var option = queue.Options.First(o => o.Name == item);
 			if (!option.CanAfford)
-				throw Refused($"not enough cash for '{item}': it costs {option.Cost}, and you have {production.Cash + production.Resources}", production);
+				throw Refused(world, $"not enough cash for '{item}': it costs {option.Cost}, and you have {production.Cash + production.Resources}", production);
+
+			// The engine silently drops a StartProduction that the queue, item or build limit refuses, so ask the queue first.
+			if (!QueueTrait(world, queue).CanQueue(info, out _, out _))
+				throw Refused(world, $"'{item}' cannot be queued now: a queue, item or build limit is reached", production);
 
 			// The same order-accept check as the order command, so a queue that does not take StartProduction is refused too.
 			var actor = AgentOrder.Accept(world, queue.Actor, "StartProduction");
@@ -96,19 +100,30 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return new BuildV1(true, "build", actor.ActorID, queue.QueueType, item, request.Count, world.WorldTick, world.WorldTick + 1);
 		}
 
-		/// <summary>The items the build command would accept now: buildable and affordable, in production order, without duplicates.</summary>
-		static string[] Available(ProductionV1 production)
+		/// <summary>The items the build command would accept now: buildable, affordable and under the queue's limits, in production order, without duplicates.</summary>
+		static string[] Available(World world, ProductionV1 production)
 		{
-			return production.Queues.SelectMany(q => q.Options)
-				.Where(o => o.Buildable && o.CanAfford)
-				.Select(o => o.Name)
+			return production.Queues.SelectMany(q =>
+				{
+					var trait = QueueTrait(world, q);
+					return q.Options
+						.Where(o => o.Buildable && o.CanAfford && trait.CanQueue(world.Map.Rules.Actors[o.Name], out _, out _))
+						.Select(o => o.Name);
+				})
 				.Distinct()
 				.ToArray();
 		}
 
-		static BuildRefusedException Refused(string error, ProductionV1 production)
+		/// <summary>The ProductionQueue trait behind a queue in the production list.</summary>
+		static ProductionQueue QueueTrait(World world, ProductionQueueV1 queue)
 		{
-			return new BuildRefusedException(error, Available(production));
+			return world.ActorsWithTrait<ProductionQueue>()
+				.First(t => t.Actor.ActorID == queue.Actor && t.Trait.Info.Type == queue.QueueType).Trait;
+		}
+
+		static BuildRefusedException Refused(World world, string error, ProductionV1 production)
+		{
+			return new BuildRefusedException(error, Available(world, production));
 		}
 	}
 }
