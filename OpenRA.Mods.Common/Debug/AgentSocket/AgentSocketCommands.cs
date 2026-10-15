@@ -24,7 +24,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		sealed record HelpV1(bool Ok, string Cmd, string Banner);
 
 		/// <summary>The command names the dispatcher answers. The banner lists the same names, and a headless test keeps them in step.</summary>
-		public static readonly string[] Names = ["ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "subscribe", "unsubscribe"];
+		public static readonly string[] Names = ["ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "production", "subscribe", "unsubscribe"];
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
@@ -69,6 +69,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					"load_map" => LoadMap(cmd, doc.RootElement),
 					"order" => IssueOrder(cmd, doc.RootElement),
 					"orders" => Orders(cmd, doc.RootElement),
+					"production" => Run(cmd, () => AgentProduction.List(AgentWorldBridge.RequireWorld())),
 					"subscribe" => Subscribe(cmd, doc.RootElement, subscriber),
 					"unsubscribe" => Unsubscribe(cmd, doc.RootElement, subscriber),
 					_ => Error(cmd, "unknown command"),

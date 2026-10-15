@@ -28,6 +28,7 @@ namespace OpenRA.Test
 		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "paused", "game_over", "local_player", "players", "units"];
 		static readonly string[] ActorsKeys = ["ok", "cmd", "units"];
 		static readonly string[] MapsKeys = ["ok", "cmd", "maps"];
+		static readonly string[] ProductionKeys = ["ok", "cmd", "player", "cash", "resources", "power", "queues"];
 		static readonly string[] ErrorKeys = ["ok", "cmd", "error"];
 
 		bool savedAgentSocket;
@@ -78,6 +79,9 @@ namespace OpenRA.Test
 
 			using (var maps = AgentStateDumpTest.Request("{\"cmd\":\"maps\"}"))
 				Assert.That(Keys(maps.RootElement), Is.EquivalentTo(MapsKeys));
+
+			using (var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}"))
+				Assert.That(Keys(production.RootElement), Is.EquivalentTo(ProductionKeys));
 		}
 
 		[TestCase(TestName = "Every write command the banner lists answers with the error envelope for an invalid request")]

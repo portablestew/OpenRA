@@ -39,6 +39,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " optional queued (bool)\n                -> tick, min_effect_tick. A name the actor does not accept is refused:"
 				+ " ok:false, error, available (the names it accepts)"),
 			("orders", "actor (uint) -> type, orders (the order names the actor accepts)"),
+			("production", "-> player, cash, resources, power, queues (the local player's queues; see Production keys)"),
 			("subscribe", "events (non-empty array of group names); optional owner (player name) -> subscribed\n"
 				+ "                owner filters only the groups named in this request; omit it to receive every owner's events."
 				+ " A later subscribe replaces a group's filter"),
@@ -83,6 +84,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("Player keys, in state.players:\n");
 			Row(text, "player", 12, Fields(typeof(PlayerV1)));
 			Row(text, "power", 12, $"{Fields(typeof(PowerV1))} (power is null without a PowerManager)");
+
+			text.Append("Production keys, in production.queues:\n");
+			Row(text, "queue", 12, Fields(typeof(ProductionQueueV1)));
+			Row(text, "option", 12, Fields(typeof(ProductionOptionV1)));
+			Row(text, "item", 12, Fields(typeof(ProductionItemV1)));
 
 			text.Append("Notes:\n");
 			text.Append("  After the banner, and after every response, the server sends a lone > line as a prompt: it is your turn.\n");

@@ -85,7 +85,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return new PlayerV1(p.PlayerName, p.Faction?.InternalName,
 				resources?.Cash ?? 0, resources?.Resources ?? 0, resources?.ResourceCapacity ?? 0,
 				p.WinState == WinState.Lost,
-				power == null ? null : new PowerV1(power.PowerProvided, power.PowerDrained, power.ExcessPower, power.PowerState.ToString()));
+				Power(power));
+		}
+
+		/// <summary>The PowerManager totals and state, or null for a player without a PowerManager.</summary>
+		public static PowerV1 Power(PowerManager power)
+		{
+			return power == null ? null : new PowerV1(power.PowerProvided, power.PowerDrained, power.ExcessPower, power.PowerState.ToString());
 		}
 	}
 }
