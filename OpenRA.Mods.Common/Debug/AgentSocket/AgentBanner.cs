@@ -80,6 +80,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			Row(text, "(any)", 12, $"{OverflowEvent}: {Fields(typeof(OverflowV1))}");
 			Row(text, "path", 12, $"metrics (in path events): {Fields(typeof(PathMetrics))}");
 
+			text.Append("Player keys, in state.players:\n");
+			Row(text, "player", 12, Fields(typeof(PlayerV1)));
+			Row(text, "power", 12, $"{Fields(typeof(PowerV1))} (power is null without a PowerManager)");
+
 			text.Append("Notes:\n");
 			text.Append("  After the banner, and after every response, the server sends a lone > line as a prompt: it is your turn.\n");
 			text.Append("  A > line is not a response and not an event; skip lines that are just >.\n");

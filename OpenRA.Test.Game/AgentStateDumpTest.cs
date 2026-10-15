@@ -34,6 +34,9 @@ namespace OpenRA.Test
 	{
 		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "paused", "game_over", "local_player", "players", "units"];
 		static readonly string[] UnitKeys = ["id", "type", "owner", "cell", "pos", "facing", "hp", "max_hp", "damage", "idle", "activity"];
+		static readonly string[] PowerKeys = ["provided", "drained", "excess", "state"];
+
+		sealed record PowerReading(int Provided, int Drained, int Excess, string State);
 
 		bool savedAgentSocket;
 
@@ -95,11 +98,50 @@ namespace OpenRA.Test
 
 			var players = root.GetProperty("players");
 			Assert.That(players.GetArrayLength(), Is.GreaterThan(0));
-			Assert.That(Keys(players[0]), Is.EquivalentTo(["name", "faction", "cash", "resources", "resource_capacity", "dead"]));
+			Assert.That(Keys(players[0]), Is.EquivalentTo(["name", "faction", "cash", "resources", "resource_capacity", "dead", "power"]));
+			Assert.That(Keys(LocalPlayer(root).GetProperty("power")), Is.EquivalentTo(PowerKeys));
 
 			var units = root.GetProperty("units");
 			Assert.That(units.GetArrayLength(), Is.GreaterThan(0), "The starting map has no units to check.");
 			Assert.That(Keys(units[0]), Is.EquivalentTo(UnitKeys));
+		}
+
+		[TestCase(TestName = "A power plant and a consumer move the local player's provided and drained, and excess and state follow")]
+		public void StatePowerFollowsPlantAndConsumer()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var before = Power();
+
+			// POWR provides 100 and PBOX drains 20 (mods/ra/rules/structures.yaml, POWR at :1650 and PBOX at :768).
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+			var withPlant = Power();
+			Assert.That(withPlant.Provided - before.Provided, Is.EqualTo(100));
+			Assert.That(withPlant.Drained, Is.EqualTo(before.Drained));
+
+			hw.CreateActor("pbox", hw.FindClearArea(new CPos(60, 60), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			var withConsumer = Power();
+			Assert.That(withConsumer.Drained - withPlant.Drained, Is.EqualTo(20));
+			Assert.That(withConsumer.Excess, Is.EqualTo(withConsumer.Provided - withConsumer.Drained));
+
+			var expected = withConsumer.Provided >= withConsumer.Drained ? "Normal"
+				: withConsumer.Provided > withConsumer.Drained / 2 ? "Low" : "Critical";
+			Assert.That(withConsumer.State, Is.EqualTo(expected));
+		}
+
+		static JsonElement LocalPlayer(JsonElement root)
+		{
+			var local = root.GetProperty("local_player").GetString();
+			return root.GetProperty("players").EnumerateArray().Single(p => p.GetProperty("name").GetString() == local);
+		}
+
+		static PowerReading Power()
+		{
+			using var state = Request("{\"cmd\":\"state\"}");
+			var power = LocalPlayer(state.RootElement).GetProperty("power");
+			return new PowerReading(power.GetProperty("provided").GetInt32(), power.GetProperty("drained").GetInt32(),
+				power.GetProperty("excess").GetInt32(), power.GetProperty("state").GetString());
 		}
 
 		[TestCase(TestName = "The type filter returns only units of that type, and the owner filter only that owner's units")]

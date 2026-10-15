@@ -12,7 +12,6 @@
 using System;
 using System.Linq;
 using System.Text.Json;
-using OpenRA.Mods.Common.Traits;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.AgentSocket

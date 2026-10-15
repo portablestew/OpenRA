@@ -62,7 +62,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (actor.Info.HasTraitInfo<PlaceBuildingInfo>())
 				names.AddRange(["PlaceBuilding", "LineBuild", "PlacePlug"]);
 
-			return names.Distinct().Where(n => actor.AcceptsOrder(n)).ToArray();
+			return names.Distinct().Where(actor.AcceptsOrder).ToArray();
 		}
 	}
 }

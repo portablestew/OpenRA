@@ -24,8 +24,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	public sealed record MapV1(string Uid, string Title);
 
-	/// <summary>Resources are 0 for a player without a PlayerResources trait. Dead means WinState.Lost.</summary>
-	public sealed record PlayerV1(string Name, string Faction, int Cash, int Resources, int ResourceCapacity, bool Dead);
+	/// <summary>Resources are 0 for a player without a PlayerResources trait. Dead means WinState.Lost. Power is null without a PowerManager trait.</summary>
+	public sealed record PlayerV1(string Name, string Faction, int Cash, int Resources, int ResourceCapacity, bool Dead, PowerV1 Power);
+
+	/// <summary>
+	/// Provided and Drained are the PowerManager totals. Excess is Provided - Drained. State is the PowerState name:
+	/// Normal when Provided is at least Drained, Low when Provided is above half of Drained, otherwise Critical.
+	/// </summary>
+	public sealed record PowerV1(int Provided, int Drained, int Excess, string State);
 
 	/// <summary>
 	/// Cell is the top-left cell. Pos is the centre in world units (1024 per cell). Facing is WAngle.Angle (1024 per turn).
@@ -74,10 +80,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 		static PlayerV1 PlayerState(Player p)
 		{
 			var resources = p.PlayerActor.TraitOrDefault<PlayerResources>();
+			var power = p.PlayerActor.TraitOrDefault<PowerManager>();
 
 			return new PlayerV1(p.PlayerName, p.Faction?.InternalName,
 				resources?.Cash ?? 0, resources?.Resources ?? 0, resources?.ResourceCapacity ?? 0,
-				p.WinState == WinState.Lost);
+				p.WinState == WinState.Lost,
+				power == null ? null : new PowerV1(power.PowerProvided, power.PowerDrained, power.ExcessPower, power.PowerState.ToString()));
 		}
 	}
 }
