@@ -9,8 +9,12 @@
  */
 #endregion
 
+using System.Linq;
+using System.Reflection;
 using NUnit.Framework;
+using OpenRA.Graphics;
 using OpenRA.Network;
+using OpenRA.Traits;
 
 namespace OpenRA.Test
 {
@@ -121,6 +125,51 @@ namespace OpenRA.Test
 			Assert.That(WorldForks.Count, Is.Zero, "Restore did not pop the snapshot.");
 			Assert.That(WorldForks.TryRestore(orderManager, null, 2, out var emptyReason), Is.False);
 			Assert.That(emptyReason, Is.Not.Empty);
+		}
+
+		[TestCase(TestName = "A restored infantry animation draws the restored actor's facing, not the outgoing actor's")]
+		public void RestoredAnimationFollowsRestoredFacing()
+		{
+			using var parent = HeadlessWorld.Create(Seed);
+			SetUpCombat(parent);
+			parent.Tick(TicksBeforeCapture);
+
+			var orderManager = parent.OrderManager;
+			var outgoingActor = parent.World.Actors.Single(a => a.Info.Name == "e1" && a.Owner == parent.LocalPlayer);
+			var actorId = outgoingActor.ActorID;
+			var capturedFacing = outgoingActor.TraitOrDefault<IFacing>().Facing;
+
+			Assert.That(WorldForks.Capture(orderManager, 0), Is.True, "The capture was refused.");
+
+			// Turn the outgoing actor away after the capture: the fork's copy must keep the captured facing.
+			var outgoingFacing = new WAngle((capturedFacing.Angle + 512) % 1024);
+			outgoingActor.TraitOrDefault<IFacing>().Facing = outgoingFacing;
+			var outgoingAnimation = DefaultAnimationOf(outgoingActor);
+
+			Assert.That(WorldForks.TryRestore(orderManager, null, 1, out var restoreFailure), Is.True, restoreFailure);
+
+			var restoredActor = orderManager.World.Actors.Single(a => a.ActorID == actorId);
+			Assert.That(restoredActor.TraitOrDefault<IFacing>().Facing, Is.EqualTo(capturedFacing),
+				"The restored actor did not come back facing its captured direction.");
+
+			var restoredAnimation = DefaultAnimationOf(restoredActor);
+			Assert.That(restoredAnimation, Is.Not.SameAs(outgoingAnimation),
+				"The restored actor's animation is the outgoing world's object, so its facing still reads the outgoing actor.");
+
+			var expected = restoredAnimation.CurrentSequence.GetSprite(restoredAnimation.CurrentFrame, capturedFacing);
+			Assert.That(restoredAnimation.Image, Is.SameAs(expected),
+				"The restored animation drew a facing other than the restored actor's.");
+		}
+
+		/// <summary>
+		/// The default body animation of an infantry actor. WithInfantryBody lives in OpenRA.Mods.Common, which
+		/// this project cannot reference, so it is found by name and its protected field is read by reflection.
+		/// </summary>
+		static Animation DefaultAnimationOf(Actor actor)
+		{
+			var trait = actor.TraitsImplementing<ITick>().First(t => t.GetType().Name == "WithInfantryBody");
+			return (Animation)trait.GetType().GetField("DefaultAnimation", BindingFlags.Instance | BindingFlags.NonPublic)
+				.GetValue(trait);
 		}
 
 		[TestCase(TestName = "The capture timer fires once per interval and restarts after a restore")]

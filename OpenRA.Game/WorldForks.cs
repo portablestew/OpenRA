@@ -464,6 +464,12 @@ namespace OpenRA
 				type.Name.EndsWith("Infos", System.StringComparison.Ordinal))
 				return true;
 
+			// Animations hold closures over their owning actor's traits (facing, offset, disable). Sharing one
+			// would leave those closures reading the outgoing world's actors, so they are cloned and the
+			// closures are remapped onto the fork's actors. The OpenRA.Graphics rule below must not catch them.
+			if (o is Animation or AnimationWithOffset)
+				return false;
+
 			// Sprite/terrain/renderer asset content, including the WorldRenderer itself: the fork keeps
 			// rendering through the same renderer instance, which is what lets AdoptWorld re-bind rather
 			// than rebuild, and what leaves traits that cached a WorldRenderer pointing at the live one.
