@@ -12,6 +12,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using NUnit.Framework;
 using OpenRA.Traits;
@@ -126,6 +127,31 @@ namespace OpenRA.Test
 			// The ack's min_effect_tick is issue tick + 1 (D11), a lower bound. Headless has no frame delay, so the event lands on that tick.
 			Assert.That(Field<int>(order, "EffectTick"), Is.EqualTo(issuedAt + 1));
 			Assert.That(Field<int>(order, "Tick"), Is.EqualTo(Field<int>(order, "EffectTick")));
+		}
+
+		[TestCase(TestName = "A SetUnitStance order with extra_data sets the stance, and the stance event names it")]
+		public void SetUnitStanceOrderSetsTheStance()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+
+			var autoTarget = Trait(unit, "Traits.AutoTarget");
+			var from = Field<object>(autoTarget, "Stance");
+			var to = Enum.GetValues(ModType("Traits.UnitStance")).Cast<object>().First(v => !v.Equals(from));
+
+			Call(subscriber, "Subscribe", new[] { "stance" }, null);
+
+			var value = Convert.ToUInt32(to, CultureInfo.InvariantCulture);
+			var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"SetUnitStance\",\"extra_data\":{value}}}";
+			using (var response = AgentStateDumpTest.Request(line))
+				Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
+
+			hw.Tick(5);
+
+			Assert.That(Field<object>(autoTarget, "Stance"), Is.EqualTo(to));
+			var stances = Drain().Where(e => KindOf(e) == "StanceV1").ToList();
+			Assert.That(stances.Select(s => Field<string>(s, "To")), Does.Contain(to.ToString()));
 		}
 
 		[TestCase(TestName = "SetStance yields one stance event with from and to")]

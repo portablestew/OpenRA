@@ -20,8 +20,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 	// MinEffectTick is a lower bound on the tick the order applies on. Network frame delay can make the real tick later.
 	public sealed record OrderV1(bool Ok, string Cmd, int Tick, int MinEffectTick);
 
-	/// <summary>A parsed order. At most one of Cell, Pos and TargetActor is set. None of them means an untargeted order, such as Stop.</summary>
-	public sealed record OrderRequest(string Order, uint Actor, CPos? Cell, WPos? Pos, uint? TargetActor, bool Queued);
+	/// <summary>
+	/// A parsed order. At most one of Cell, Pos and TargetActor is set. None of them means an untargeted order, such as Stop.
+	/// Item, ExtraData and ExtraLocation become the order's TargetString, ExtraData and ExtraLocation. Null means absent.
+	/// </summary>
+	public sealed record OrderRequest(string Order, uint Actor, CPos? Cell, WPos? Pos, uint? TargetActor, bool Queued,
+		string Item, uint? ExtraData, CPos? ExtraLocation);
 
 	/// <summary>The orders command: the order names an actor accepts. Schema v1, additive.</summary>
 	public sealed record OrdersV1(bool Ok, string Cmd, uint Actor, string Type, string[] Orders);
@@ -103,12 +107,50 @@ namespace OpenRA.Mods.Common.AgentSocket
 				queued = queuedElement.ValueKind == JsonValueKind.True;
 			}
 
-			request = new OrderRequest(orderElement.GetString(), actor, cell, pos, targetActor, queued);
+			string item = null;
+			if (IsPresent(root, "item"))
+			{
+				if (root.GetProperty("item").ValueKind != JsonValueKind.String)
+					return "item must be a string";
+
+				item = root.GetProperty("item").GetString();
+			}
+
+			uint? extraData = null;
+			if (IsPresent(root, "extra_data"))
+			{
+				if (!TryGetUInt(root.GetProperty("extra_data"), out var data))
+					return "extra_data must be an unsigned integer";
+
+				extraData = data;
+			}
+
+			CPos? extraLocation = null;
+			if (IsPresent(root, "extra_location"))
+			{
+				if (!TryGetInts(root.GetProperty("extra_location"), 2, out var l))
+					return "extra_location must be [x, y]";
+
+				extraLocation = new CPos(l[0], l[1]);
+			}
+
+			request = new OrderRequest(orderElement.GetString(), actor, cell, pos, targetActor, queued, item, extraData, extraLocation);
 			return null;
 		}
 
 		/// <summary>Validates the request and issues it. Must run on the game thread: it reads live world state.</summary>
 		public static OrderV1 Issue(World world, OrderRequest request)
+		{
+			world.IssueOrder(ToOrder(world, request));
+
+			return new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
+		}
+
+		/// <summary>
+		/// The Order the request stands for, after the checks Issue makes. It is the object Issue passes to World.IssueOrder.
+		/// Must run on the game thread: it reads live world state.
+		/// </summary>
+		public static Order ToOrder(World world, OrderRequest request)
 		{
 			var actor = Accept(world, request.Actor, request.Order);
 
@@ -127,9 +169,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 			else
 				target = Target.Invalid;
 
-			world.IssueOrder(new Order(request.Order, actor, target, request.Queued));
-
-			return new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
+			return new Order(request.Order, actor, target, request.Queued)
+			{
+				TargetString = request.Item,
+				ExtraData = request.ExtraData ?? 0,
+				ExtraLocation = request.ExtraLocation ?? CPos.Zero,
+			};
 		}
 
 		/// <summary>Lists the order names a local-player actor accepts. Must run on the game thread.</summary>
@@ -190,10 +235,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			values = new int[count];
 			for (var i = 0; i < count; i++)
-				if (!element[i].TryGetInt32(out values[i]))
+				if (element[i].ValueKind != JsonValueKind.Number || !element[i].TryGetInt32(out values[i]))
 					return false;
 
 			return true;
+		}
+
+		/// <summary>True for a JSON number that is a whole, non-negative value. A string, a fraction or a negative number is false.</summary>
+		static bool TryGetUInt(JsonElement element, out uint value)
+		{
+			value = 0;
+			return element.ValueKind == JsonValueKind.Number && element.TryGetUInt32(out value);
 		}
 	}
 }

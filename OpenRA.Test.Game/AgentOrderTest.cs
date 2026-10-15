@@ -23,6 +23,9 @@ namespace OpenRA.Test
 	[TestFixture]
 	sealed class AgentOrderTest
 	{
+		const string StartLine = "{\"cmd\":\"order\",\"actor\":1,\"order\":\"StartProduction\",";
+		const string PlaceLine = "{\"cmd\":\"order\",\"actor\":1,\"order\":\"PlaceBuilding\",";
+
 		bool savedAgentSocket;
 
 		[OneTimeSetUp]
@@ -180,6 +183,39 @@ namespace OpenRA.Test
 			using var response = AgentStateDumpTest.Request("{\"cmd\":\"order\",\"actor\":1,\"order\":\"Move\",\"cell\":[1,1],\"queued\":\"true\"}");
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.False);
 			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo("queued must be a boolean"));
+		}
+
+		[TestCase(TestName = "A StartProduction order with item and extra_data queues that many of the item")]
+		public void StartProductionWithItemQueuesTheCount()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			var line = $"{{\"cmd\":\"order\",\"actor\":{hw.LocalPlayer.PlayerActor.ActorID},\"order\":\"StartProduction\",\"item\":\"powr\",\"extra_data\":2}}";
+			using (var response = AgentStateDumpTest.Request(line))
+				Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
+
+			hw.Tick(5);
+
+			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
+			var queue = AgentProductionTest.QueueOf(production.RootElement, "Building");
+			Assert.That(queue.GetProperty("items").EnumerateArray().Count(i => i.GetProperty("name").GetString() == "powr"), Is.EqualTo(2));
+		}
+
+		[TestCase(StartLine + "\"item\":5}", "item must be a string", TestName = "A non-string item is rejected")]
+		[TestCase(StartLine + "\"extra_data\":-1}", "extra_data must be an unsigned integer", TestName = "A negative extra_data is rejected")]
+		[TestCase(StartLine + "\"extra_data\":1.5}", "extra_data must be an unsigned integer", TestName = "A fractional extra_data is rejected")]
+		[TestCase(StartLine + "\"extra_data\":\"2\"}", "extra_data must be an unsigned integer", TestName = "A string extra_data is rejected")]
+		[TestCase(PlaceLine + "\"extra_location\":[1]}", "extra_location must be [x, y]", TestName = "An extra_location with one value is rejected")]
+		[TestCase(PlaceLine + "\"extra_location\":[1,\"x\"]}", "extra_location must be [x, y]", TestName = "An extra_location with a non-integer is rejected")]
+		[TestCase(PlaceLine + "\"extra_location\":\"1,2\"}", "extra_location must be [x, y]", TestName = "An extra_location that is not an array is rejected")]
+		public void MalformedExtraFieldsAreRejected(string line, string error)
+		{
+			using var response = AgentStateDumpTest.Request(line);
+			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.False);
+			Assert.That(response.RootElement.GetProperty("cmd").GetString(), Is.EqualTo("order"));
+			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo(error));
 		}
 
 		static IEnumerable<string> Keys(JsonElement element)
