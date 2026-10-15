@@ -34,7 +34,7 @@ namespace OpenRA.Mods.D2k.Traits
 		public override object Create(ActorInitializer init) { return new BuildableTerrainLayer(init.Self, this); }
 	}
 
-	public class BuildableTerrainLayer : IRenderOverlay, IWorldLoaded, ITickRender, IRadarTerrainLayer, INotifyActorDisposing
+	public class BuildableTerrainLayer : IRenderOverlay, IWorldLoaded, IWorldAdopted, ITickRender, IRadarTerrainLayer, INotifyActorDisposing
 	{
 		readonly BuildableTerrainLayerInfo info;
 		readonly Dictionary<CPos, TerrainTile?> dirty = [];
@@ -42,6 +42,10 @@ namespace OpenRA.Mods.D2k.Traits
 		readonly World world;
 		readonly CellLayer<int> strength;
 		readonly CellLayer<(Color, Color)> radarColor;
+
+		// The tile each cell was last given by AddTile, or absent when it is cleared. The drawn sprite is this tile,
+		// which CustomTerrain does not record, so a restore needs it to redraw the cell.
+		readonly Dictionary<CPos, TerrainTile> placed = [];
 
 		TerrainSpriteLayer render;
 		PaletteReference paletteReference;
@@ -81,6 +85,7 @@ namespace OpenRA.Mods.D2k.Traits
 			strength[uv] = info.MaxStrength;
 			radarColor[uv] = (tileInfo.GetColor(world.LocalRandom), tileInfo.GetColor(world.LocalRandom));
 			dirty[cell] = tile;
+			placed[cell] = tile;
 		}
 
 		public void HitTile(CPos cell, int damage)
@@ -107,6 +112,20 @@ namespace OpenRA.Mods.D2k.Traits
 			strength[cell] = 0;
 			radarColor[uv] = (Color.Transparent, Color.Transparent);
 			dirty[cell] = null;
+			placed.Remove(cell);
+		}
+
+		void IWorldAdopted.WorldAdopted(World w, WorldRenderer wr)
+		{
+			// No layer was built headlessly; see WorldLoaded.
+			if (world.IsHeadless)
+				return;
+
+			// The render layer is shared with the outgoing world, which may have added or removed tiles after the
+			// capture that this fork did not make. Queue every cell from this fork's own record: its tile if placed,
+			// otherwise clear. TickRender applies them.
+			foreach (var cell in w.Map.AllCells)
+				dirty[cell] = placed.TryGetValue(cell, out var tile) ? tile : null;
 		}
 
 		void ITickRender.TickRender(WorldRenderer wr, Actor self)

@@ -60,7 +60,7 @@ namespace OpenRA.Mods.Common.Traits
 		public override object Create(ActorInitializer init) { return new TerrainRenderer(init.World); }
 	}
 
-	public sealed class TerrainRenderer : IRenderTerrain, IWorldLoaded, INotifyActorDisposing, ITiledTerrainRenderer
+	public sealed class TerrainRenderer : IRenderTerrain, IWorldLoaded, IWorldAdopted, INotifyActorDisposing, ITiledTerrainRenderer
 	{
 		readonly Map map;
 		readonly bool headless;
@@ -100,6 +100,18 @@ namespace OpenRA.Mods.Common.Traits
 
 			map.Tiles.CellEntryChanged += UpdateCell;
 			map.Height.CellEntryChanged += UpdateCell;
+		}
+
+		void IWorldAdopted.WorldAdopted(World w, WorldRenderer wr)
+		{
+			// No sprite layer was built headlessly; see WorldLoaded.
+			if (headless)
+				return;
+
+			// The sprite layer is shared with the outgoing world, which may have changed terrain after the capture
+			// that this fork did not make. Redraw every cell from the restored map, as WorldLoaded does.
+			foreach (var cell in map.AllCells)
+				UpdateCell(cell);
 		}
 
 		public void UpdateCell(CPos cell)

@@ -419,9 +419,10 @@ namespace OpenRA
 
 		/// <summary>
 		/// The <see cref="ObjectGraphCloner"/> share-instance policy for live-game snapshots: everything
-		/// the headless MCTS fork aliases (immutable rules, map, mod services, graphics assets) plus the
-		/// live order pipeline. Sharing the <see cref="OrderManager"/> is what makes restore a pure
-		/// re-point: the fork reads the same frame counters, lobby and connection the game continues on,
+		/// the headless MCTS fork aliases (immutable rules, the map's process-wide parts, mod services,
+		/// graphics assets) plus the live order pipeline. Sharing the <see cref="OrderManager"/> is what
+		/// makes restore a pure re-point: the fork reads the same frame counters, lobby and connection the
+		/// game continues on,
 		/// and <see cref="World.IsLoadingGameSave"/> stays consistent with the live pipeline instead of
 		/// freezing at the snapshot's frame. It also stops the traversal at the network connection, so no
 		/// socket, thread or recorder is ever cloned.
@@ -439,11 +440,19 @@ namespace OpenRA
 				// cloning a Type would silently empty every type-keyed lookup.
 				case System.Reflection.MemberInfo:
 
-				// The map and mod-wide services: read-only after load, shared by every world.
-				case Map:
+				// The mod-wide services: read-only after load, shared by every world.
 				case ModData:
 				case Ruleset:
 				case SequenceSet:
+
+				// The process-wide parts of the map. The map itself is not shared: its terrain layers, caches and
+				// change subscribers are cloned, so a fork's terrain writes reach the fork's own Locomotor and
+				// path finder, and the outgoing world's writes stay out of the fork. The grid is a mod-wide
+				// singleton, the package holds open archive handles, and the yaml definitions are read-only after load.
+				case MapGrid:
+				case FileSystem.IReadOnlyPackage:
+				case MiniYaml:
+				case MiniYamlNode:
 
 				// The live order pipeline and its connection (see the method docs).
 				case OrderManager:

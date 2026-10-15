@@ -166,7 +166,7 @@ namespace OpenRA.Test
 		/// Headlessly they build no layers, so the pixels cannot be checked here; this proves the restore reaches
 		/// each one's <see cref="IWorldAdopted"/> hook, which is where they mark their cells for redraw.
 		/// </summary>
-		static readonly string[] SharedLayerRenderers = ["ShroudRenderer", "ResourceRenderer", "SmudgeLayer"];
+		static readonly string[] SharedLayerRenderers = ["ShroudRenderer", "ResourceRenderer", "SmudgeLayer", "TerrainRenderer"];
 
 		[TestCase(TestName = "A restored world's shared-layer renderers are told to adopt it")]
 		public void SharedLayerRenderersAdoptRestoredWorld()
