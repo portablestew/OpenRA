@@ -124,7 +124,7 @@ namespace OpenRA.Test
 			Assert.That(available, Does.Not.Contain("proc"));
 		}
 
-		[TestCase(TestName = "An item with no queue that builds it is refused, and nothing is queued")]
+		[TestCase(TestName = "An item with no queue that builds it is refused, and the available items are listed")]
 		public void ItemWithNoQueueIsRefused()
 		{
 			using var hw = HeadlessWorld.Create(1);
