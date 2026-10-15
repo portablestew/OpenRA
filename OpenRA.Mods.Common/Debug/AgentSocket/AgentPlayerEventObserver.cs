@@ -18,12 +18,17 @@ namespace OpenRA.Mods.Common
 	public class AgentPlayerEventObserverInfo : TraitInfo<AgentPlayerEventObserver> { }
 
 	/// <summary>
-	/// Raises damaged and killed events for one player's units (D2, P4). Health.InflictDamage notifies the owner's
-	/// PlayerActor, so this trait sees each hit once, on the owner's side. Registered in the Player: block only.
-	/// captured is raised from CaptureActor, because INotifyCapture is not dispatched to player actors.
+	/// Raises damaged and killed events for one player's units (D2, P4), and the player-level placed, power and
+	/// defeated/game_over events. Health.InflictDamage notifies the owner's PlayerActor, so this trait sees each hit once,
+	/// on the owner's side. Registered in the Player: block only. captured is raised from CaptureActor, because
+	/// INotifyCapture is not dispatched to player actors. placed comes from PlaceBuilding, which notifies the player actor.
+	/// The power notify carries no state, so this trait keeps the low-power state it last reported.
 	/// </summary>
-	public sealed class AgentPlayerEventObserver : INotifyDamage, INotifyKilled
+	public sealed class AgentPlayerEventObserver : INotifyDamage, INotifyKilled, INotifyBuildingPlaced, INotifyPowerLevelChanged,
+		INotifyWinStateChanged
 	{
+		bool powerLow;
+
 		void INotifyDamage.Damaged(Actor self, AttackInfo e)
 		{
 			if (!AgentEvents.HasSubscribers)
@@ -44,6 +49,52 @@ namespace OpenRA.Mods.Common
 			AgentEvents.Raise("killed", self.Owner.PlayerName, new KilledV1("killed", self.World.WorldTick, self.ActorID,
 				self.Info.Name, self.Owner.PlayerName, e.Attacker?.ActorID, e.Attacker?.Info.Name, e.Attacker?.Owner.PlayerName,
 				cost));
+		}
+
+		void INotifyBuildingPlaced.BuildingPlaced(Actor self, Actor building)
+		{
+			if (!AgentEvents.HasSubscribers)
+				return;
+
+			AgentEvents.Raise("production", building.Owner.PlayerName, new PlacedV1("placed", building.World.WorldTick,
+				building.ActorID, building.Info.Name, building.Owner.PlayerName, [building.Location.X, building.Location.Y]));
+		}
+
+		void INotifyPowerLevelChanged.PowerLevelChanged(Actor self)
+		{
+			// The notify fires on each flip of low power, and once when the world is created. It is reported only when the
+			// low state differs from the last one, and the state is kept even with no subscriber, so a later subscriber
+			// sees the correct transition.
+			var power = self.TraitOrDefault<PowerManager>();
+			if (power == null)
+				return;
+
+			var low = power.PowerState != PowerState.Normal;
+			if (low == powerLow)
+				return;
+
+			powerLow = low;
+			if (!AgentEvents.HasSubscribers)
+				return;
+
+			AgentEvents.Raise("power", self.Owner.PlayerName, new PowerEventV1(low ? "power_low" : "power_restored", self.World.WorldTick,
+				self.Owner.PlayerName, power.PowerProvided, power.PowerDrained, power.ExcessPower, power.PowerState.ToString()));
+		}
+
+		void INotifyWinStateChanged.OnPlayerWon(Player player)
+		{
+			if (!AgentEvents.HasSubscribers)
+				return;
+
+			AgentEvents.Raise("player", player.PlayerName, new GameOverV1("game_over", player.World.WorldTick, player.PlayerName));
+		}
+
+		void INotifyWinStateChanged.OnPlayerLost(Player player)
+		{
+			if (!AgentEvents.HasSubscribers)
+				return;
+
+			AgentEvents.Raise("player", player.PlayerName, new DefeatedV1("defeated", player.World.WorldTick, player.PlayerName));
 		}
 
 		/// <summary>Raises a captured event for an actor that changed owner. Called from CaptureActor behind the same guard.</summary>

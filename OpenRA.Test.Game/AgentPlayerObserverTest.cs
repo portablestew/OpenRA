@@ -78,9 +78,42 @@ namespace OpenRA.Test
 		/// <summary>Takes every queued event. Fails rather than blocking when nothing was delivered.</summary>
 		List<object> Drain()
 		{
-			var pending = (int)subscriber.GetType().GetProperty("Pending").GetValue(subscriber);
-			Assert.That(pending, Is.GreaterThan(0), "No events reached the subscriber.");
+			Assert.That(Pending(), Is.GreaterThan(0), "No events reached the subscriber.");
 			return ((IList)Call(subscriber, "Take")).Cast<object>().ToList();
+		}
+
+		int Pending()
+		{
+			return (int)subscriber.GetType().GetProperty("Pending").GetValue(subscriber);
+		}
+
+		/// <summary>Runs body with Debug.AgentSocket on, which the socket commands need. It is read at world load, so body creates the world.</summary>
+		static void WithAgentSocket(Action body)
+		{
+			var saved = Game.Settings.Debug.AgentSocket;
+			Game.Settings.Debug.AgentSocket = true;
+			try
+			{
+				body();
+			}
+			finally
+			{
+				Game.Settings.Debug.AgentSocket = saved;
+			}
+		}
+
+		/// <summary>The trait of a mod type on an actor. The test project cannot name mod types, so the trait is found by name.</summary>
+		static object TraitNamed(Actor actor, string name)
+		{
+			var method = typeof(Actor).GetMethods().Single(m => m.Name == "TraitOrDefault" && m.IsGenericMethodDefinition);
+			return method.MakeGenericMethod(ModType(name)).Invoke(actor, null);
+		}
+
+		/// <summary>The local player's power state, read through the production command.</summary>
+		static string PowerStateOnSocket()
+		{
+			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
+			return production.RootElement.GetProperty("power").GetProperty("state").GetString();
 		}
 
 		static T Field<T>(object target, string name)
@@ -191,6 +224,127 @@ namespace OpenRA.Test
 			Assert.That(Field<string>(capture, "From"), Is.EqualTo(w.EnemyPlayer.PlayerName));
 			Assert.That(Field<string>(capture, "To"), Is.EqualTo(w.LocalPlayer.PlayerName));
 			Assert.That(Field<uint>(capture, "Captor"), Is.EqualTo(captor.ActorID));
+		}
+
+		[TestCase(TestName = "A placed building raises a placed event on the production group, with its id, type and cell")]
+		public void PlacedRaisesPlacedEvent()
+		{
+			// The place command issues the PlaceBuilding order, which notifies the player actor, so this runs the real placement.
+			WithAgentSocket(() =>
+			{
+				using var w = HeadlessWorld.Create(1);
+				var fact = w.CreateActor("fact", w.FindClearArea(new CPos(50, 50), 3, 3), w.LocalPlayer);
+				w.Tick(1);
+				AgentPlaceTest.QueueAndFinishPowr(w);
+
+				EnableHub();
+				Call(subscriber, "Subscribe", new[] { "production" }, null);
+
+				var cell = w.FindClearArea(fact.Location, 2, 2, 6);
+				using (var response = AgentStateDumpTest.Request($"{{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[{cell.X},{cell.Y}]}}"))
+					Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True, "The place command was refused");
+
+				Assert.That(w.TickUntil(() => Pending() > 0, 20), Is.Not.Null, "No placed event was raised.");
+
+				var building = w.World.ActorMap.GetActorsAt(cell).Single(a => a.Info.Name == "powr");
+				var placed = Drain().Where(e => KindOf(e) == "PlacedV1").ToList();
+				Assert.That(placed, Has.Count.EqualTo(1), "Expected exactly one placed event.");
+
+				Assert.That(Field<string>(placed[0], "Event"), Is.EqualTo("placed"));
+				Assert.That(Field<uint>(placed[0], "Actor"), Is.EqualTo(building.ActorID));
+				Assert.That(Field<string>(placed[0], "Type"), Is.EqualTo("powr"));
+				Assert.That(Field<string>(placed[0], "Owner"), Is.EqualTo(w.LocalPlayer.PlayerName));
+				Assert.That(Field<int[]>(placed[0], "Cell"), Is.EqualTo(new[] { cell.X, cell.Y }));
+			});
+		}
+
+		[TestCase(TestName = "Power going short raises power_low, and a provider covering the draw raises power_restored")]
+		public void PowerShortfallAndRestoreRaisePowerEvents()
+		{
+			WithAgentSocket(() =>
+			{
+				using var w = HeadlessWorld.Create(0xC0FFEE);
+				w.Tick(SettleTicks);
+				Assert.That(PowerStateOnSocket(), Is.EqualTo("Normal"), "The test world must start with enough power.");
+
+				EnableHub();
+				Call(subscriber, "Subscribe", new[] { "power" }, null);
+
+				// TSLA draws power and nothing provides any yet, so the state drops below Normal.
+				w.CreateActor("tsla", w.FindClearArea(new CPos(50, 50), 2, 2), w.LocalPlayer);
+				Assert.That(w.TickUntil(() => Pending() > 0, 20), Is.Not.Null, "No power event was raised for the shortfall.");
+
+				var low = Drain();
+				Assert.That(low, Has.Count.EqualTo(1), "Expected exactly one power event for the shortfall.");
+				Assert.That(KindOf(low[0]), Is.EqualTo("PowerEventV1"));
+				Assert.That(Field<string>(low[0], "Event"), Is.EqualTo("power_low"));
+				Assert.That(Field<string>(low[0], "Owner"), Is.EqualTo(w.LocalPlayer.PlayerName));
+				Assert.That(Field<int>(low[0], "Drained"), Is.GreaterThan(0));
+				Assert.That(Field<int>(low[0], "Excess"), Is.EqualTo(Field<int>(low[0], "Provided") - Field<int>(low[0], "Drained")));
+				Assert.That(Field<int>(low[0], "Excess"), Is.LessThan(0));
+				Assert.That(Field<string>(low[0], "State"), Is.Not.EqualTo("Normal"));
+				Assert.That(Field<string>(low[0], "State"), Is.EqualTo(PowerStateOnSocket()), "The event disagrees with the socket's power state");
+
+				w.CreateActor("powr", w.FindClearArea(new CPos(50, 50), 2, 2), w.LocalPlayer);
+				Assert.That(w.TickUntil(() => Pending() > 0, 20), Is.Not.Null, "No power event was raised for the restored power.");
+
+				var restored = Drain();
+				Assert.That(restored, Has.Count.EqualTo(1), "Expected exactly one power event for the restored power.");
+				Assert.That(Field<string>(restored[0], "Event"), Is.EqualTo("power_restored"));
+				Assert.That(Field<string>(restored[0], "Owner"), Is.EqualTo(w.LocalPlayer.PlayerName));
+				Assert.That(Field<int>(restored[0], "Excess"), Is.GreaterThanOrEqualTo(0));
+				Assert.That(Field<string>(restored[0], "State"), Is.EqualTo("Normal"));
+			});
+		}
+
+		[TestCase(TestName = "A failed required objective raises a defeated event for the player that lost")]
+		public void FailedObjectiveRaisesDefeated()
+		{
+			using var w = HeadlessWorld.Create(0xC0FFEE);
+			w.Tick(SettleTicks);
+
+			EnableHub();
+			Call(subscriber, "Subscribe", new[] { "player" }, null);
+
+			// MarkFailed on a required objective is the path the conquest rule takes when a player has no units left.
+			var objectives = TraitNamed(w.LocalPlayer.PlayerActor, "Traits.MissionObjectives");
+			var id = (int)Call(objectives, "Add", w.LocalPlayer, "Test objective", "Primary", true, true);
+			Call(objectives, "MarkFailed", w.LocalPlayer, id);
+
+			var defeated = Drain().Where(e => KindOf(e) == "DefeatedV1" && Field<string>(e, "Owner") == w.LocalPlayer.PlayerName).ToList();
+			Assert.That(defeated, Has.Count.EqualTo(1), "Expected exactly one defeated event for the local player.");
+			Assert.That(Field<string>(defeated[0], "Event"), Is.EqualTo("defeated"));
+			Assert.That(Field<int>(defeated[0], "Tick"), Is.LessThanOrEqualTo(w.World.WorldTick));
+		}
+
+		[TestCase(TestName = "Completing every required objective raises a game_over event that names the winner")]
+		public void CompletedObjectivesRaiseGameOver()
+		{
+			using var w = HeadlessWorld.Create(0xC0FFEE);
+			w.Tick(SettleTicks);
+
+			EnableHub();
+			Call(subscriber, "Subscribe", new[] { "player" }, null);
+
+			// Conquest added its required Primary objective on the first tick. A win needs every required objective complete,
+			// and the last MarkCompleted raises OnPlayerWon.
+			var objectives = TraitNamed(w.LocalPlayer.PlayerActor, "Traits.MissionObjectives");
+			var list = (IList)objectives.GetType().GetProperty("Objectives").GetValue(objectives);
+			Assert.That(list.Count, Is.GreaterThan(0), "No objective was added.");
+
+			for (var i = 0; i < list.Count; i++)
+			{
+				var objective = list[i];
+				var required = (bool)objective.GetType().GetField("Required").GetValue(objective);
+				var state = objective.GetType().GetField("State").GetValue(objective).ToString();
+				if (required && state == "Incomplete")
+					Call(objectives, "MarkCompleted", w.LocalPlayer, i);
+			}
+
+			var wins = Drain().Where(e => KindOf(e) == "GameOverV1").ToList();
+			Assert.That(wins, Has.Count.EqualTo(1), "Expected exactly one game_over event.");
+			Assert.That(Field<string>(wins[0], "Event"), Is.EqualTo("game_over"));
+			Assert.That(Field<string>(wins[0], "Winner"), Is.EqualTo(w.LocalPlayer.PlayerName));
 		}
 	}
 }

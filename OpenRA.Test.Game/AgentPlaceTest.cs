@@ -185,7 +185,7 @@ namespace OpenRA.Test
 		}
 
 		/// <summary>Queues one POWR through the build command and ticks until its item is finished.</summary>
-		static void QueueAndFinishPowr(HeadlessWorld hw)
+		internal static void QueueAndFinishPowr(HeadlessWorld hw)
 		{
 			using (var build = AgentStateDumpTest.Request("{\"cmd\":\"build\",\"item\":\"powr\"}"))
 				Assert.That(build.RootElement.GetProperty("ok").GetBoolean(), Is.True, "The POWR build was refused");

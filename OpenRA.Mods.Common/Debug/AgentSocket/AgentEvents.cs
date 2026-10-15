@@ -42,6 +42,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record MoveResultV1(string Event, int Tick, uint Actor, string Type, string Owner, int[] From, int[] To,
 		string Outcome, int Ticks, int RemainingCells);
 
+	public sealed record PlacedV1(string Event, int Tick, uint Actor, string Type, string Owner, int[] Cell);
+
+	// Owner is the player whose power changed. State is the PowerState name: Normal, Low or Critical.
+	public sealed record PowerEventV1(string Event, int Tick, string Owner, int Provided, int Drained, int Excess, string State);
+
+	public sealed record DefeatedV1(string Event, int Tick, string Owner);
+
+	public sealed record GameOverV1(string Event, int Tick, string Winner);
+
 	/// <summary>
 	/// Static event hub (D12, P4). Engine hooks call Raise. With no subscriber, or with the socket disabled, Raise returns
 	/// after one volatile read, so an unsubscribed game pays almost nothing. Subscriptions are per connection and are
@@ -50,7 +59,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public static class AgentEvents
 	{
 		/// <summary>The v1 event groups, in the canonical order that subscribe echoes.</summary>
-		public static readonly string[] Groups = ["damage", "killed", "captured", "orders", "production", "stance", "path", "move_result"];
+		public static readonly string[] Groups = ["damage", "killed", "captured", "orders", "production", "stance", "path", "move_result",
+			"power", "player"];
 
 		static volatile bool enabled;
 		static volatile int subscriberCount;

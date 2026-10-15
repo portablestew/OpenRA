@@ -61,9 +61,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("captured", "captured", typeof(CapturedV1)),
 			("orders", "order", typeof(OrderEventV1)),
 			("production", "produced", typeof(ProducedV1)),
+			("production", "placed", typeof(PlacedV1)),
 			("stance", "stance", typeof(StanceV1)),
 			("path", "path", typeof(PathV1)),
 			("move_result", "move_result", typeof(MoveResultV1)),
+			("power", "power_low", typeof(PowerEventV1)),
+			("power", "power_restored", typeof(PowerEventV1)),
+			("player", "defeated", typeof(DefeatedV1)),
+			("player", "game_over", typeof(GameOverV1)),
 		];
 
 		/// <summary>The command names, in banner order.</summary>
