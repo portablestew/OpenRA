@@ -27,18 +27,44 @@ namespace OpenRA.Test
 			AgentSocketServer.Serve(reader, writer);
 			var output = writer.ToString();
 			Assert.That(output.StartsWith(AgentSocketServer.Banner, StringComparison.Ordinal), Is.True);
-			return output[AgentSocketServer.Banner.Length..].Split('\n', StringSplitOptions.RemoveEmptyEntries);
+			return Lines(output[AgentSocketServer.Banner.Length..]);
 		}
 
-		[TestCase(TestName = "The banner is sent before any response, and ends with a blank line")]
+		/// <summary>The non-empty lines of a served tail, with the lone "&gt;" prompt lines removed.</summary>
+		static string[] Lines(string tail)
+		{
+			return tail.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+				.Where(l => l != AgentSocketServer.Prompt)
+				.ToArray();
+		}
+
+		[TestCase(TestName = "The banner is sent first, then the prompt, and the banner ends with a blank line")]
 		public void BannerIsSentFirst()
 		{
 			using var reader = new StringReader("");
 			using var writer = new StringWriter { NewLine = "\n" };
 			AgentSocketServer.Serve(reader, writer);
 
-			Assert.That(writer.ToString(), Is.EqualTo(AgentSocketServer.Banner));
+			Assert.That(writer.ToString(), Is.EqualTo(AgentSocketServer.Banner + AgentSocketServer.Prompt + "\n"));
 			Assert.That(AgentSocketServer.Banner.EndsWith("\n\n", StringComparison.Ordinal), Is.True);
+		}
+
+		[TestCase(TestName = "Every response line is followed by a lone > prompt line")]
+		public void PromptAfterEachResponse()
+		{
+			using var reader = new StringReader("{\"cmd\":\"nope\"}\n{\"x\":1}\n");
+			using var writer = new StringWriter { NewLine = "\n" };
+			AgentSocketServer.Serve(reader, writer);
+
+			var tail = writer.ToString()[AgentSocketServer.Banner.Length..];
+			Assert.That(tail.Split('\n', StringSplitOptions.RemoveEmptyEntries), Is.EqualTo(new[]
+			{
+				AgentSocketServer.Prompt,
+				"{\"ok\":false,\"cmd\":\"nope\",\"error\":\"unknown command\"}",
+				AgentSocketServer.Prompt,
+				"{\"ok\":false,\"cmd\":null,\"error\":\"missing cmd\"}",
+				AgentSocketServer.Prompt,
+			}));
 		}
 
 		[TestCase(TestName = "Each non-blank line gets exactly one response; blank lines get none; CRLF is accepted")]

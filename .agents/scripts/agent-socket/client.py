@@ -27,10 +27,15 @@ from collections import Counter
 
 
 def read_line(f):
-    line = f.readline()
-    if not line:
-        raise ConnectionError("connection closed by the game")
-    return line.decode("utf-8")
+    while True:
+        line = f.readline()
+        if not line:
+            raise ConnectionError("connection closed by the game")
+        text = line.decode("utf-8")
+        # The server sends a lone ">" line after the banner and after every response: a prompt, not data.
+        if text.strip() == ">":
+            continue
+        return text
 
 
 def read_response(f):
@@ -75,13 +80,16 @@ def cmd_send(args):
 
 
 def next_line(sock, buf):
-    """Returns the next line, or None if the socket timed out first. Reads the raw socket: a makefile object cannot resume after a timeout."""
+    """Returns the next data line (skipping lone ">" prompts), or None if the socket timed out first. Reads the raw socket: a makefile object cannot resume after a timeout."""
     while True:
         end = buf.find(10)
         if end >= 0:
             line = bytes(buf[:end + 1])
             del buf[:end + 1]
-            return line.decode("utf-8")
+            text = line.decode("utf-8")
+            if text.strip() == ">":
+                continue
+            return text
         try:
             chunk = sock.recv(65536)
         except socket.timeout:

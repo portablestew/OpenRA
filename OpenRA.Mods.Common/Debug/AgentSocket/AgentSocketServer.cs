@@ -22,6 +22,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>Loopback TCP listener that speaks newline-delimited JSON with one response line per request.</summary>
 	public static class AgentSocketServer
 	{
+		/// <summary>Sent as its own line after each response: your turn. Line-based clients skip lines that are just this.</summary>
+		public const string Prompt = ">";
+
 		/// <summary>Generated from the command list and the event table (AgentBanner), so it matches what the server handles.</summary>
 		public static readonly string Banner = AgentBanner.Build();
 
@@ -83,8 +86,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Writes the banner, then answers each non-blank input line with exactly one response line. Event lines for this
-		/// connection's subscriptions come from a second thread, so responses and events share one write lock.
+		/// Writes the banner, then answers each non-blank input line with exactly one response line, followed by a lone
+		/// "&gt;" prompt line: the connection is ready for the next command. Event lines for this connection's
+		/// subscriptions come from a second thread, so responses, prompts, and events share one write lock. Prompts are
+		/// only ever written after responses, never after events, so a prompt always means "your turn".
 		/// </summary>
 		public static void Serve(TextReader reader, TextWriter writer)
 		{
@@ -93,7 +98,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var events = new Thread(() => PumpEvents(subscriber, writer, writeGate)) { Name = "Agent socket events", IsBackground = true };
 
 			lock (writeGate)
+			{
 				writer.Write(Banner);
+				writer.WriteLine(Prompt);
+			}
 
 			events.Start();
 			try
@@ -106,7 +114,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 					var response = AgentSocketCommands.Handle(line, subscriber);
 					lock (writeGate)
+					{
 						writer.WriteLine(response);
+						writer.WriteLine(Prompt);
+					}
 				}
 			}
 			finally
