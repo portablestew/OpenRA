@@ -171,10 +171,26 @@ namespace OpenRA.Mods.Common.Traits
 				return;
 
 			// The smudge layer is shared with the outgoing world, which may have smudged cells after the capture
-			// that this fork does not have. Queue every cell: pending changes win, otherwise the restored smudge,
-			// otherwise an empty entry that clears the cell. TickRender then applies them.
+			// that this fork does not have. Apply every cell now: a pending change wins, otherwise the restored smudge,
+			// otherwise an empty entry that clears the cell. TickRender skips cells the fog hides, so it cannot do this.
 			foreach (var cell in w.Map.AllCells)
-				dirty[cell] = dirty.TryGetValue(cell, out var pending) ? pending : tiles.GetValueOrDefault(cell);
+				ApplySmudge(cell, dirty.TryGetValue(cell, out var pending) ? pending : tiles.GetValueOrDefault(cell));
+
+			dirty.Clear();
+		}
+
+		void ApplySmudge(CPos cell, Smudge smudge)
+		{
+			if (smudge.Sequence == null)
+			{
+				tiles.Remove(cell);
+				render.Clear(cell);
+			}
+			else
+			{
+				tiles[cell] = smudge;
+				render.Update(cell, smudge.Sequence, paletteReference, smudge.Depth);
+			}
 		}
 
 		public void AddSmudge(CPos loc)
@@ -262,19 +278,7 @@ namespace OpenRA.Mods.Common.Traits
 			{
 				if (!world.FogObscures(kv.Key))
 				{
-					// A null Sequence
-					if (kv.Value.Sequence == null)
-					{
-						tiles.Remove(kv.Key);
-						render.Clear(kv.Key);
-					}
-					else
-					{
-						var smudge = kv.Value;
-						tiles[kv.Key] = smudge;
-						render.Update(kv.Key, smudge.Sequence, paletteReference, smudge.Depth);
-					}
-
+					ApplySmudge(kv.Key, kv.Value);
 					remove.Add(kv.Key);
 				}
 			}

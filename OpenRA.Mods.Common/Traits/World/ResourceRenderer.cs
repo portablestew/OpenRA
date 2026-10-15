@@ -203,12 +203,14 @@ namespace OpenRA.Mods.Common.Traits
 		void IWorldAdopted.WorldAdopted(World w, WorldRenderer wr)
 		{
 			// RenderContents is cloned at capture time, but the sprite layers are shared with the outgoing world,
-			// which left them showing its last redraw. Mark every cell so TickRender redraws the restored resources.
+			// which left them showing its last redraw. Redraw every cell now rather than queueing it for TickRender,
+			// which skips cells the fog hides: an explored cell would keep the outgoing world's resource sprite.
 			if (Headless)
 				return;
 
+			dirty.Clear();
 			foreach (var cell in w.Map.AllCells)
-				dirty.Add(cell);
+				UpdateRenderedSprite(cell, RenderContents[cell]);
 		}
 
 		protected RendererCellContents CreateRenderCellContents(WorldRenderer wr, ResourceLayerContents contents, CPos cell)

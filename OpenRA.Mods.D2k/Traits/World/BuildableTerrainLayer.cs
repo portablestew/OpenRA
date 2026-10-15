@@ -122,10 +122,25 @@ namespace OpenRA.Mods.D2k.Traits
 				return;
 
 			// The render layer is shared with the outgoing world, which may have added or removed tiles after the
-			// capture that this fork did not make. Queue every cell from this fork's own record: its tile if placed,
-			// otherwise clear. TickRender applies them.
+			// capture that this fork did not make. Apply every cell from this fork's own record: its tile if placed,
+			// otherwise clear. TickRender skips cells the fog hides, so it cannot do this.
 			foreach (var cell in w.Map.AllCells)
-				dirty[cell] = placed.TryGetValue(cell, out var tile) ? tile : null;
+				ApplyTile(cell, placed.TryGetValue(cell, out var tile) ? tile : null);
+
+			dirty.Clear();
+		}
+
+		void ApplyTile(CPos cell, TerrainTile? tile)
+		{
+			if (tile.HasValue)
+			{
+				// Terrain tiles define their origin at the topleft
+				var s = terrainRenderer.TileSprite(tile.Value);
+				var ss = new Sprite(s.Sheet, s.Bounds, s.ZRamp, Vector3.Zero, s.Channel, s.BlendMode);
+				render.Update(cell, ss, paletteReference);
+			}
+			else
+				render.Clear(cell);
 		}
 
 		void ITickRender.TickRender(WorldRenderer wr, Actor self)
@@ -135,17 +150,7 @@ namespace OpenRA.Mods.D2k.Traits
 			{
 				if (!self.World.FogObscures(kv.Key))
 				{
-					var tile = kv.Value;
-					if (tile.HasValue)
-					{
-						// Terrain tiles define their origin at the topleft
-						var s = terrainRenderer.TileSprite(tile.Value);
-						var ss = new Sprite(s.Sheet, s.Bounds, s.ZRamp, Vector3.Zero, s.Channel, s.BlendMode);
-						render.Update(kv.Key, ss, paletteReference);
-					}
-					else
-						render.Clear(kv.Key);
-
+					ApplyTile(kv.Key, kv.Value);
 					remove.Add(kv.Key);
 				}
 			}
