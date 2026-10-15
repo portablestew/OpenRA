@@ -473,10 +473,12 @@ namespace OpenRA
 				type.Name.EndsWith("Infos", System.StringComparison.Ordinal))
 				return true;
 
-			// Animations hold closures over their owning actor's traits (facing, offset, disable). Sharing one
-			// would leave those closures reading the outgoing world's actors, so they are cloned and the
-			// closures are remapped onto the fork's actors. The OpenRA.Graphics rule below must not catch them.
-			if (o is Animation or AnimationWithOffset)
+			// Animations and voxel model animations hold closures over their owning actor's traits (facing, offset,
+			// disable). Sharing one would leave those closures reading the outgoing world's actors, so they are cloned
+			// and the closures are remapped onto the fork's actors. The OpenRA.Graphics rule below must not catch them.
+			// Arrays of them are excluded too: an array takes its element's namespace, so the backing array of a
+			// List<ModelAnimation> (RenderVoxels' component list) would otherwise be shared and keep the outgoing structs.
+			if (o is Animation or AnimationWithOffset or ModelAnimation or Animation[] or AnimationWithOffset[] or ModelAnimation[])
 				return false;
 
 			// Sprite/terrain/renderer asset content, including the WorldRenderer itself: the fork keeps
