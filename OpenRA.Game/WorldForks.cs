@@ -432,7 +432,7 @@ namespace OpenRA
 		/// too. If a restore ever renders or simulates wrongly, the first suspect is an object wrongly
 		/// aliased here that in fact carries mutable per-world state (the rung-5 TraitDictionary lesson).
 		/// </remarks>
-		static bool ShareLiveAsset(object o)
+		internal static bool ShareLiveAsset(object o)
 		{
 			switch (o)
 			{
@@ -480,6 +480,12 @@ namespace OpenRA
 			// List<ModelAnimation> (RenderVoxels' component list) would otherwise be shared and keep the outgoing structs.
 			if (o is Animation or AnimationWithOffset or ModelAnimation or Animation[] or AnimationWithOffset[] or ModelAnimation[])
 				return false;
+
+			// The platform layer's GPU and audio handles (shaders, buffers, textures, the threaded graphics context and
+			// its render queue). A clone would hold a copy of a GPU handle or a queue that no render thread drains, so
+			// the post-process passes and other renderers that cache these must keep the live ones.
+			if ((type.Namespace ?? "").StartsWith("OpenRA.Platforms", System.StringComparison.Ordinal))
+				return true;
 
 			// Sprite/terrain/renderer asset content, including the WorldRenderer itself: the fork keeps
 			// rendering through the same renderer instance, which is what lets AdoptWorld re-bind rather
