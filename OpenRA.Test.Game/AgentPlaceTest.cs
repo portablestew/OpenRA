@@ -148,6 +148,7 @@ namespace OpenRA.Test
 			using var response = AgentStateDumpTest.Request("{\"cmd\":\"place\",\"item\":\"powr\"}");
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.False);
 			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo("'powr' is not done yet: it is still in production"));
+			Assert.That(hw.World.Actors.Any(a => a.Info.Name == "powr"), Is.False, "A POWR was placed before it was finished");
 		}
 
 		[TestCase(TestName = "A place for an item that was never queued is refused")]
