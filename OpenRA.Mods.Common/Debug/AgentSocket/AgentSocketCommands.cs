@@ -26,7 +26,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The command names the dispatcher answers. The banner lists the same names, and a headless test keeps them in step.</summary>
 		public static readonly string[] Names =
 		[
-			"ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "production", "build", "subscribe", "unsubscribe",
+			"ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "production", "build", "place", "subscribe", "unsubscribe",
 		];
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
@@ -74,6 +74,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					"orders" => Orders(cmd, doc.RootElement),
 					"production" => Run(cmd, () => AgentProduction.List(AgentWorldBridge.RequireWorld())),
 					"build" => StartBuild(cmd, doc.RootElement),
+					"place" => StartPlace(cmd, doc.RootElement),
 					"subscribe" => Subscribe(cmd, doc.RootElement, subscriber),
 					"unsubscribe" => Unsubscribe(cmd, doc.RootElement, subscriber),
 					_ => Error(cmd, "unknown command"),
@@ -155,6 +156,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 			{
 				return Error(cmd, e.Message);
 			}
+		}
+
+		/// <summary>Parses the item and optional cell on the socket thread, then finds the cell and issues the placement on the game thread.</summary>
+		static string StartPlace(string cmd, JsonElement root)
+		{
+			var error = AgentPlace.Parse(root, out var request);
+			if (error != null)
+				return Error(cmd, error);
+
+			return Run(cmd, () => AgentPlace.Start(AgentWorldBridge.RequireWorld(), request));
 		}
 
 		/// <summary>Reads the actor ID on the socket thread, then lists its accepted order names on the game thread.</summary>

@@ -115,7 +115,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>The ProductionQueue trait behind a queue in the production list.</summary>
-		static ProductionQueue QueueTrait(World world, ProductionQueueV1 queue)
+		internal static ProductionQueue QueueTrait(World world, ProductionQueueV1 queue)
 		{
 			return world.ActorsWithTrait<ProductionQueue>()
 				.First(t => t.Actor.ActorID == queue.Actor && t.Trait.Info.Type == queue.QueueType).Trait;

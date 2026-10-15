@@ -227,7 +227,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return root.TryGetProperty(name, out var element) && element.ValueKind != JsonValueKind.Null;
 		}
 
-		static bool TryGetInts(JsonElement element, int count, out int[] values)
+		internal static bool TryGetInts(JsonElement element, int count, out int[] values)
 		{
 			values = null;
 			if (element.ValueKind != JsonValueKind.Array || element.GetArrayLength() != count)

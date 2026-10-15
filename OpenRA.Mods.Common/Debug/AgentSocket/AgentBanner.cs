@@ -44,6 +44,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("build", "item (string); optional count (positive int, default 1)\n"
 				+ "                -> ok, actor, queue_type, item, count, tick, min_effect_tick. Not buildable now: ok:false, error,"
 				+ " available (the items build accepts now: buildable and affordable)"),
+			("place", "item (string); optional cell [x,y] (default: the producer's location)\n"
+				+ "                -> ok, item, requested_cell (null if omitted), search_from, cell, tick, min_effect_tick. The nearest"
+				+ " valid cell within 10 of search_from is used. Not done or no valid cell: ok:false, error"),
 			("subscribe", "events (non-empty array of group names); optional owner (player name) -> subscribed\n"
 				+ "                owner filters only the groups named in this request; omit it to receive every owner's events."
 				+ " A later subscribe replaces a group's filter"),
