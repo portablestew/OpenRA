@@ -39,7 +39,11 @@ namespace OpenRA.Graphics
 		readonly bool restrictToBounds;
 
 		readonly WorldRenderer worldRenderer;
-		readonly Map map;
+
+		// Read through the renderer rather than cached: a restore re-points the renderer at the fork's own Map
+		// (WorldRenderer.AdoptWorld), but this layer is shared with the outgoing world. A cached Map would keep
+		// positioning sprites from the outgoing world's Height and Ramp.
+		Map CurrentMap => worldRenderer.World.Map;
 
 		readonly PaletteReference[] palettes;
 
@@ -50,7 +54,7 @@ namespace OpenRA.Graphics
 			this.emptySprite = emptySprite;
 			sheets = new Sheet[SpriteRenderer.SheetCount];
 			BlendMode = blendMode;
-			map = world.Map;
+			var map = world.Map;
 
 			vertexRowStride = 4 * map.MapSize.Width;
 			vertices = new Vertex[vertexRowStride * map.MapSize.Height];
@@ -83,7 +87,7 @@ namespace OpenRA.Graphics
 				vertices[i] = new Vertex(v.X, v.Y, v.Z, v.S, v.T, v.U, v.V, c, v.R, v.G, v.B, v.A);
 			}
 
-			for (var row = 0; row < map.MapSize.Height; row++)
+			for (var row = 0; row < CurrentMap.MapSize.Height; row++)
 				dirtyRows.Add(row);
 		}
 
@@ -102,11 +106,11 @@ namespace OpenRA.Graphics
 			var xyz = Vector3.Zero;
 			if (sprite != null)
 			{
-				var cellOrigin = map.CenterOfCell(cell) - new WVec(0, 0, map.Grid.Ramps[map.Ramp[cell]].CenterHeightOffset);
+				var cellOrigin = CurrentMap.CenterOfCell(cell) - new WVec(0, 0, CurrentMap.Grid.Ramps[CurrentMap.Ramp[cell]].CenterHeightOffset);
 				xyz = worldRenderer.Screen3DPosition(cellOrigin) + scale * (sprite.Offset - 0.5f * sprite.Size);
 			}
 
-			Update(cell.ToMPos(map.Grid.Type), sprite, palette, xyz, scale, alpha, ignoreTint);
+			Update(cell.ToMPos(CurrentMap.Grid.Type), sprite, palette, xyz, scale, alpha, ignoreTint);
 		}
 
 		void UpdateTint(MPos uv)
@@ -127,8 +131,8 @@ namespace OpenRA.Graphics
 			// This is done by sampling the lighting the corners of the sprite, even though those pixels are
 			// transparent for isometric tiles
 			var tl = worldRenderer.TerrainLighting;
-			var pos = map.CenterOfCell(uv.ToCPos(map));
-			var step = map.Grid.TileScale / 2;
+			var pos = CurrentMap.CenterOfCell(uv.ToCPos(CurrentMap));
+			var step = CurrentMap.Grid.TileScale / 2;
 			var weights = new[]
 			{
 				tl.TintAt(pos + new WVec(-step, -step, 0)),
@@ -191,12 +195,12 @@ namespace OpenRA.Graphics
 			}
 
 			// The vertex buffer does not have geometry for cells outside the map
-			if (!map.Tiles.Contains(uv))
+			if (!CurrentMap.Tiles.Contains(uv))
 				return;
 
 			var offset = vertexRowStride * uv.V + 4 * uv.U;
 			Util.FastCreateQuad(vertices, pos, sprite, samplers, palette?.TextureIndex ?? 0, offset, scale * sprite.Size, alpha * Vector3.One, alpha);
-			palettes[uv.V * map.MapSize.Width + uv.U] = palette;
+			palettes[uv.V * CurrentMap.MapSize.Width + uv.U] = palette;
 
 			if (worldRenderer.TerrainLighting != null)
 			{
@@ -212,8 +216,8 @@ namespace OpenRA.Graphics
 			var cells = restrictToBounds ? viewport.VisibleCellsInsideBounds : viewport.AllVisibleCells;
 
 			// Only draw the rows that are visible.
-			var firstRow = cells.CandidateMapCoords.TopLeft.V.Clamp(0, map.MapSize.Height);
-			var lastRow = (cells.CandidateMapCoords.BottomRight.V + 1).Clamp(firstRow, map.MapSize.Height);
+			var firstRow = cells.CandidateMapCoords.TopLeft.V.Clamp(0, CurrentMap.MapSize.Height);
+			var lastRow = (cells.CandidateMapCoords.BottomRight.V + 1).Clamp(firstRow, CurrentMap.MapSize.Height);
 
 			Game.Renderer.Flush();
 

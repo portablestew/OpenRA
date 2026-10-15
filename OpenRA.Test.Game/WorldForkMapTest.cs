@@ -13,7 +13,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using NUnit.Framework;
+using OpenRA.Graphics;
 using OpenRA.Traits;
 
 namespace OpenRA.Test
@@ -124,6 +126,42 @@ namespace OpenRA.Test
 				"The restored Map still delivers terrain changes to traits of the outgoing world.");
 			Assert.That(subscribers.Count(restoredTraits.Contains), Is.GreaterThan(0),
 				"No terrain subscriber of the restored Map is a trait of the restored world.");
+		}
+
+		[TestCase(TestName = "A restored world's shared terrain sprite layer positions cells from the restored map, not the outgoing one")]
+		public void SharedTerrainSpriteLayerPositionsFromRestoredMap()
+		{
+			using var parent = HeadlessWorld.Create(Seed);
+			parent.Tick(TicksBeforeCapture);
+
+			// The layer needs a graphics device, which the headless host does not have, so the layer and its
+			// WorldRenderer are created without running their constructors. Only the state that cell positioning
+			// reads is set, and the renderer's World is re-pointed the way WorldRenderer.AdoptWorld does on restore.
+			var renderer = (WorldRenderer)RuntimeHelpers.GetUninitializedObject(typeof(WorldRenderer));
+			typeof(WorldRenderer).GetProperty(nameof(WorldRenderer.World)).SetValue(renderer, parent.World);
+			var layer = (TerrainSpriteLayer)RuntimeHelpers.GetUninitializedObject(typeof(TerrainSpriteLayer));
+			typeof(TerrainSpriteLayer).GetField("worldRenderer", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(layer, renderer);
+
+			var cell = parent.World.Map.AllCells.First(c => parent.World.Map.CustomTerrain.Contains(c));
+			var water = parent.World.Map.Rules.TerrainInfo.GetTerrainIndex("Water");
+			Assert.That(WorldForks.Capture(parent.OrderManager, 0), Is.True, "The capture was refused.");
+			Assert.That(WorldForks.TryRestore(parent.OrderManager, null, 1, out var restoreFailure), Is.True, restoreFailure);
+
+			var restored = parent.OrderManager.World;
+			typeof(WorldRenderer).GetProperty(nameof(WorldRenderer.World)).SetValue(renderer, restored);
+
+			// The fork writes terrain after the restore. The layer must see that write through the restored map,
+			// not the outgoing map that the layer cached before the restore.
+			restored.Map.CustomTerrain[cell] = water;
+			Assert.That(restored.Map.CustomTerrain[cell], Is.Not.EqualTo(parent.World.Map.CustomTerrain[cell]),
+				"Precondition: the restored terrain write must differ from the outgoing world's terrain.");
+
+			var layerMap = (Map)typeof(TerrainSpriteLayer).GetProperty("CurrentMap", BindingFlags.Instance | BindingFlags.NonPublic)
+				.GetValue(layer);
+			Assert.That(layerMap, Is.SameAs(restored.Map),
+				"The shared sprite layer reads its map from the outgoing world, not the restored world.");
+			Assert.That(layerMap.CustomTerrain[cell], Is.EqualTo(water),
+				"The shared sprite layer does not see the restored world's terrain write.");
 		}
 
 		/// <summary>The receivers of a layer's <c>CellEntryChanged</c> handlers, found by reflection on the event's backing field.</summary>
