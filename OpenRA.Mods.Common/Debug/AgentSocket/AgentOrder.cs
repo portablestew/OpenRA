@@ -209,7 +209,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>Finds an actor by ID. An unknown ID and a dead actor are reported as different errors.</summary>
-		static Actor Live(World world, uint id)
+		internal static Actor Live(World world, uint id)
 		{
 			var actor = world.Actors.FirstOrDefault(a => a.ActorID == id);
 			if (actor == null)

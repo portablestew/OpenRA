@@ -26,12 +26,16 @@ namespace OpenRA.Mods.Common
 	public sealed class AgentWorldBridge : IWorldLoaded, IWorldAdopted
 	{
 		static World active;
+		static WorldRenderer activeRenderer;
 
 		/// <summary>True when Debug.AgentSocket was set at the last world load.</summary>
 		public static bool Enabled { get; private set; }
 
 		/// <summary>The live world, or null when none is loaded or it is being torn down. Read on the game thread only.</summary>
 		public static World Active => active is { Disposing: false } ? active : null;
+
+		/// <summary>The renderer for <see cref="Active"/>, or null when there is none (headless, or no world). Read on the game thread only.</summary>
+		public static WorldRenderer ActiveRenderer => Active == null ? null : activeRenderer;
 
 		public static World RequireWorld()
 		{
@@ -48,7 +52,10 @@ namespace OpenRA.Mods.Common
 
 			// The in-game world takes precedence. The shellmap is used only while no world is alive.
 			if (w.Type == WorldType.Regular || Active == null)
+			{
 				active = w;
+				activeRenderer = wr;
+			}
 
 			if (!w.IsHeadless)
 				AgentSocketServer.Start(Game.Settings.Debug.AgentSocketPort);
@@ -57,7 +64,10 @@ namespace OpenRA.Mods.Common
 		public void WorldAdopted(World w, WorldRenderer wr)
 		{
 			if (Enabled)
+			{
 				active = w;
+				activeRenderer = wr;
+			}
 		}
 	}
 }

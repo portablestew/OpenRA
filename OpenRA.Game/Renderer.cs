@@ -13,7 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using System.Threading;
+using System.Threading.Tasks;
 using OpenRA.FileFormats;
 using OpenRA.Graphics;
 using OpenRA.Primitives;
@@ -524,7 +524,11 @@ namespace OpenRA
 			Window.ReleaseWindowMouseFocus();
 		}
 
-		public void SaveScreenshot(string path)
+		/// <summary>
+		/// Reads the last frame on the calling thread and writes it to path on the thread pool. The task completes once the
+		/// file is written, and faults if the write fails, so an exception does not escape the thread pool.
+		/// </summary>
+		public Task SaveScreenshot(string path)
 		{
 			// Pull the data from the Texture directly to prevent the sheet from buffering it
 			var src = screenBuffer.Texture.GetData();
@@ -532,7 +536,7 @@ namespace OpenRA
 			var destWidth = screenSprite.Bounds.Width;
 			var destHeight = -screenSprite.Bounds.Height;
 
-			ThreadPool.QueueUserWorkItem(_ =>
+			return Task.Run(() =>
 			{
 				// Extract the screen rect from the (larger) backing surface
 				var dest = new byte[4 * destWidth * destHeight];

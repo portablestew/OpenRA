@@ -47,6 +47,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("place", "item (string); optional cell [x,y] (default: the producer's location)\n"
 				+ "                -> ok, item, requested_cell (null if omitted), search_from, cell, tick, min_effect_tick. The nearest"
 				+ " valid cell within 10 of search_from is used. Not done or no valid cell: ok:false, error"),
+			("screenshot", "optional actor (uint): centre the view on that live unit first\n"
+				+ "                -> ok, cmd, path (the PNG, already written), actor (null if omitted), center_px, unit_px (null if"
+				+ " omitted), tick. Waits for the next rendered frame to be saved, so the file exists when the reply arrives."
+				+ " No window (headless), no world view, the shellmap, an unknown or dead actor, or a failed write: ok:false, error"),
 			("subscribe", "events (non-empty array of group names); optional owner (player name) -> subscribed\n"
 				+ "                owner filters only the groups named in this request; omit it to receive every owner's events."
 				+ " A later subscribe replaces a group's filter"),

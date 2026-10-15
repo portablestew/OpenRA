@@ -19,6 +19,7 @@ using System.Linq;
 using System.Net;
 using System.Runtime;
 using System.Threading;
+using System.Threading.Tasks;
 using OpenRA.Graphics;
 using OpenRA.Network;
 using OpenRA.Primitives;
@@ -65,6 +66,7 @@ namespace OpenRA
 		public static LocalPlayerProfile LocalPlayerProfile;
 
 		static bool takeScreenshot = false;
+		static TaskCompletionSource<string> screenshotRequest;
 		static Benchmark benchmark = null;
 
 		public static event Action OnShellmapLoaded = () => { };
@@ -618,7 +620,7 @@ namespace OpenRA
 		public static void RunAfterTick(Action a) { delayedActions.Add(a, RunTime); }
 		public static void RunAfterDelay(int delayMilliseconds, Action a) { delayedActions.Add(a, RunTime + delayMilliseconds); }
 
-		static void TakeScreenshotInner()
+		static void TakeScreenshotInner(TaskCompletionSource<string> request)
 		{
 			using (new PerfTimer("Renderer.SaveScreenshot"))
 			{
@@ -630,8 +632,23 @@ namespace OpenRA
 				var path = Path.Combine(directory, $"{filename}.png");
 				Log.Write("debug", "Taking screenshot " + path);
 
-				Renderer.SaveScreenshot(path);
+				var written = Renderer.SaveScreenshot(path);
 				TextNotificationsManager.Debug(FluentProvider.GetMessage(SavedScreenshot, "filename", filename));
+
+				// The file write runs on the thread pool. A failure is logged, and reported to a requester if there is one.
+				_ = written.ContinueWith(t =>
+				{
+					if (t.IsFaulted)
+						Log.Write("debug", $"Failed to save screenshot {path}: {t.Exception.GetBaseException().Message}");
+
+					if (request == null)
+						return;
+
+					if (t.IsFaulted)
+						request.TrySetException(t.Exception.GetBaseException());
+					else
+						request.TrySetResult(path);
+				}, TaskContinuationOptions.ExecuteSynchronously);
 			}
 		}
 
@@ -715,6 +732,18 @@ namespace OpenRA
 			takeScreenshot = true;
 		}
 
+		/// <summary>
+		/// Arms a capture of the next rendered frame, as the hotkey does. The task completes with the PNG path once the file
+		/// is written, or faults if the write fails. Call on the game thread: the capture itself runs in RenderTick, so the
+		/// caller must not wait on the task there.
+		/// </summary>
+		public static Task<string> RequestScreenshot()
+		{
+			screenshotRequest ??= new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+			takeScreenshot = true;
+			return screenshotRequest.Task;
+		}
+
 		static void RenderTick()
 		{
 			using (new PerfSample("render"))
@@ -772,7 +801,9 @@ namespace OpenRA
 				if (takeScreenshot)
 				{
 					takeScreenshot = false;
-					TakeScreenshotInner();
+					var request = screenshotRequest;
+					screenshotRequest = null;
+					TakeScreenshotInner(request);
 				}
 			}
 

@@ -26,7 +26,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The command names the dispatcher answers. The banner lists the same names, and a headless test keeps them in step.</summary>
 		public static readonly string[] Names =
 		[
-			"ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "production", "build", "place", "subscribe", "unsubscribe",
+			"ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "production", "build", "place", "screenshot", "subscribe", "unsubscribe",
 		];
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
@@ -75,6 +75,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					"production" => Run(cmd, () => AgentProduction.List(AgentWorldBridge.RequireWorld())),
 					"build" => StartBuild(cmd, doc.RootElement),
 					"place" => StartPlace(cmd, doc.RootElement),
+					"screenshot" => Screenshot(cmd, doc.RootElement),
 					"subscribe" => Subscribe(cmd, doc.RootElement, subscriber),
 					"unsubscribe" => Unsubscribe(cmd, doc.RootElement, subscriber),
 					_ => Error(cmd, "unknown command"),
@@ -166,6 +167,27 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return Error(cmd, error);
 
 			return Run(cmd, () => AgentPlace.Start(AgentWorldBridge.RequireWorld(), request));
+		}
+
+		/// <summary>
+		/// Parses the optional actor on the socket thread, then centres and arms the capture on the game thread. The wait for
+		/// the written file happens here, on the socket thread, so the game thread is never blocked on the render.
+		/// </summary>
+		static string Screenshot(string cmd, JsonElement root)
+		{
+			var error = AgentScreenshot.Parse(root, out var request);
+			if (error != null)
+				return Error(cmd, error);
+
+			try
+			{
+				var start = AgentMarshal.ExecuteOnGameThread(() => AgentScreenshot.Start(AgentWorldBridge.RequireWorld(), AgentWorldBridge.ActiveRenderer, request));
+				return Serialize(AgentScreenshot.Await(start));
+			}
+			catch (Exception e)
+			{
+				return Error(cmd, e.Message);
+			}
 		}
 
 		/// <summary>Reads the actor ID on the socket thread, then lists its accepted order names on the game thread.</summary>
