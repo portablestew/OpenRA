@@ -102,6 +102,8 @@ namespace OpenRA.Test
 				("{\"cmd\":\"build\"}", "build", "item must be a non-empty string"),
 				("{\"cmd\":\"build\",\"item\":\"powr\",\"count\":0}", "build", "count must be a positive integer"),
 				("{\"cmd\":\"place\"}", "place", "item must be a non-empty string"),
+				("{\"cmd\":\"screenshot\",\"actor\":\"fact\"}", "screenshot", "actor must be an unsigned integer"),
+				("{\"cmd\":\"screenshot\",\"actor\":-1}", "screenshot", "actor must be an unsigned integer"),
 			];
 
 			foreach (var (line, cmd, error) in invalid)

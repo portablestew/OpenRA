@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 
 namespace OpenRA.Mods.Common.AgentSocket
 {
@@ -179,13 +180,19 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (error != null)
 				return Error(cmd, error);
 
+			// Cancelled on any failure, so a request the game thread runs late (after ExecuteOnGameThread gave up) arms nothing,
+			// and a frame that renders after the timeout is not written.
+			using var abandon = new CancellationTokenSource();
+			var cancellation = abandon.Token;
 			try
 			{
-				var start = AgentMarshal.ExecuteOnGameThread(() => AgentScreenshot.Start(AgentWorldBridge.RequireWorld(), AgentWorldBridge.ActiveRenderer, request));
+				var start = AgentMarshal.ExecuteOnGameThread(() =>
+					AgentScreenshot.Start(AgentWorldBridge.RequireWorld(), AgentWorldBridge.ActiveRenderer, request, cancellation));
 				return Serialize(AgentScreenshot.Await(start));
 			}
 			catch (Exception e)
 			{
+				abandon.Cancel();
 				return Error(cmd, e.Message);
 			}
 		}

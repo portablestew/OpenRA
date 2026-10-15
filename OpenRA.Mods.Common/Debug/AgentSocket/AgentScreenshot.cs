@@ -11,6 +11,7 @@
 
 using System;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using OpenRA.Graphics;
 
@@ -50,7 +51,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return null;
 			}
 
-			if (!root.GetProperty("actor").TryGetUInt32(out var actor))
+			// TryGetUInt32 throws, rather than returning false, for a non-number, so the kind is checked first.
+			var element = root.GetProperty("actor");
+			if (element.ValueKind != JsonValueKind.Number || !element.TryGetUInt32(out var actor))
 				return "actor must be an unsigned integer";
 
 			request = new ScreenshotRequest(actor);
@@ -58,13 +61,26 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Centres the view on the unit and arms the capture. Must run on the game thread, and must not wait on the capture:
-		/// the render that writes the frame runs on this same thread.
+		/// Checks the request, centres the view on the unit, and arms the capture. Must run on the game thread, and must not wait
+		/// on the capture: the render that writes the frame runs on this same thread. If the socket thread has already given up
+		/// on the request (cancelled), nothing is armed, so a late run writes no file.
 		/// </summary>
-		public static ScreenshotStart Start(World world, WorldRenderer wr, ScreenshotRequest request)
+		public static ScreenshotStart Start(World world, WorldRenderer wr, ScreenshotRequest request, CancellationToken cancellation)
 		{
+			if (cancellation.IsCancellationRequested)
+				throw new OperationCanceledException("the screenshot request was abandoned before the game thread ran it");
+
 			if (world.Type == WorldType.Shellmap)
 				throw new InvalidOperationException("screenshot is not available on the shellmap");
+
+			// The unit is resolved before the renderer is checked, so a bad id gets its own error in a headless world too.
+			Actor actor = null;
+			if (request.Actor is { } id)
+			{
+				actor = AgentOrder.Live(world, id);
+				if (actor.OccupiesSpace == null)
+					throw new InvalidOperationException($"Actor {id} has no position to centre on");
+			}
 
 			if (Game.Renderer == null)
 				throw new InvalidOperationException("no renderer: the game has no window to capture");
@@ -73,19 +89,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 				throw new InvalidOperationException("no world renderer: the world has no view to centre");
 
 			int[] unitPx = null;
-			if (request.Actor is { } id)
+			if (actor != null)
 			{
-				var actor = AgentOrder.Live(world, id);
-				if (actor.OccupiesSpace == null)
-					throw new InvalidOperationException($"Actor {id} has no position to centre on");
-
 				wr.Viewport.Center(actor.CenterPosition);
 				var unit = wr.ScreenPxPosition(actor.CenterPosition);
 				unitPx = [unit.X, unit.Y];
 			}
 
 			var centre = int2.FromVector(wr.Viewport.CenterLocation);
-			return new ScreenshotStart(Game.RequestScreenshot(), request.Actor, [centre.X, centre.Y], unitPx, world.WorldTick);
+			return new ScreenshotStart(Game.RequestScreenshot(cancellation), request.Actor, [centre.X, centre.Y], unitPx, world.WorldTick);
 		}
 
 		/// <summary>Waits on the socket thread for the file to be written. The game thread is not involved in the wait.</summary>

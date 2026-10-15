@@ -66,8 +66,11 @@ namespace OpenRA
 		public static LocalPlayerProfile LocalPlayerProfile;
 
 		static bool takeScreenshot = false;
-		static TaskCompletionSource<string> screenshotRequest;
+		static readonly List<PendingScreenshot> PendingScreenshots = [];
 		static Benchmark benchmark = null;
+
+		/// <summary>A requested capture. Cancelling the token before the frame renders means no file is written for it.</summary>
+		sealed record PendingScreenshot(TaskCompletionSource<string> Done, CancellationToken Cancellation);
 
 		public static event Action OnShellmapLoaded = () => { };
 
@@ -620,7 +623,7 @@ namespace OpenRA
 		public static void RunAfterTick(Action a) { delayedActions.Add(a, RunTime); }
 		public static void RunAfterDelay(int delayMilliseconds, Action a) { delayedActions.Add(a, RunTime + delayMilliseconds); }
 
-		static void TakeScreenshotInner(TaskCompletionSource<string> request)
+		static void TakeScreenshotInner(IReadOnlyList<TaskCompletionSource<string>> requests)
 		{
 			using (new PerfTimer("Renderer.SaveScreenshot"))
 			{
@@ -635,19 +638,19 @@ namespace OpenRA
 				var written = Renderer.SaveScreenshot(path);
 				TextNotificationsManager.Debug(FluentProvider.GetMessage(SavedScreenshot, "filename", filename));
 
-				// The file write runs on the thread pool. A failure is logged, and reported to a requester if there is one.
+				// The file write runs on the thread pool. A failure is logged, and reported to each requester.
 				_ = written.ContinueWith(t =>
 				{
 					if (t.IsFaulted)
 						Log.Write("debug", $"Failed to save screenshot {path}: {t.Exception.GetBaseException().Message}");
 
-					if (request == null)
-						return;
-
-					if (t.IsFaulted)
-						request.TrySetException(t.Exception.GetBaseException());
-					else
-						request.TrySetResult(path);
+					foreach (var request in requests)
+					{
+						if (t.IsFaulted)
+							request.TrySetException(t.Exception.GetBaseException());
+						else
+							request.TrySetResult(path);
+					}
 				}, TaskContinuationOptions.ExecuteSynchronously);
 			}
 		}
@@ -734,14 +737,34 @@ namespace OpenRA
 
 		/// <summary>
 		/// Arms a capture of the next rendered frame, as the hotkey does. The task completes with the PNG path once the file
-		/// is written, or faults if the write fails. Call on the game thread: the capture itself runs in RenderTick, so the
-		/// caller must not wait on the task there.
+		/// is written, or faults if the write fails. If the token is cancelled before that frame renders, no file is written
+		/// and the task is cancelled. Call on the game thread: the capture itself runs in RenderTick, so the caller must not
+		/// wait on the task there.
 		/// </summary>
-		public static Task<string> RequestScreenshot()
+		public static Task<string> RequestScreenshot(CancellationToken cancellation)
 		{
-			screenshotRequest ??= new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-			takeScreenshot = true;
-			return screenshotRequest.Task;
+			var done = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+			PendingScreenshots.Add(new PendingScreenshot(done, cancellation));
+			return done.Task;
+		}
+
+		/// <summary>Removes the requests that are still armed. The cancelled ones are cancelled here and are not captured.</summary>
+		static IReadOnlyList<TaskCompletionSource<string>> TakePendingScreenshots()
+		{
+			if (PendingScreenshots.Count == 0)
+				return [];
+
+			var live = new List<TaskCompletionSource<string>>();
+			foreach (var pending in PendingScreenshots)
+			{
+				if (pending.Cancellation.IsCancellationRequested)
+					pending.Done.TrySetCanceled();
+				else
+					live.Add(pending.Done);
+			}
+
+			PendingScreenshots.Clear();
+			return live;
 		}
 
 		static void RenderTick()
@@ -798,12 +821,11 @@ namespace OpenRA
 				using (new PerfSample("render_flip"))
 					Renderer.EndFrame(new DefaultInputHandler(OrderManager.World));
 
-				if (takeScreenshot)
+				var requests = TakePendingScreenshots();
+				if (takeScreenshot || requests.Count > 0)
 				{
 					takeScreenshot = false;
-					var request = screenshotRequest;
-					screenshotRequest = null;
-					TakeScreenshotInner(request);
+					TakeScreenshotInner(requests);
 				}
 			}
 
