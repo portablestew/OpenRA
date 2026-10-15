@@ -21,8 +21,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	/// <summary>
 	/// The screenshot command's success. Actor is the unit the view was centred on, or null when none was requested. CenterPx
-	/// is the view centre after clamping to the map, so it can differ from UnitPx near an edge. UnitPx is the unit's screen
-	/// pixel, or null when no unit was requested.
+	/// is the view centre after clamping to the map, so it can differ from UnitPx near an edge. UnitPx is the unit's position,
+	/// or null when no unit was requested. Both are map pixels (WorldRenderer.ScreenPosition, the space of Viewport.CenterLocation),
+	/// not window pixels: a window pixel is the value minus Viewport.TopLeft.
 	/// </summary>
 	public sealed record ScreenshotV1(bool Ok, string Cmd, string Path, uint? Actor, int[] CenterPx, int[] UnitPx, int Tick);
 
