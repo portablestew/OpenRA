@@ -142,7 +142,7 @@ namespace OpenRA.Test
 			var layer = (TerrainSpriteLayer)RuntimeHelpers.GetUninitializedObject(typeof(TerrainSpriteLayer));
 			typeof(TerrainSpriteLayer).GetField("worldRenderer", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(layer, renderer);
 
-			var cell = parent.World.Map.AllCells.First(c => parent.World.Map.CustomTerrain.Contains(c));
+			var cell = parent.World.Map.AllCells.First(parent.World.Map.CustomTerrain.Contains);
 			var water = parent.World.Map.Rules.TerrainInfo.GetTerrainIndex("Water");
 			Assert.That(WorldForks.Capture(parent.OrderManager, 0), Is.True, "The capture was refused.");
 			Assert.That(WorldForks.TryRestore(parent.OrderManager, null, 1, out var restoreFailure), Is.True, restoreFailure);
