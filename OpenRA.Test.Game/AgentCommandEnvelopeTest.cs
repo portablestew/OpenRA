@@ -28,6 +28,7 @@ namespace OpenRA.Test
 		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "paused", "game_over", "local_player", "players", "units"];
 		static readonly string[] ActorsKeys = ["ok", "cmd", "units"];
 		static readonly string[] MapsKeys = ["ok", "cmd", "maps"];
+		static readonly string[] OrdersKeys = ["ok", "cmd", "actor", "type", "orders"];
 		static readonly string[] ProductionKeys = ["ok", "cmd", "player", "cash", "resources", "power", "queues"];
 		static readonly string[] ErrorKeys = ["ok", "cmd", "error"];
 
@@ -82,6 +83,11 @@ namespace OpenRA.Test
 
 			using (var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}"))
 				Assert.That(Keys(production.RootElement), Is.EquivalentTo(ProductionKeys));
+
+			var fact = hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+			using (var orders = AgentStateDumpTest.Request($"{{\"cmd\":\"orders\",\"actor\":{fact.ActorID}}}"))
+				Assert.That(Keys(orders.RootElement), Is.EquivalentTo(OrdersKeys));
 		}
 
 		[TestCase(TestName = "Every write command the banner lists answers with the error envelope for an invalid request")]
