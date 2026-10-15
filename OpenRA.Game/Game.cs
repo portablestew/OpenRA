@@ -767,6 +767,23 @@ namespace OpenRA
 			return live;
 		}
 
+		/// <summary>
+		/// Writes the frame just rendered if the hotkey or a socket request armed it. A request cancelled before this point is
+		/// dropped and not written. Split out of RenderTick so a headless test can run this step without a renderer.
+		/// </summary>
+		internal static void CaptureArmedScreenshots()
+		{
+			var requests = TakePendingScreenshots();
+			if (takeScreenshot || requests.Count > 0)
+			{
+				takeScreenshot = false;
+				ScreenshotWriter(requests);
+			}
+		}
+
+		// The file writer. A test replaces it to observe the capture without a GPU renderer.
+		internal static Action<IReadOnlyList<TaskCompletionSource<string>>> ScreenshotWriter = TakeScreenshotInner;
+
 		static void RenderTick()
 		{
 			using (new PerfSample("render"))
@@ -821,12 +838,7 @@ namespace OpenRA
 				using (new PerfSample("render_flip"))
 					Renderer.EndFrame(new DefaultInputHandler(OrderManager.World));
 
-				var requests = TakePendingScreenshots();
-				if (takeScreenshot || requests.Count > 0)
-				{
-					takeScreenshot = false;
-					TakeScreenshotInner(requests);
-				}
+				CaptureArmedScreenshots();
 			}
 
 			var isActive = !(worldRenderer?.World.Paused ?? true);
