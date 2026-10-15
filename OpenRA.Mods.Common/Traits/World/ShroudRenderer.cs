@@ -60,7 +60,7 @@ namespace OpenRA.Mods.Common.Traits
 		public override object Create(ActorInitializer init) { return new ShroudRenderer(init.World, this); }
 	}
 
-	public sealed class ShroudRenderer : IRenderShroud, IWorldLoaded, INotifyActorDisposing
+	public sealed class ShroudRenderer : IRenderShroud, IWorldLoaded, IWorldAdopted, INotifyActorDisposing
 	{
 		[Flags]
 		enum Edges : byte
@@ -241,6 +241,18 @@ namespace OpenRA.Mods.Common.Traits
 			fogLayer = new TerrainSpriteLayer(w, wr, emptySprite, fogBlend, false);
 
 			WorldOnRenderPlayerChanged(world.RenderPlayer);
+		}
+
+		void IWorldAdopted.WorldAdopted(World w, WorldRenderer wr)
+		{
+			// Nothing was built headlessly; see the constructor.
+			if (headless)
+				return;
+
+			// The shroud and fog layers are shared with the outgoing world, which left them showing its last
+			// redraw. Mark every cell so the next RenderShroud redraws them from the restored Shroud.
+			cellsDirty.Clear(true);
+			anyCellDirty = true;
 		}
 
 		Shroud.CellVisibility[] GetNeighborsVisbility(PPos puv)

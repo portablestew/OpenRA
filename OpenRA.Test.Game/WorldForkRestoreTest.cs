@@ -162,6 +162,31 @@ namespace OpenRA.Test
 		}
 
 		/// <summary>
+		/// Renderers whose drawn layers are shared with the outgoing world while their state is cloned at capture.
+		/// Headlessly they build no layers, so the pixels cannot be checked here; this proves the restore reaches
+		/// each one's <see cref="IWorldAdopted"/> hook, which is where they mark their cells for redraw.
+		/// </summary>
+		static readonly string[] SharedLayerRenderers = ["ShroudRenderer", "ResourceRenderer", "SmudgeLayer"];
+
+		[TestCase(TestName = "A restored world's shared-layer renderers are told to adopt it")]
+		public void SharedLayerRenderersAdoptRestoredWorld()
+		{
+			using var parent = HeadlessWorld.Create(Seed);
+			SetUpCombat(parent);
+			parent.Tick(TicksBeforeCapture);
+
+			Assert.That(WorldForks.Capture(parent.OrderManager, 0), Is.True, "The capture was refused.");
+			Assert.That(WorldForks.TryRestore(parent.OrderManager, null, 1, out var restoreFailure), Is.True, restoreFailure);
+
+			var adopting = parent.OrderManager.World.WorldActor.TraitsImplementing<IWorldAdopted>()
+				.Select(t => t.GetType().Name)
+				.ToList();
+			Assert.That(adopting, Is.SupersetOf(SharedLayerRenderers),
+				"A renderer that shares its layer with the outgoing world does not adopt the restored world, so it keeps " +
+				"showing the outgoing world's last redraw.");
+		}
+
+		/// <summary>
 		/// The default body animation of an infantry actor. WithInfantryBody lives in OpenRA.Mods.Common, which
 		/// this project cannot reference, so it is found by name and its protected field is read by reflection.
 		/// </summary>

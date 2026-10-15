@@ -111,7 +111,7 @@ namespace OpenRA.Mods.Cnc.Traits
 		public override object Create(ActorInitializer init) { return new TSVeinsRenderer(init.Self, this); }
 	}
 
-	public class TSVeinsRenderer : IResourceRenderer, IWorldLoaded, IRenderOverlay, ITickRender, INotifyActorDisposing, IRadarTerrainLayer
+	public class TSVeinsRenderer : IResourceRenderer, IWorldLoaded, IWorldAdopted, IRenderOverlay, ITickRender, INotifyActorDisposing, IRadarTerrainLayer
 	{
 		[Flags]
 		enum Adjacency : byte
@@ -203,6 +203,27 @@ namespace OpenRA.Mods.Cnc.Traits
 			var emptySprite = new Sprite(first.Sheet, Rectangle.Empty, TextureChannel.Alpha);
 			spriteLayer = new TerrainSpriteLayer(w, wr, emptySprite, first.BlendMode, wr.World.Type != WorldType.Editor);
 
+			InitializeRenderedCells(w);
+		}
+
+		void IWorldAdopted.WorldAdopted(World w, WorldRenderer wr)
+		{
+			// The sprite layer is shared with the outgoing world and shows its last redraw, while renderIndices
+			// and borders were cloned at capture time. Clear and rebuild every cell exactly as WorldLoaded does,
+			// without the visibility gate TickRender applies: a vein's border on a visible cell depends on the
+			// vein in its neighbour, which may be fogged.
+			foreach (var cell in w.Map.AllCells)
+			{
+				renderIndices[cell] = null;
+				borders[cell] = Adjacency.None;
+				spriteLayer.Clear(cell);
+			}
+
+			InitializeRenderedCells(w);
+		}
+
+		void InitializeRenderedCells(World w)
+		{
 			// Initialize the renderIndices with the initial map state so it is visible
 			// through the fog with the Explored Map option enabled
 			foreach (var cell in w.Map.AllCells)

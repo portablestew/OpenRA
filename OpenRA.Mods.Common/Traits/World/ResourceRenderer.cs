@@ -98,7 +98,7 @@ namespace OpenRA.Mods.Common.Traits
 		public override object Create(ActorInitializer init) { return new ResourceRenderer(init.Self, this); }
 	}
 
-	public class ResourceRenderer : IResourceRenderer, IWorldLoaded, IRenderOverlay, ITickRender, INotifyActorDisposing, IRadarTerrainLayer
+	public class ResourceRenderer : IResourceRenderer, IWorldLoaded, IWorldAdopted, IRenderOverlay, ITickRender, INotifyActorDisposing, IRadarTerrainLayer
 	{
 		protected readonly ResourceRendererInfo Info;
 		protected readonly IResourceLayer ResourceLayer;
@@ -199,6 +199,17 @@ namespace OpenRA.Mods.Common.Traits
 		}
 
 		void IWorldLoaded.WorldLoaded(World w, WorldRenderer wr) { WorldLoaded(w, wr); }
+
+		void IWorldAdopted.WorldAdopted(World w, WorldRenderer wr)
+		{
+			// RenderContents is cloned at capture time, but the sprite layers are shared with the outgoing world,
+			// which left them showing its last redraw. Mark every cell so TickRender redraws the restored resources.
+			if (Headless)
+				return;
+
+			foreach (var cell in w.Map.AllCells)
+				dirty.Add(cell);
+		}
 
 		protected RendererCellContents CreateRenderCellContents(WorldRenderer wr, ResourceLayerContents contents, CPos cell)
 		{

@@ -85,7 +85,7 @@ namespace OpenRA.Mods.Common.Traits
 		public override object Create(ActorInitializer init) { return new SmudgeLayer(init.Self, this); }
 	}
 
-	public class SmudgeLayer : IRenderOverlay, IWorldLoaded, ITickRender, INotifyActorDisposing
+	public class SmudgeLayer : IRenderOverlay, IWorldLoaded, IWorldAdopted, ITickRender, INotifyActorDisposing
 	{
 		struct Smudge
 		{
@@ -162,6 +162,19 @@ namespace OpenRA.Mods.Common.Traits
 				tiles.Add(kv.Key, smudge);
 				render.Update(kv.Key, seq, paletteReference, s.Depth);
 			}
+		}
+
+		void IWorldAdopted.WorldAdopted(World w, WorldRenderer wr)
+		{
+			// Nothing is drawn headlessly; see WorldLoaded.
+			if (headless)
+				return;
+
+			// The smudge layer is shared with the outgoing world, which may have smudged cells after the capture
+			// that this fork does not have. Queue every cell: pending changes win, otherwise the restored smudge,
+			// otherwise an empty entry that clears the cell. TickRender then applies them.
+			foreach (var cell in w.Map.AllCells)
+				dirty[cell] = dirty.TryGetValue(cell, out var pending) ? pending : tiles.GetValueOrDefault(cell);
 		}
 
 		public void AddSmudge(CPos loc)
