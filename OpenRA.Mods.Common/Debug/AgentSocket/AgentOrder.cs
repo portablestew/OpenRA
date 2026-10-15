@@ -24,6 +24,24 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>A parsed order. At most one of Cell, Pos and TargetActor is set. None of them means an untargeted order, such as Stop.</summary>
 	public sealed record OrderRequest(string Order, uint Actor, CPos? Cell, WPos? Pos, uint? TargetActor, bool Queued);
 
+	/// <summary>The orders command: the order names an actor accepts. Schema v1, additive.</summary>
+	public sealed record OrdersV1(bool Ok, string Cmd, uint Actor, string Type, string[] Orders);
+
+	/// <summary>The refusal for an order name the actor does not accept. Available lists the names it does accept.</summary>
+	public sealed record OrderRefusedV1(bool Ok, string Cmd, string Error, string[] Available);
+
+	/// <summary>Thrown on the game thread when an actor does not accept the order name. Carries the names it does accept.</summary>
+	public sealed class OrderRefusedException : Exception
+	{
+		public OrderRefusedException(uint actor, string order, string[] available)
+			: base($"actor {actor} does not accept order '{order}'")
+		{
+			Available = available;
+		}
+
+		public string[] Available { get; }
+	}
+
 	/// <summary>
 	/// Issues an order for a local-player actor through World.IssueOrder, so it takes the same network and validation path
 	/// as a click (D11). The ack reports min_effect_tick = tick + 1, a lower bound: live, the order applied 4 ticks later
@@ -93,13 +111,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>Validates the request and issues it. Must run on the game thread: it reads live world state.</summary>
 		public static OrderV1 Issue(World world, OrderRequest request)
 		{
-			var actor = Live(world, request.Actor);
-			if (actor.Owner != world.LocalPlayer)
-				throw new ArgumentException($"Actor {request.Actor} is not owned by the local player");
+			var actor = Owned(world, request.Actor);
 
-			// Mirrors the check ValidateOrder makes, so a refused order is reported here instead of being dropped silently.
-			if (!actor.AcceptsOrder(request.Order))
-				throw new ArgumentException($"Actor {request.Actor} does not accept {request.Order}");
+			// A name outside the accepted set is refused here, with no bypass. Nothing is issued for it.
+			var available = AgentOrderNames.For(actor);
+			if (!available.Contains(request.Order))
+				throw new OrderRefusedException(request.Actor, request.Order, available);
 
 			Target target;
 			if (request.Cell is { } cell)
@@ -119,6 +136,23 @@ namespace OpenRA.Mods.Common.AgentSocket
 			world.IssueOrder(new Order(request.Order, actor, target, request.Queued));
 
 			return new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
+		}
+
+		/// <summary>Lists the order names a local-player actor accepts. Must run on the game thread.</summary>
+		public static OrdersV1 List(World world, uint id)
+		{
+			var actor = Owned(world, id);
+			return new OrdersV1(true, "orders", actor.ActorID, actor.Info.Name, AgentOrderNames.For(actor));
+		}
+
+		/// <summary>Finds a live actor the local player owns. Must run on the game thread.</summary>
+		static Actor Owned(World world, uint id)
+		{
+			var actor = Live(world, id);
+			if (actor.Owner != world.LocalPlayer)
+				throw new ArgumentException($"Actor {id} is not owned by the local player");
+
+			return actor;
 		}
 
 		/// <summary>Finds an actor by ID. An unknown ID and a dead actor are reported as different errors.</summary>

@@ -24,7 +24,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		sealed record HelpV1(bool Ok, string Cmd, string Banner);
 
 		/// <summary>The command names the dispatcher answers. The banner lists the same names, and a headless test keeps them in step.</summary>
-		public static readonly string[] Names = ["ping", "help", "state", "actors", "maps", "load_map", "order", "subscribe", "unsubscribe"];
+		public static readonly string[] Names = ["ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "subscribe", "unsubscribe"];
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
@@ -68,6 +68,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					"maps" => Run(cmd, AgentMaps.List),
 					"load_map" => LoadMap(cmd, doc.RootElement),
 					"order" => IssueOrder(cmd, doc.RootElement),
+					"orders" => Orders(cmd, doc.RootElement),
 					"subscribe" => Subscribe(cmd, doc.RootElement, subscriber),
 					"unsubscribe" => Unsubscribe(cmd, doc.RootElement, subscriber),
 					_ => Error(cmd, "unknown command"),
@@ -112,7 +113,27 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (error != null)
 				return Error(cmd, error);
 
-			return Run(cmd, () => AgentOrder.Issue(AgentWorldBridge.RequireWorld(), request));
+			try
+			{
+				return Serialize(AgentMarshal.ExecuteOnGameThread(() => AgentOrder.Issue(AgentWorldBridge.RequireWorld(), request)));
+			}
+			catch (OrderRefusedException e)
+			{
+				return Serialize(new OrderRefusedV1(false, cmd, e.Message, e.Available));
+			}
+			catch (Exception e)
+			{
+				return Error(cmd, e.Message);
+			}
+		}
+
+		/// <summary>Reads the actor ID on the socket thread, then lists its accepted order names on the game thread.</summary>
+		static string Orders(string cmd, JsonElement root)
+		{
+			if (!root.TryGetProperty("actor", out var element) || !element.TryGetUInt32(out var actor))
+				return Error(cmd, "actor must be an unsigned integer");
+
+			return Run(cmd, () => AgentOrder.List(AgentWorldBridge.RequireWorld(), actor));
 		}
 
 		/// <summary>Adds the named event groups. Runs on the connection thread: the subscription state is not game state.</summary>
