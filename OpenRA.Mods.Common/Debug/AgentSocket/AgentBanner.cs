@@ -84,11 +84,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("  After the banner, and after every response, the server sends a lone > line as a prompt: it is your turn.\n");
 			text.Append("  A > line is not a response and not an event; skip lines that are just >.\n");
 			text.Append("  order min_effect_tick is a lower bound (tick + 1). The order applies on or after it; network frame delay can make it later.\n");
-			text.Append("  The order event's tick and effect_tick are the same value: the tick the order resolved on.\n");
 			text.Append("  An overflow event is sent before the events that follow it. dropped counts the events a full queue discarded.\n");
-			text.Append("  path.to is the cell the path actually ends on. It can differ from the cell you ordered.\n");
-			text.Append("  path with result no_path has no cells. metrics is null when no path was found or the path was rejected.\n");
-			text.Append("  move_result.remaining_cells is 0 on canceled moves, because a cancel clears the path before the result is sent.\n");
 			text.Append('\n');
 			return text.ToString();
 		}

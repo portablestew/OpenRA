@@ -91,14 +91,14 @@ namespace OpenRA.Test
 			}
 		}
 
-		[TestCase(TestName = "The banner states the lower-bound ack, the canceled-move cell count, and the path end cell")]
+		[TestCase(TestName = "The banner notes the prompt line, the lower-bound ack, and the overflow marker")]
 		public void BannerDocumentsTheKnownCaveats()
 		{
 			var banner = AgentSocketServer.Banner;
 
+			Assert.That(banner, Does.Contain("the server sends a lone > line as a prompt"));
 			Assert.That(banner, Does.Contain("min_effect_tick is a lower bound"));
-			Assert.That(banner, Does.Contain("remaining_cells is 0 on canceled moves"));
-			Assert.That(banner, Does.Contain("path.to is the cell the path actually ends on"));
+			Assert.That(banner, Does.Contain("An overflow event is sent before the events that follow it"));
 			Assert.That(banner, Does.Contain("owner filters only the groups named in this request"));
 		}
 
