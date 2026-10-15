@@ -24,7 +24,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 		sealed record HelpV1(bool Ok, string Cmd, string Banner);
 
 		/// <summary>The command names the dispatcher answers. The banner lists the same names, and a headless test keeps them in step.</summary>
-		public static readonly string[] Names = ["ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "production", "subscribe", "unsubscribe"];
+		public static readonly string[] Names =
+		[
+			"ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "production", "build", "subscribe", "unsubscribe",
+		];
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
@@ -70,6 +73,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					"order" => IssueOrder(cmd, doc.RootElement),
 					"orders" => Orders(cmd, doc.RootElement),
 					"production" => Run(cmd, () => AgentProduction.List(AgentWorldBridge.RequireWorld())),
+					"build" => StartBuild(cmd, doc.RootElement),
 					"subscribe" => Subscribe(cmd, doc.RootElement, subscriber),
 					"unsubscribe" => Unsubscribe(cmd, doc.RootElement, subscriber),
 					_ => Error(cmd, "unknown command"),
@@ -117,6 +121,31 @@ namespace OpenRA.Mods.Common.AgentSocket
 			try
 			{
 				return Serialize(AgentMarshal.ExecuteOnGameThread(() => AgentOrder.Issue(AgentWorldBridge.RequireWorld(), request)));
+			}
+			catch (OrderRefusedException e)
+			{
+				return Serialize(new OrderRefusedV1(false, cmd, e.Message, e.Available));
+			}
+			catch (Exception e)
+			{
+				return Error(cmd, e.Message);
+			}
+		}
+
+		/// <summary>Parses the item and count on the socket thread, then validates and issues the build on the game thread.</summary>
+		static string StartBuild(string cmd, JsonElement root)
+		{
+			var error = AgentBuild.Parse(root, out var request);
+			if (error != null)
+				return Error(cmd, error);
+
+			try
+			{
+				return Serialize(AgentMarshal.ExecuteOnGameThread(() => AgentBuild.Start(AgentWorldBridge.RequireWorld(), request)));
+			}
+			catch (BuildRefusedException e)
+			{
+				return Serialize(new BuildRefusedV1(false, cmd, e.Message, e.Available));
 			}
 			catch (OrderRefusedException e)
 			{

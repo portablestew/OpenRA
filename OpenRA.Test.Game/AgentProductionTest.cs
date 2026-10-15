@@ -156,18 +156,18 @@ namespace OpenRA.Test
 				Is.EqualTo(local.GetProperty("power").GetProperty("provided").GetInt32()));
 		}
 
-		static IEnumerable<string> Keys(JsonElement element)
+		internal static IEnumerable<string> Keys(JsonElement element)
 		{
 			return element.EnumerateObject().Select(p => p.Name);
 		}
 
 		/// <summary>The queue of one type. The RA queues sit on the player actor, so the type is the key, not the actor.</summary>
-		static JsonElement QueueOf(JsonElement root, string queueType)
+		internal static JsonElement QueueOf(JsonElement root, string queueType)
 		{
 			return root.GetProperty("queues").EnumerateArray().Single(q => q.GetProperty("queue_type").GetString() == queueType);
 		}
 
-		static JsonElement Option(JsonElement queue, string name)
+		internal static JsonElement Option(JsonElement queue, string name)
 		{
 			var option = queue.GetProperty("options").EnumerateArray().FirstOrDefault(o => o.GetProperty("name").GetString() == name);
 			Assert.That(option.ValueKind, Is.Not.EqualTo(JsonValueKind.Undefined), $"The queue does not list {name}.");
@@ -181,7 +181,7 @@ namespace OpenRA.Test
 		}
 
 		/// <summary>Sets the local player's cash and resources. PlayerResources is reached by reflection, as the test project cannot reference the mod.</summary>
-		static void SetLocalCash(HeadlessWorld hw, int cash)
+		internal static void SetLocalCash(HeadlessWorld hw, int cash)
 		{
 			var type = HeadlessMod.ModData.ObjectCreator.FindType("Traits.PlayerResources");
 			var resourcesMethod = typeof(Actor).GetMethods().Single(m => m.Name == "TraitOrDefault" && m.GetParameters().Length == 0);

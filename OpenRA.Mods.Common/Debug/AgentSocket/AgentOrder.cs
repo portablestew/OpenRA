@@ -110,12 +110,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>Validates the request and issues it. Must run on the game thread: it reads live world state.</summary>
 		public static OrderV1 Issue(World world, OrderRequest request)
 		{
-			var actor = Owned(world, request.Actor);
-
-			// A name outside the accepted set is refused here, with no bypass. Nothing is issued for it.
-			var available = AgentOrderNames.For(actor);
-			if (!available.Contains(request.Order))
-				throw new OrderRefusedException(request.Actor, request.Order, available);
+			var actor = Accept(world, request.Actor, request.Order);
 
 			Target target;
 			if (request.Cell is { } cell)
@@ -144,6 +139,20 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return new OrdersV1(true, "orders", actor.ActorID, actor.Info.Name, AgentOrderNames.For(actor));
 		}
 
+		/// <summary>
+		/// Finds the local-player actor and checks that it accepts the order name. A name outside the accepted set is refused
+		/// here, with no bypass, so nothing is issued for it. Must run on the game thread.
+		/// </summary>
+		public static Actor Accept(World world, uint id, string order)
+		{
+			var actor = Owned(world, id);
+			var available = AgentOrderNames.For(actor);
+			if (!available.Contains(order))
+				throw new OrderRefusedException(id, order, available);
+
+			return actor;
+		}
+
 		/// <summary>Finds a live actor the local player owns. Must run on the game thread.</summary>
 		static Actor Owned(World world, uint id)
 		{
@@ -167,7 +176,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return actor;
 		}
 
-		static bool IsPresent(JsonElement root, string name)
+		/// <summary>True when the key is set to something other than null. An absent key or null is not present.</summary>
+		internal static bool IsPresent(JsonElement root, string name)
 		{
 			return root.TryGetProperty(name, out var element) && element.ValueKind != JsonValueKind.Null;
 		}

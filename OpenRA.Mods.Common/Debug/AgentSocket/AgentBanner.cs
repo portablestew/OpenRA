@@ -40,6 +40,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " ok:false, error, available (the names it accepts)"),
 			("orders", "actor (uint) -> type, orders (the order names the actor accepts)"),
 			("production", "-> player, cash, resources, power, queues (the local player's queues; see Production keys)"),
+			("build", "item (string); optional count (positive int, default 1)\n"
+				+ "                -> ok, actor, queue_type, item, count, tick, min_effect_tick. Not buildable now: ok:false, error,"
+				+ " available (the items build accepts now: buildable and affordable)"),
 			("subscribe", "events (non-empty array of group names); optional owner (player name) -> subscribed\n"
 				+ "                owner filters only the groups named in this request; omit it to receive every owner's events."
 				+ " A later subscribe replaces a group's filter"),

@@ -93,6 +93,8 @@ namespace OpenRA.Test
 				("{\"cmd\":\"subscribe\"}", "subscribe", "events need a connection"),
 				("{\"cmd\":\"unsubscribe\"}", "unsubscribe", "events need a connection"),
 				("{\"cmd\":\"load_map\"}", "load_map", "map must be a string"),
+				("{\"cmd\":\"build\"}", "build", "item must be a non-empty string"),
+				("{\"cmd\":\"build\",\"item\":\"powr\",\"count\":0}", "build", "count must be a positive integer"),
 			];
 
 			foreach (var (line, cmd, error) in invalid)
