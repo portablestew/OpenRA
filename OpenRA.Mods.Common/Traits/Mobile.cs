@@ -114,16 +114,20 @@ namespace OpenRA.Mods.Common.Traits
 
 			LocomotorInfo = locomotorInfos[0];
 
-			// We need to reset the reference to the locomotor between each worlds, otherwise we are reference the previous state.
-			locomotor = null;
-
 			base.RulesetLoaded(rules, ai);
 		}
 
 		public WAngle GetInitialFacing() { return InitialFacing; }
 
-		// initialized and used by CanEnterCell
-		Locomotor locomotor;
+		/// <summary>
+		/// The world's Locomotor named by this info. Not cached here: this info is shared by every world (including the
+		/// worlds that a fork restores), so a cached Locomotor would keep answering for the world it was first resolved in.
+		/// Each <see cref="Mobile"/> caches the result for its own world.
+		/// </summary>
+		public Locomotor FindLocomotor(World world)
+		{
+			return world.WorldActor.TraitsImplementing<Locomotor>().SingleOrDefault(l => l.Info.Name == Locomotor);
+		}
 
 		/// <summary>
 		/// Note: If the target <paramref name="cell"/> has any free subcell, the value of <paramref name="subCell"/> is ignored.
@@ -131,20 +135,23 @@ namespace OpenRA.Mods.Common.Traits
 		public bool CanEnterCell(World world, Actor self, CPos cell,
 			SubCell subCell = SubCell.FullCell, Actor ignoreActor = null, BlockedByActor check = BlockedByActor.All)
 		{
-			// PERF: Avoid repeated trait queries on the hot path
-			locomotor ??= world.WorldActor.TraitsImplementing<Locomotor>()
-				   .SingleOrDefault(l => l.Info.Name == Locomotor);
+			return CanEnterCell(FindLocomotor(world), self, cell, subCell, ignoreActor, check);
+		}
 
+		public bool CanEnterCell(Locomotor locomotor, Actor self, CPos cell,
+			SubCell subCell, Actor ignoreActor, BlockedByActor check)
+		{
 			return locomotor.MovementCostToEnterCell(
 				self, cell, check, ignoreActor, false, subCell) != PathGraph.MovementCostForUnreachableCell;
 		}
 
 		public bool CanStayInCell(World world, CPos cell)
 		{
-			// PERF: Avoid repeated trait queries on the hot path
-			locomotor ??= world.WorldActor.TraitsImplementing<Locomotor>()
-				   .SingleOrDefault(l => l.Info.Name == Locomotor);
+			return CanStayInCell(FindLocomotor(world), cell);
+		}
 
+		public bool CanStayInCell(Locomotor locomotor, CPos cell)
+		{
 			if (cell.Layer == CustomMovementLayerType.Tunnel)
 				return false;
 
@@ -542,12 +549,12 @@ namespace OpenRA.Mods.Common.Traits
 
 		public bool CanEnterCell(CPos cell, Actor ignoreActor = null, BlockedByActor check = BlockedByActor.All)
 		{
-			return Info.CanEnterCell(self.World, self, cell, ToSubCell, ignoreActor, check);
+			return Info.CanEnterCell(Locomotor, self, cell, ToSubCell, ignoreActor, check);
 		}
 
 		public bool CanStayInCell(CPos cell)
 		{
-			return Info.CanStayInCell(self.World, cell);
+			return Info.CanStayInCell(Locomotor, cell);
 		}
 
 		#endregion
