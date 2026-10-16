@@ -208,16 +208,16 @@ namespace OpenRA.Test
 		public void PathAcrossRewoundFootprintMatchesWorldWithoutBuilding()
 		{
 			using var control = HeadlessWorld.Create(Seed);
-			var controlFixture = PathFixture(control);
+			var (controlProbe, controlSource, controlDestination, controlFootprint) = PathFixture(control);
 			control.Tick(TicksBeforeCapture);
-			var controlPath = PathBetween(control.World, controlFixture.Probe, controlFixture.Source, controlFixture.Destination);
+			var controlPath = PathBetween(control.World, controlProbe, controlSource, controlDestination);
 			Assert.That(controlPath, Is.Not.Empty, "Control: no path exists in an empty world, so the check below proves nothing.");
-			Assert.That(controlPath.Intersect(FootprintCells(controlFixture.Footprint)).Any(), Is.True,
+			Assert.That(controlPath.Intersect(FootprintCells(controlFootprint)).Any(), Is.True,
 				"Control: the empty-world path does not cross the footprint, so the check below proves nothing.");
 
 			using var parent = HeadlessWorld.Create(Seed);
-			var fixture = PathFixture(parent);
-			var probeId = fixture.Probe.ActorID;
+			var (probe, source, destination, footprint) = PathFixture(parent);
+			var probeId = probe.ActorID;
 			parent.Tick(TicksBeforeCapture);
 
 			var orderManager = parent.OrderManager;
@@ -225,13 +225,13 @@ namespace OpenRA.Test
 
 			Assert.That(WorldForks.Undo(orderManager, null, LiveAfterGap(parent.World), out var firstFailure), Is.True, firstFailure);
 			var firstFork = orderManager.World;
-			PlaceBuilding(firstFork, fixture.Footprint);
+			PlaceBuilding(firstFork, footprint);
 			TickThroughOrderManager(orderManager, TicksInFirstFork);
 
 			Assert.That(WorldForks.Undo(orderManager, null, LiveAfterGap(firstFork), out var secondFailure), Is.True, secondFailure);
 			var secondFork = orderManager.World;
 			var probeInSecondFork = secondFork.Actors.Single(a => a.ActorID == probeId);
-			var restoredPath = PathBetween(secondFork, probeInSecondFork, fixture.Source, fixture.Destination);
+			var restoredPath = PathBetween(secondFork, probeInSecondFork, source, destination);
 
 			Assert.That(restoredPath, Is.EqualTo(controlPath),
 				"After a second rewind the path across the freed footprint differs from a world that never had the building.");
@@ -241,16 +241,16 @@ namespace OpenRA.Test
 		public void PathAroundBuildingRemovedAfterCaptureMatchesControl()
 		{
 			using var control = HeadlessWorld.Create(Seed);
-			var controlFixture = PathFixture(control);
-			PlaceBuilding(control.World, controlFixture.Footprint);
+			var (controlProbe, controlSource, controlDestination, controlFootprint) = PathFixture(control);
+			PlaceBuilding(control.World, controlFootprint);
 			control.Tick(TicksBeforeCapture);
-			var controlPath = PathBetween(control.World, controlFixture.Probe, controlFixture.Source, controlFixture.Destination);
+			var controlPath = PathBetween(control.World, controlProbe, controlSource, controlDestination);
 			Assert.That(controlPath, Is.Not.Empty, "Control: no path exists around the building, so the check below proves nothing.");
 
 			using var parent = HeadlessWorld.Create(Seed);
-			var fixture = PathFixture(parent);
-			var probeId = fixture.Probe.ActorID;
-			var building = PlaceBuilding(parent.World, fixture.Footprint);
+			var (probe, source, destination, footprint) = PathFixture(parent);
+			var probeId = probe.ActorID;
+			var building = PlaceBuilding(parent.World, footprint);
 			var buildingId = building.ActorID;
 			parent.Tick(TicksBeforeCapture);
 
@@ -269,7 +269,7 @@ namespace OpenRA.Test
 				"Sanity: the restored world does not hold the building the capture held.");
 
 			var probeInRestored = restored.Actors.Single(a => a.ActorID == probeId);
-			var restoredPath = PathBetween(restored, probeInRestored, fixture.Source, fixture.Destination);
+			var restoredPath = PathBetween(restored, probeInRestored, source, destination);
 			Assert.That(restoredPath, Is.EqualTo(controlPath),
 				"The restored path does not route around the building that the capture held.");
 		}
@@ -278,14 +278,14 @@ namespace OpenRA.Test
 		public void RedoAfterUndoRestoresNewerSnapshotPath()
 		{
 			using var control = HeadlessWorld.Create(Seed);
-			var controlFixture = PathFixture(control);
+			var (controlProbe, controlSource, controlDestination, controlFootprint) = PathFixture(control);
 			control.Tick(TicksBeforeCapture);
-			var controlPath = PathBetween(control.World, controlFixture.Probe, controlFixture.Source, controlFixture.Destination);
+			var controlPath = PathBetween(control.World, controlProbe, controlSource, controlDestination);
 			Assert.That(controlPath, Is.Not.Empty, "Control: no path exists in an empty world, so the check below proves nothing.");
 
 			using var parent = HeadlessWorld.Create(Seed);
-			var fixture = PathFixture(parent);
-			var probeId = fixture.Probe.ActorID;
+			var (probe, source, destination, footprint) = PathFixture(parent);
+			var probeId = probe.ActorID;
 			parent.Tick(TicksBeforeCapture);
 
 			var orderManager = parent.OrderManager;
@@ -298,7 +298,7 @@ namespace OpenRA.Test
 			Assert.That(WorldForks.Undo(orderManager, null, WorldForks.GameMsOf(parent.World), out var undoFailure), Is.True, undoFailure);
 			var firstFork = orderManager.World;
 			Assert.That(firstFork.WorldTick, Is.EqualTo(TicksBeforeCapture), "Sanity: undo did not land on the older snapshot.");
-			PlaceBuilding(firstFork, fixture.Footprint);
+			PlaceBuilding(firstFork, footprint);
 			TickThroughOrderManager(orderManager, TicksInFirstFork);
 
 			Assert.That(WorldForks.Redo(orderManager, null, WorldForks.GameMsOf(firstFork), out var redoFailure), Is.True, redoFailure);
@@ -306,9 +306,9 @@ namespace OpenRA.Test
 			Assert.That(redone.WorldTick, Is.EqualTo(newerTick), "Redo did not land on the newer snapshot.");
 
 			var probeInRedone = redone.Actors.Single(a => a.ActorID == probeId);
-			Assert.That(redone.ActorMap.AnyActorsAt(fixture.Footprint), Is.False,
+			Assert.That(redone.ActorMap.AnyActorsAt(footprint), Is.False,
 				"The building placed in the undone timeline still blocks its footprint after redo.");
-			Assert.That(PathBetween(redone, probeInRedone, fixture.Source, fixture.Destination), Is.EqualTo(controlPath),
+			Assert.That(PathBetween(redone, probeInRedone, source, destination), Is.EqualTo(controlPath),
 				"The redone path differs from a world that never had the building.");
 		}
 
