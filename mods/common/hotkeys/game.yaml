@@ -137,3 +137,24 @@ NextMusic: AUDIONEXT
 	Description: hotkey-description-nextmusic
 	Types: Music
 	Contexts: menu, player, spectator
+
+SnapshotUndo: Z Ctrl
+	Description: hotkey-description-snapshotundo
+	Types: World
+	Contexts: player, spectator
+	Platform:
+		OSX: Z Meta
+
+SnapshotRedo: Y Ctrl
+	Description: hotkey-description-snapshotredo
+	Types: World
+	Contexts: player, spectator
+	Platform:
+		OSX: Y Meta
+
+SnapshotRedoAlt: Z Ctrl, Shift
+	Description: hotkey-description-snapshotredoalt
+	Types: World
+	Contexts: player, spectator
+	Platform:
+		OSX: Z Meta, Shift

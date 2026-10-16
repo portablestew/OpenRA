@@ -111,6 +111,9 @@ hotkey-description-stopmusic = Stop
 hotkey-description-pausemusic = Pause or Resume
 hotkey-description-prevmusic = Previous
 hotkey-description-nextmusic = Next
+hotkey-description-snapshotundo = Snapshot Undo
+hotkey-description-snapshotredo = Snapshot Redo
+hotkey-description-snapshotredoalt = Snapshot Redo (alternate)
 
 ## observer.yaml
 hotkey-description-observercombinedview = All Players

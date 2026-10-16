@@ -37,8 +37,8 @@ namespace OpenRA
 
 		public void OnKeyInput(KeyInput input)
 		{
-			// The rolling-rewind key is handled above the widget tree so it shadows any widget binding
-			// on the same key (bare F6 = Production06 / StatisticsCombat) while a live game runs.
+			// The snapshot undo and redo keys are handled above the widget tree so they shadow any widget binding
+			// on the same chord while a live game runs. A key press that restores nothing falls through to the widgets.
 			if (WorldForks.HandleKeyInput(input))
 				return;
 

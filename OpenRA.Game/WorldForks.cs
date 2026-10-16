@@ -434,21 +434,24 @@ namespace OpenRA
 		}
 
 		/// <summary>
-		/// Handles the rewind key before widgets see it. Returns true when the key was consumed (a live
-		/// game is running, so bare F6 belongs to the rewind regardless of whether a restore was
-		/// possible), false when the key should continue through the normal UI path (menus, shellmap,
-		/// save loading, or an active text field).
+		/// Handles the snapshot undo and redo keys before widgets see them. Returns true only when a restore
+		/// happened, so the key is consumed only then. Otherwise it continues through the normal UI path: no
+		/// live game, a focused text field, or no snapshot in range to restore to.
 		/// </summary>
 		/// <remarks>
-		/// Bare F6 is not a free key: the shipped mods bind it to Production06 (build palette tab 6) for
-		/// players and StatisticsCombat for observers. Consuming it here deliberately shadows those
-		/// bindings while this proof-of-concept is in the build; CTRL+F6 and every other F-key keep
-		/// their normal meaning.
+		/// The keys are the <c>SnapshotUndo</c>, <c>SnapshotRedo</c> and <c>SnapshotRedoAlt</c> hotkeys, matched
+		/// exactly by <see cref="MatchesSnapshotHotkey"/>, so Ctrl+Z is not Ctrl+Shift+Z and bare Z stays with Sell.
+		/// Key repeat is ignored, so holding a key steps back once.
 		/// </remarks>
 		public static bool HandleKeyInput(KeyInput input)
 		{
-			if (input.Event != KeyInputEvent.Down || input.IsRepeat ||
-				input.Key != Keycode.F6 || input.Modifiers != Modifiers.None)
+			if (input.Event != KeyInputEvent.Down || input.IsRepeat)
+				return false;
+
+			var isUndo = MatchesSnapshotHotkey(input, "SnapshotUndo");
+			var isRedo = !isUndo && (MatchesSnapshotHotkey(input, "SnapshotRedo") ||
+				MatchesSnapshotHotkey(input, "SnapshotRedoAlt"));
+			if (!isUndo && !isRedo)
 				return false;
 
 			var orderManager = Game.OrderManager;
@@ -458,10 +461,24 @@ namespace OpenRA
 				Ui.KeyboardFocusWidget != null)
 				return false;
 
-			if (!Undo(orderManager, Game.GetActiveWorldRenderer(), GameMsOf(world), out var failureReason))
-				Log.Write("debug", $"[WorldForks] restore requested but nothing was restored: {failureReason}");
+			var restored = isUndo
+				? Undo(orderManager, Game.GetActiveWorldRenderer(), GameMsOf(world), out var failureReason)
+				: Redo(orderManager, Game.GetActiveWorldRenderer(), GameMsOf(world), out failureReason);
 
-			return true;
+			if (!restored)
+				Log.Write("debug", $"[WorldForks] snapshot key pressed but nothing was restored: {failureReason}");
+
+			return restored;
+		}
+
+		/// <summary>
+		/// Whether the key press is exactly the named hotkey. A name with no definition never matches, because the
+		/// hotkey manager returns <see cref="Hotkey.Invalid"/> for it.
+		/// </summary>
+		internal static bool MatchesSnapshotHotkey(KeyInput input, string name)
+		{
+			var hotkey = Game.ModData.Hotkeys[name];
+			return hotkey.GetValue() != Hotkey.Invalid && hotkey.IsActivatedBy(input);
 		}
 
 		/// <summary>
