@@ -106,6 +106,22 @@ namespace OpenRA.Test
 			Assert.That(WorldForks.FindRedo(GapTicks * (long)Timestep)?.WorldTick, Is.EqualTo(2 * GapTicks));
 		}
 
+		[TestCase(TestName = "Undo and redo are inverses over the stored checkpoints: a redo from an undo target returns to where the undo came from")]
+		public void UndoAndRedoAreInverseOverStoredCheckpoints()
+		{
+			// Checkpoints at 5000 ms and 15000 ms. Live at 20000 ms: undo takes 15000, and undo again takes 5000.
+			Insert(GapTicks, 3 * GapTicks);
+
+			var firstUndo = WorldForks.FindUndo(4 * GapTicks * (long)Timestep)?.WorldTick;
+			Assert.That(firstUndo, Is.EqualTo(3 * GapTicks), "The first undo should take the newest checkpoint 5 s back.");
+
+			var secondUndo = WorldForks.FindUndo(firstUndo.Value * (long)Timestep)?.WorldTick;
+			Assert.That(secondUndo, Is.EqualTo(GapTicks), "The second undo should take the next checkpoint back.");
+
+			Assert.That(WorldForks.FindRedo(secondUndo.Value * (long)Timestep)?.WorldTick, Is.EqualTo(firstUndo),
+				"Redo from the second undo's target should land on the checkpoint the second undo left.");
+		}
+
 		[TestCase(TestName = "A write one tick inside the 5000 ms gap replaces the older checkpoint")]
 		public void WriteInsideGapReplacesOlder()
 		{

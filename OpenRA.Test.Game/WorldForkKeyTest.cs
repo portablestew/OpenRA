@@ -9,6 +9,7 @@
  */
 #endregion
 
+using System.Linq;
 using NUnit.Framework;
 
 namespace OpenRA.Test
@@ -66,6 +67,20 @@ namespace OpenRA.Test
 		public void KeyIsNotConsumedWithoutAGame(Keycode key, Modifiers modifiers)
 		{
 			Assert.That(WorldForks.HandleKeyInput(Press(key, modifiers)), Is.False);
+		}
+
+		[TestCase("SnapshotUndo", TestName = "Undo")]
+		[TestCase("SnapshotRedo", TestName = "Redo")]
+		[TestCase("SnapshotRedoAlt", TestName = "Alternate redo")]
+		public void SnapshotHotkeyIsBoundAndNotDuplicated(string name)
+		{
+			var hotkeys = HeadlessMod.ModData.Hotkeys;
+			var definition = hotkeys.Definitions.Single(d => d.Name == name);
+			var value = hotkeys[name].GetValue();
+
+			Assert.That(value, Is.Not.EqualTo(Hotkey.Invalid), "{0} resolved to no key, so it cannot be pressed.", name);
+			Assert.That(hotkeys.GetFirstDuplicate(definition, value), Is.Null,
+				"{0} shares its key with another hotkey in an overlapping context.", name);
 		}
 	}
 }
