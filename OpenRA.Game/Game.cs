@@ -105,7 +105,7 @@ namespace OpenRA
 
 			// The previous game's fork snapshots share its Map and order pipeline and must not leak
 			// into the game this connection will host.
-			WorldForks.Clear(RunTime);
+			WorldForks.Clear();
 
 			// HACK: The shellmap World and OrderManager are owned by the main menu's WorldRenderer instead of Game.
 			// This allows us to switch Game.OrderManager from the shellmap to the new network connection when joining
@@ -211,7 +211,7 @@ namespace OpenRA
 		internal static void StartGame(Map map, WorldType type)
 		{
 			// Any snapshots from the outgoing world are dead with it (they share its Map).
-			WorldForks.Clear(RunTime);
+			WorldForks.Clear();
 
 			// Dispose of the old world before creating a new one.
 			worldRenderer?.Dispose();
@@ -722,7 +722,7 @@ namespace OpenRA
 
 			// Between logic ticks (frame-end tasks drained) is the clean fork boundary: capture the
 			// rolling rewind snapshot when one is due.
-			WorldForks.MaybeSnapshot(OrderManager, RunTime);
+			WorldForks.MaybeSnapshot(OrderManager);
 		}
 
 		public static void PerformDelayedActions()

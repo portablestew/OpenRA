@@ -26,9 +26,10 @@ namespace OpenRA
 	/// restore path that adopts one of them as the active game state - an interactive, memory-backed
 	/// counterpart to the MCTS fork primitive. One snapshot is captured every
 	/// <see cref="CaptureIntervalMs"/> of wall-clock time; the window holds at most <see cref="Capacity"/>,
-	/// evicting the oldest. Pressing the rewind key (bare F6) pops the most recent snapshot, swaps it in
-	/// for the live world, and restarts the capture timer, so repeated presses walk backwards through the
-	/// window.
+	/// evicting the snapshot farthest in game time from the live tick. <see cref="Undo"/> and <see cref="Redo"/>
+	/// step to the nearest stored snapshot in their direction that is at least <see cref="MinGapMs"/> from the
+	/// live tick, swap a fresh clone of it in for the live world, and restart the capture timer from the restored
+	/// tick. Restoring never consumes a snapshot, so the window keeps every checkpoint for further steps.
 	/// <para>
 	/// Restoring is a world swap, not a state transplant: the fork already *is* a complete world (its
 	/// actors, traits, selection, synced RNG and effects are all clones), so the live game adopts it by
@@ -52,8 +53,13 @@ namespace OpenRA
 		/// <summary>Wall-clock milliseconds between snapshots during eligible gameplay.</summary>
 		public const long CaptureIntervalMs = 10_000;
 
-		/// <summary>Maximum snapshots held at once; the oldest is evicted when exceeded.</summary>
-		public const int Capacity = 64;
+		/// <summary>
+		/// Maximum snapshots held at once; when exceeded, the one farthest in game time from the live tick is evicted.
+		/// </summary>
+		public const int Capacity = 32;
+
+		/// <summary>Game-clock milliseconds a snapshot must be from another to be kept alongside it.</summary>
+		public const long MinGapMs = 5000;
 
 		/// <summary>
 		/// One captured fork plus the bookkeeping recorded alongside it: enough to reason about what the
@@ -66,6 +72,9 @@ namespace OpenRA
 
 			/// <summary><see cref="World.WorldTick"/> when the snapshot was captured.</summary>
 			public readonly int WorldTick;
+
+			/// <summary>Game time in milliseconds (<see cref="World.WorldTick"/> times <see cref="World.Timestep"/>); orders the window.</summary>
+			public readonly long GameMs;
 
 			/// <summary>Net frame of the shared order pipeline at capture time.</summary>
 			public readonly int NetFrame;
@@ -86,28 +95,25 @@ namespace OpenRA
 			/// <summary>Depth of the pending net-order queue at capture time.</summary>
 			public readonly int OrderQueueDepth;
 
-			/// <summary><see cref="Game.RunTime"/> when the snapshot was captured.</summary>
-			public readonly long CapturedAtRunTimeMs;
-
 			/// <summary>Wall-clock duration of the fork itself, in milliseconds.</summary>
 			public readonly double ForkMs;
 
 			/// <summary>Distinct instances the cloner registered - the size of the cloned state graph.</summary>
 			public readonly int ClonedObjects;
 
-			internal Snapshot(World world, int worldTick, int netFrame, int saveLastFrame, int framesSinceSave,
+			internal Snapshot(World world, int worldTick, long gameMs, int netFrame, int saveLastFrame, int framesSinceSave,
 				int serverSaveLastFrame, long serverBufferedOrderBytes, int orderQueueDepth,
-				long capturedAtRunTimeMs, double forkMs, int clonedObjects)
+				double forkMs, int clonedObjects)
 			{
 				World = world;
 				WorldTick = worldTick;
+				GameMs = gameMs;
 				NetFrame = netFrame;
 				SaveLastFrame = saveLastFrame;
 				FramesSinceSave = framesSinceSave;
 				ServerSaveLastFrame = serverSaveLastFrame;
 				ServerBufferedOrderBytes = serverBufferedOrderBytes;
 				OrderQueueDepth = orderQueueDepth;
-				CapturedAtRunTimeMs = capturedAtRunTimeMs;
 				ForkMs = forkMs;
 				ClonedObjects = clonedObjects;
 			}
@@ -121,10 +127,11 @@ namespace OpenRA
 			}
 		}
 
+		/// <summary>Snapshots ordered by <see cref="Snapshot.GameMs"/>, oldest first.</summary>
 		static readonly List<Snapshot> Snapshots = [];
 
-		/// <summary><see cref="Game.RunTime"/> before which no capture is attempted.</summary>
-		static long nextCaptureAtRunTimeMs;
+		/// <summary>Game time in milliseconds before which no capture is attempted.</summary>
+		static long nextCaptureAtGameMs;
 
 		/// <summary>Number of snapshots captured over the lifetime of the current window (for logging).</summary>
 		static int capturedTotal;
@@ -132,36 +139,160 @@ namespace OpenRA
 		/// <summary>Number of snapshots currently held; 0 when the window is empty.</summary>
 		public static int Count => Snapshots.Count;
 
+		/// <summary>Game time of <paramref name="world"/> in milliseconds, the clock the window is ordered by.</summary>
+		internal static long GameMsOf(World world) => (long)world.WorldTick * world.Timestep;
+
 		/// <summary>
-		/// Drops every snapshot and schedules the next capture one interval from <paramref name="nowMs"/>.
-		/// Called on game start and disconnect so a window never leaks across two games (snapshots share
-		/// the outgoing game's <see cref="Map"/>).
+		/// Stores <paramref name="snapshot"/> in game-time order, first dropping every snapshot within
+		/// <see cref="MinGapMs"/> of it so the window keeps one checkpoint per gap.
 		/// </summary>
-		public static void Clear(long nowMs)
+		internal static void InsertWithGapDedupe(Snapshot snapshot)
 		{
-			Snapshots.Clear();
-			capturedTotal = 0;
-			nextCaptureAtRunTimeMs = nowMs + CaptureIntervalMs;
+			Snapshots.RemoveAll(s => Math.Abs(s.GameMs - snapshot.GameMs) < MinGapMs);
+
+			var index = Snapshots.FindIndex(s => s.GameMs > snapshot.GameMs);
+			if (index < 0)
+				Snapshots.Add(snapshot);
+			else
+				Snapshots.Insert(index, snapshot);
 		}
 
 		/// <summary>
-		/// Captures a snapshot if <paramref name="nowMs"/> is due and the world is eligible. Called once
-		/// per logic tick from the game loop, between world ticks so the frame-end task queue is drained
-		/// and the fork boundary is clean. A failed or skipped attempt still reschedules only when a
-		/// capture was actually attempted, so gameplay that is ineligible (paused, loading a save) gets
-		/// its first snapshot promptly once it becomes eligible again, while capture failures do not
-		/// retry on every tick.
+		/// Evicts the snapshots farthest in game time from <paramref name="liveMs"/> until the window holds at
+		/// most <paramref name="capacity"/>. Ties go to the older snapshot, and <paramref name="keep"/> (the
+		/// snapshot just written) is never evicted.
 		/// </summary>
-		public static void MaybeSnapshot(OrderManager orderManager, long nowMs)
+		internal static void EvictFarthest(long liveMs, Snapshot keep, int capacity)
 		{
-			if (orderManager == null || nowMs < nextCaptureAtRunTimeMs)
+			while (Snapshots.Count > capacity)
+			{
+				var victim = -1;
+				var victimDistance = -1L;
+
+				// Snapshots are in ascending game time, so the strict comparison keeps the older of two equally distant ones.
+				for (var i = 0; i < Snapshots.Count; i++)
+				{
+					if (ReferenceEquals(Snapshots[i], keep))
+						continue;
+
+					var distance = Math.Abs(Snapshots[i].GameMs - liveMs);
+					if (distance > victimDistance)
+					{
+						victim = i;
+						victimDistance = distance;
+					}
+				}
+
+				if (victim < 0)
+					return;
+
+				Snapshots.RemoveAt(victim);
+			}
+		}
+
+		/// <summary>The newest snapshot at least <see cref="MinGapMs"/> older than <paramref name="liveMs"/>, or null.</summary>
+		internal static Snapshot FindUndo(long liveMs)
+		{
+			for (var i = Snapshots.Count - 1; i >= 0; i--)
+				if (Snapshots[i].GameMs <= liveMs - MinGapMs)
+					return Snapshots[i];
+
+			return null;
+		}
+
+		/// <summary>The oldest snapshot at least <see cref="MinGapMs"/> newer than <paramref name="liveMs"/>, or null.</summary>
+		internal static Snapshot FindRedo(long liveMs)
+		{
+			foreach (var snapshot in Snapshots)
+				if (snapshot.GameMs >= liveMs + MinGapMs)
+					return snapshot;
+
+			return null;
+		}
+
+		/// <summary>
+		/// Drops every snapshot and schedules the next capture one interval into game time, the clock a new
+		/// world starts at. Called on game start and disconnect so a window never leaks across two games
+		/// (snapshots share the outgoing game's <see cref="Map"/>).
+		/// </summary>
+		public static void Clear()
+		{
+			Snapshots.Clear();
+			capturedTotal = 0;
+			nextCaptureAtGameMs = CaptureIntervalMs;
+		}
+
+		/// <summary>
+		/// Captures a snapshot if the live world's game time is due and the world is eligible. Called once
+		/// per logic tick from the game loop, between world ticks so the frame-end task queue is drained
+		/// and the fork boundary is clean. The timer runs on game time, so a pause does not advance it, and
+		/// a restore moves it with the restored tick. A failed or skipped attempt still reschedules only when
+		/// a capture was actually attempted, so gameplay that is ineligible (paused, loading a save) gets its
+		/// first snapshot promptly once it becomes eligible again, while capture failures do not retry on
+		/// every tick.
+		/// </summary>
+		public static void MaybeSnapshot(OrderManager orderManager)
+		{
+			if (orderManager?.World is { } world)
+				MaybeSnapshot(orderManager, GameMsOf(world));
+		}
+
+		/// <summary>The timer gate of <see cref="MaybeSnapshot(OrderManager)"/>, with the live game time supplied.</summary>
+		internal static void MaybeSnapshot(OrderManager orderManager, long liveMs)
+		{
+			if (orderManager == null || liveMs < nextCaptureAtGameMs)
 				return;
 
 			if (!IsEligible(orderManager, out _))
 				return;
 
-			nextCaptureAtRunTimeMs = nowMs + CaptureIntervalMs;
-			Capture(orderManager, nowMs);
+			nextCaptureAtGameMs = liveMs + CaptureIntervalMs;
+			Capture(orderManager);
+		}
+
+		/// <summary>
+		/// Deep-clones <paramref name="source"/> under the live share policy and checks that the copy can be
+		/// adopted faithfully. Returns null, after logging why, when the cloner throws, when it met a value it
+		/// cannot copy, or when the copy did not share <paramref name="orderManager"/>. Capture and restore both
+		/// build their worlds here, so a restore adopts exactly what a capture would have produced.
+		/// </summary>
+		static World CloneChecked(World source, OrderManager orderManager, out int clonedObjects)
+		{
+			clonedObjects = 0;
+
+			// Defense in depth: a capture is speculative bookkeeping, and the live game must survive
+			// whatever the cloner meets in a particular world's graph (the first live capture crashed
+			// on a delegate the cloner could not rebind). Any failure discards the attempt and logs.
+			ObjectGraphCloner cloner;
+			World fork;
+			try
+			{
+				cloner = new ObjectGraphCloner(ShareLiveAsset);
+				fork = cloner.Clone(source);
+			}
+			catch (Exception e)
+			{
+				Log.Write("debug", $"[WorldForks] clone aborted: the cloner threw {e.GetType().Name}: {e.Message}");
+				return null;
+			}
+
+			if (cloner.Unsupported.Count > 0 || fork == null)
+			{
+				Log.Write("debug", "[WorldForks] clone aborted: the world graph contains values the cloner " +
+					"cannot copy faithfully. Unsupported: " + string.Join(", ", cloner.Unsupported));
+				return null;
+			}
+
+			// The share policy aliases the live OrderManager into the fork; a violation here would mean
+			// restoring a world whose frame counters silently disagree with the pipeline it rejoins.
+			if (!ReferenceEquals(fork.OrderManager, orderManager))
+			{
+				Log.Write("debug", "[WorldForks] clone aborted: the fork did not share the live OrderManager.");
+				return null;
+			}
+
+			clonedObjects = cloner.ClonedObjectCount;
+			return fork;
 		}
 
 		/// <summary>
@@ -169,78 +300,71 @@ namespace OpenRA
 		/// Returns false - without storing anything - if the world cannot be forked faithfully, so the
 		/// window never holds a snapshot that would restore into a broken game.
 		/// </summary>
-		public static bool Capture(OrderManager orderManager, long nowMs)
+		public static bool Capture(OrderManager orderManager)
 		{
 			var world = orderManager.World;
 
-			// Defense in depth: a capture is speculative bookkeeping, and the live game must survive
-			// whatever the cloner meets in a particular world's graph (the first live capture crashed
-			// on a delegate the cloner could not rebind). Any failure discards the attempt and logs.
 			var stopwatch = Stopwatch.StartNew();
-			ObjectGraphCloner cloner;
-			World fork;
-			try
-			{
-				cloner = new ObjectGraphCloner(ShareLiveAsset);
-				fork = cloner.Clone(world);
-			}
-			catch (Exception e)
-			{
-				stopwatch.Stop();
-				Log.Write("debug", $"[WorldForks] snapshot aborted: the cloner threw {e.GetType().Name}: {e.Message}");
-				return false;
-			}
-
+			var fork = CloneChecked(world, orderManager, out var clonedObjects);
 			stopwatch.Stop();
 
-			if (cloner.Unsupported.Count > 0 || fork == null)
-			{
-				Log.Write("debug", "[WorldForks] snapshot aborted: the world graph contains values the cloner " +
-					"cannot copy faithfully. Unsupported: " + string.Join(", ", cloner.Unsupported));
+			if (fork == null)
 				return false;
-			}
-
-			// The share policy aliases the live OrderManager into the fork; a violation here would mean
-			// restoring a world whose frame counters silently disagree with the pipeline it rejoins.
-			if (!ReferenceEquals(fork.OrderManager, orderManager))
-			{
-				Log.Write("debug", "[WorldForks] snapshot aborted: the fork did not share the live OrderManager.");
-				return false;
-			}
 
 			var saveLastFrame = orderManager.GameSaveLastFrame;
 			var serverSave = Game.GetActiveServer()?.GameSave;
 			var snapshot = new Snapshot(
 				fork,
 				world.WorldTick,
+				GameMsOf(world),
 				orderManager.NetFrameNumber,
 				saveLastFrame,
 				saveLastFrame < 0 ? -1 : orderManager.NetFrameNumber - saveLastFrame,
 				serverSave?.LastOrdersFrame ?? -1,
 				serverSave?.BufferedOrderBytes ?? -1,
 				orderManager.OrderQueueLength,
-				nowMs,
 				stopwatch.Elapsed.TotalMilliseconds,
-				cloner.ClonedObjectCount);
+				clonedObjects);
 
-			Snapshots.Add(snapshot);
+			InsertWithGapDedupe(snapshot);
 			capturedTotal++;
-			while (Snapshots.Count > Capacity)
-				Snapshots.RemoveAt(0);
+			EvictFarthest(GameMsOf(world), snapshot, Capacity);
 
 			Log.Write("debug", $"[WorldForks] snapshot {capturedTotal} (holding {Snapshots.Count}/{Capacity}): {snapshot}");
 			return true;
 		}
 
 		/// <summary>
-		/// Pops the most recent snapshot and makes it the active game state: the shared
-		/// <see cref="OrderManager"/> adopts it as its world, the renderer re-binds to it, world traits
-		/// that opted in via <see cref="IWorldAdopted"/> re-bind (the in-game widget tree reloads against
-		/// the restored world), and the capture timer restarts. Returns false with a reason when the
-		/// window is empty or the live world is not in a state that can be swapped.
+		/// Makes the newest snapshot at least <see cref="MinGapMs"/> older than <paramref name="liveMs"/> the
+		/// active game state. See <see cref="TryRestore"/> for what adopting a snapshot involves.
 		/// </summary>
-		public static bool TryRestore(OrderManager orderManager, WorldRenderer worldRenderer, long nowMs,
+		public static bool Undo(OrderManager orderManager, WorldRenderer worldRenderer, long liveMs,
 			out string failureReason)
+		{
+			return TryRestore(orderManager, worldRenderer, liveMs, FindUndo, out failureReason);
+		}
+
+		/// <summary>
+		/// Makes the oldest snapshot at least <see cref="MinGapMs"/> newer than <paramref name="liveMs"/> the
+		/// active game state. See <see cref="TryRestore"/> for what adopting a snapshot involves.
+		/// </summary>
+		public static bool Redo(OrderManager orderManager, WorldRenderer worldRenderer, long liveMs,
+			out string failureReason)
+		{
+			return TryRestore(orderManager, worldRenderer, liveMs, FindRedo, out failureReason);
+		}
+
+		/// <summary>
+		/// Adopts a fresh clone of the snapshot <paramref name="find"/> picks for <paramref name="liveMs"/> as the
+		/// active game state: the shared <see cref="OrderManager"/> adopts it as its world, the renderer re-binds
+		/// to it, world traits that opted in via <see cref="IWorldAdopted"/> re-bind (the in-game widget tree
+		/// reloads against the restored world), and the capture timer restarts from the restored tick. The stored
+		/// snapshot is cloned, never handed out, so it stays in the window and can be restored again. Returns false
+		/// with a reason when the window is empty, no snapshot is in range, the clone fails, or the live world is
+		/// not in a state that can be swapped; nothing changes in that case.
+		/// </summary>
+		static bool TryRestore(OrderManager orderManager, WorldRenderer worldRenderer, long liveMs,
+			Func<long, Snapshot> find, out string failureReason)
 		{
 			if (Snapshots.Count == 0)
 			{
@@ -267,14 +391,19 @@ namespace OpenRA
 				return false;
 			}
 
-			var snapshot = Snapshots[^1];
-			Snapshots.RemoveAt(Snapshots.Count - 1);
-			var fork = snapshot.World;
-
-			if (!ReferenceEquals(fork.OrderManager, orderManager))
+			var snapshot = find(liveMs);
+			if (snapshot == null)
 			{
-				Snapshots.Add(snapshot);
-				failureReason = "the snapshot belongs to a different order pipeline";
+				failureReason = $"no snapshot is at least {MinGapMs} ms away from the live tick in that direction";
+				return false;
+			}
+
+			// The clone is what gets adopted, so the stored snapshot's world is never mutated by play and a
+			// later restore of the same snapshot starts from the same captured state.
+			var fork = CloneChecked(snapshot.World, orderManager, out _);
+			if (fork == null)
+			{
+				failureReason = "the snapshot could not be copied into a world that can be adopted";
 				return false;
 			}
 
@@ -295,26 +424,13 @@ namespace OpenRA
 				Game.OnWorldReplaced(fork);
 			});
 
-			nextCaptureAtRunTimeMs = nowMs + CaptureIntervalMs;
+			// The timer restarts from the tick the restore landed on, because the game clock has just jumped back.
+			nextCaptureAtGameMs = GameMsOf(fork) + CaptureIntervalMs;
 
 			Log.Write("debug", $"[WorldForks] restored snapshot at {snapshot} (previous worldTick={world.WorldTick}); " +
-				$"next capture in {CaptureIntervalMs} ms; {Snapshots.Count} snapshot(s) remaining");
+				$"next capture in {CaptureIntervalMs} ms of game time; {Snapshots.Count} snapshot(s) held");
 			failureReason = null;
 			return true;
-		}
-
-		/// <summary>
-		/// Restores the most recent snapshot into the active game and restarts the capture timer - the
-		/// rewind action itself, independent of how it is triggered (the F6 key today, a UI button
-		/// tomorrow). Returns false and logs when nothing could be restored.
-		/// </summary>
-		public static bool RestoreLatest()
-		{
-			if (TryRestore(Game.OrderManager, Game.GetActiveWorldRenderer(), Game.RunTime, out var failureReason))
-				return true;
-
-			Log.Write("debug", $"[WorldForks] restore requested but nothing was restored: {failureReason}");
-			return false;
 		}
 
 		/// <summary>
@@ -342,7 +458,9 @@ namespace OpenRA
 				Ui.KeyboardFocusWidget != null)
 				return false;
 
-			RestoreLatest();
+			if (!Undo(orderManager, Game.GetActiveWorldRenderer(), GameMsOf(world), out var failureReason))
+				Log.Write("debug", $"[WorldForks] restore requested but nothing was restored: {failureReason}");
+
 			return true;
 		}
 
@@ -422,10 +540,9 @@ namespace OpenRA
 		/// the headless MCTS fork aliases (immutable rules, the map's process-wide parts, mod services,
 		/// graphics assets) plus the live order pipeline. Sharing the <see cref="OrderManager"/> is what
 		/// makes restore a pure re-point: the fork reads the same frame counters, lobby and connection the
-		/// game continues on,
-		/// and <see cref="World.IsLoadingGameSave"/> stays consistent with the live pipeline instead of
-		/// freezing at the snapshot's frame. It also stops the traversal at the network connection, so no
-		/// socket, thread or recorder is ever cloned.
+		/// game continues on, and <see cref="World.IsLoadingGameSave"/> stays consistent with the live pipeline
+		/// instead of freezing at the snapshot's frame. It also stops the traversal at the network connection,
+		/// so no socket, thread or recorder is ever cloned.
 		/// </summary>
 		/// <remarks>
 		/// Aliasing also prunes traversal: anything reachable only through a shared instance is shared

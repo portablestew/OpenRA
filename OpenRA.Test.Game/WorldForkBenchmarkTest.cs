@@ -135,7 +135,7 @@ namespace OpenRA.Test
 		/// collections on both sides of the captures, and divide the heap delta by the sample count. The
 		/// assets a snapshot aliases (map, rules, graphics) were already retained before the first capture,
 		/// so the delta is exactly what one window entry costs - the number that decides whether a window
-		/// of 64 fits in memory.
+		/// of <see cref="WorldForks.Capacity"/> fits in memory.
 		/// <para>
 		/// Like the throughput benchmark this reports rather than guards, and it is <c>[Explicit]</c> for
 		/// the same reason. Run it deliberately:
@@ -154,10 +154,10 @@ namespace OpenRA.Test
 			using (var warm = HeadlessWorld.Create(Seed))
 			{
 				SetUpCombat(warm);
-				Assert.That(WorldForks.Capture(warm.OrderManager, 0), Is.True, "The warm-up capture was refused.");
+				Assert.That(WorldForks.Capture(warm.OrderManager), Is.True, "The warm-up capture was refused.");
 			}
 
-			WorldForks.Clear(0);
+			WorldForks.Clear();
 
 			using var parent = HeadlessWorld.Create(Seed);
 			SetUpCombat(parent);
@@ -168,9 +168,21 @@ namespace OpenRA.Test
 				GC.WaitForPendingFinalizers();
 				var before = GC.GetTotalMemory(true);
 
+				// Each capture must be at least MinGapMs of game time after the last, or the write rule dedupes it
+				// away and the figure would measure one snapshot divided by Samples. Ticking between captures
+				// also grows the parent's own state inside the measured span; that is accepted as a small bias.
+				var gapTicks = (int)Math.Ceiling(WorldForks.MinGapMs / (double)parent.World.Timestep);
 				for (var i = 0; i < Samples; i++)
-					Assert.That(WorldForks.Capture(parent.OrderManager, i * WorldForks.CaptureIntervalMs), Is.True,
+				{
+					if (i > 0)
+						parent.Tick(gapTicks);
+
+					Assert.That(WorldForks.Capture(parent.OrderManager), Is.True,
 						$"Capture {i} was refused.");
+				}
+
+				Assert.That(WorldForks.Count, Is.EqualTo(Samples),
+					"The window deduped some captures, so the per-snapshot figure would be wrong.");
 
 				GC.Collect();
 				GC.WaitForPendingFinalizers();
@@ -200,7 +212,7 @@ namespace OpenRA.Test
 			}
 			finally
 			{
-				WorldForks.Clear(0);
+				WorldForks.Clear();
 			}
 		}
 

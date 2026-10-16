@@ -36,6 +36,9 @@ namespace OpenRA.Test
 		/// <summary>The Locomotor cost of an impassable cell (IPathGraph.cs:41).</summary>
 		const short UnreachableCost = short.MaxValue;
 
+		/// <summary>A live clock 5 s past the parent's current tick, so a snapshot taken at that tick is in range for undo.</summary>
+		static long LiveAfterGap(HeadlessWorld parent) => WorldForks.GameMsOf(parent.World) + WorldForks.MinGapMs;
+
 		[OneTimeSetUp]
 		public void InitializeMod()
 		{
@@ -46,13 +49,13 @@ namespace OpenRA.Test
 		[SetUp]
 		public void ResetWindow()
 		{
-			WorldForks.Clear(0);
+			WorldForks.Clear();
 		}
 
 		[TearDown]
 		public void ClearWindow()
 		{
-			WorldForks.Clear(0);
+			WorldForks.Clear();
 		}
 
 		[TestCase(TestName = "A restored world has its own map layers, unaffected by terrain written in the outgoing world after the capture")]
@@ -65,10 +68,10 @@ namespace OpenRA.Test
 			var water = parent.World.Map.Rules.TerrainInfo.GetTerrainIndex("Water");
 			var capturedValue = parent.World.Map.CustomTerrain[cell];
 
-			Assert.That(WorldForks.Capture(parent.OrderManager, 0), Is.True, "The capture was refused.");
+			Assert.That(WorldForks.Capture(parent.OrderManager), Is.True, "The capture was refused.");
 
 			parent.World.Map.CustomTerrain[cell] = water;
-			Assert.That(WorldForks.TryRestore(parent.OrderManager, null, 1, out var restoreFailure), Is.True, restoreFailure);
+			Assert.That(WorldForks.Undo(parent.OrderManager, null, LiveAfterGap(parent), out var restoreFailure), Is.True, restoreFailure);
 
 			var restored = parent.OrderManager.World;
 			Assert.That(restored.Map, Is.Not.SameAs(parent.World.Map),
@@ -87,8 +90,8 @@ namespace OpenRA.Test
 			var cell = parent.FindClearArea(parent.LocalPlayer.HomeLocation, 1, 1);
 			var water = parent.World.Map.Rules.TerrainInfo.GetTerrainIndex("Water");
 
-			Assert.That(WorldForks.Capture(parent.OrderManager, 0), Is.True, "The capture was refused.");
-			Assert.That(WorldForks.TryRestore(parent.OrderManager, null, 1, out var restoreFailure), Is.True, restoreFailure);
+			Assert.That(WorldForks.Capture(parent.OrderManager), Is.True, "The capture was refused.");
+			Assert.That(WorldForks.Undo(parent.OrderManager, null, LiveAfterGap(parent), out var restoreFailure), Is.True, restoreFailure);
 
 			var restored = parent.OrderManager.World;
 			var foot = FootLocomotorOf(restored);
@@ -111,8 +114,8 @@ namespace OpenRA.Test
 
 			var outgoingTraits = new HashSet<object>(parent.World.WorldActor.TraitsImplementing<IWorldLoaded>(), ReferenceEqualityComparer.Instance);
 
-			Assert.That(WorldForks.Capture(parent.OrderManager, 0), Is.True, "The capture was refused.");
-			Assert.That(WorldForks.TryRestore(parent.OrderManager, null, 1, out var restoreFailure), Is.True, restoreFailure);
+			Assert.That(WorldForks.Capture(parent.OrderManager), Is.True, "The capture was refused.");
+			Assert.That(WorldForks.Undo(parent.OrderManager, null, LiveAfterGap(parent), out var restoreFailure), Is.True, restoreFailure);
 
 			var restored = parent.OrderManager.World;
 			var restoredTraits = new HashSet<object>(restored.WorldActor.TraitsImplementing<IWorldLoaded>(), ReferenceEqualityComparer.Instance);
@@ -144,8 +147,8 @@ namespace OpenRA.Test
 
 			var cell = parent.World.Map.AllCells.First(parent.World.Map.CustomTerrain.Contains);
 			var water = parent.World.Map.Rules.TerrainInfo.GetTerrainIndex("Water");
-			Assert.That(WorldForks.Capture(parent.OrderManager, 0), Is.True, "The capture was refused.");
-			Assert.That(WorldForks.TryRestore(parent.OrderManager, null, 1, out var restoreFailure), Is.True, restoreFailure);
+			Assert.That(WorldForks.Capture(parent.OrderManager), Is.True, "The capture was refused.");
+			Assert.That(WorldForks.Undo(parent.OrderManager, null, LiveAfterGap(parent), out var restoreFailure), Is.True, restoreFailure);
 
 			var restored = parent.OrderManager.World;
 			typeof(WorldRenderer).GetProperty(nameof(WorldRenderer.World)).SetValue(renderer, restored);

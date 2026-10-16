@@ -9,6 +9,7 @@
  */
 #endregion
 
+using System.Collections;
 using System.Linq;
 using System.Reflection;
 using NUnit.Framework;
@@ -50,14 +51,17 @@ namespace OpenRA.Test
 		[SetUp]
 		public void ResetWindow()
 		{
-			WorldForks.Clear(0);
+			WorldForks.Clear();
 		}
 
 		[TearDown]
 		public void ClearWindow()
 		{
-			WorldForks.Clear(0);
+			WorldForks.Clear();
 		}
+
+		/// <summary>A live clock 5 s past the parent's current tick, so a snapshot taken at that tick is in range for undo.</summary>
+		static long LiveAfterGap(HeadlessWorld parent) => WorldForks.GameMsOf(parent.World) + WorldForks.MinGapMs;
 
 		static void SetUpCombat(HeadlessWorld w)
 		{
@@ -87,7 +91,7 @@ namespace OpenRA.Test
 			var capturePointHash = parent.World.SyncHash();
 			var capturePointTick = parent.World.WorldTick;
 
-			Assert.That(WorldForks.Capture(orderManager, 0), Is.True, "The capture was refused.");
+			Assert.That(WorldForks.Capture(orderManager), Is.True, "The capture was refused.");
 			Assert.That(WorldForks.Count, Is.EqualTo(1), "The captured snapshot was not held in the window.");
 
 			// Let the battle move on, so restoring is observable and not a no-op.
@@ -98,7 +102,9 @@ namespace OpenRA.Test
 				"The parent did not tick as far as expected.");
 			var outgoingHash = parent.World.SyncHash();
 
-			Assert.That(WorldForks.TryRestore(orderManager, null, 1, out var restoreFailure), Is.True, restoreFailure);
+			// The live clock is 5 s past the outgoing world, so the capture is at least MinGapMs behind it and in range.
+			var liveMs = WorldForks.GameMsOf(parent.World) + WorldForks.MinGapMs;
+			Assert.That(WorldForks.Undo(orderManager, null, liveMs, out var restoreFailure), Is.True, restoreFailure);
 
 			var restored = orderManager.World;
 			Assert.That(restored, Is.Not.SameAs(parent.World),
@@ -121,10 +127,15 @@ namespace OpenRA.Test
 			Assert.That(restored.SyncHash(), Is.Not.EqualTo(capturePointHash),
 				"The restored world's combat did not evolve, so the ticks above did not simulate.");
 
-			// Restoring pops the snapshot: a second restore finds the window empty.
-			Assert.That(WorldForks.Count, Is.Zero, "Restore did not pop the snapshot.");
-			Assert.That(WorldForks.TryRestore(orderManager, null, 2, out var emptyReason), Is.False);
-			Assert.That(emptyReason, Is.Not.Empty);
+			// Restoring does not consume the snapshot: it stays in the window, and undoing again from the same live
+			// clock adopts a fresh clone of it, which is back at the captured tick and state.
+			Assert.That(WorldForks.Count, Is.EqualTo(1), "Restore consumed the snapshot; it must stay in the window.");
+			Assert.That(WorldForks.Undo(orderManager, null, liveMs, out var secondFailure), Is.True, secondFailure);
+			Assert.That(orderManager.World.WorldTick, Is.EqualTo(capturePointTick),
+				"The second undo did not return to the captured tick.");
+			Assert.That(orderManager.World.SyncHash(), Is.EqualTo(capturePointHash),
+				"The second undo did not reproduce the captured state.");
+			Assert.That(WorldForks.Count, Is.EqualTo(1), "The second undo changed the window.");
 		}
 
 		[TestCase(TestName = "A restored infantry animation draws the restored actor's facing, not the outgoing actor's")]
@@ -139,14 +150,14 @@ namespace OpenRA.Test
 			var actorId = outgoingActor.ActorID;
 			var capturedFacing = outgoingActor.TraitOrDefault<IFacing>().Facing;
 
-			Assert.That(WorldForks.Capture(orderManager, 0), Is.True, "The capture was refused.");
+			Assert.That(WorldForks.Capture(orderManager), Is.True, "The capture was refused.");
 
 			// Turn the outgoing actor away after the capture: the fork's copy must keep the captured facing.
 			var outgoingFacing = new WAngle((capturedFacing.Angle + 512) % 1024);
 			outgoingActor.TraitOrDefault<IFacing>().Facing = outgoingFacing;
 			var outgoingAnimation = DefaultAnimationOf(outgoingActor);
 
-			Assert.That(WorldForks.TryRestore(orderManager, null, 1, out var restoreFailure), Is.True, restoreFailure);
+			Assert.That(WorldForks.Undo(orderManager, null, LiveAfterGap(parent), out var restoreFailure), Is.True, restoreFailure);
 
 			var restoredActor = orderManager.World.Actors.Single(a => a.ActorID == actorId);
 			Assert.That(restoredActor.TraitOrDefault<IFacing>().Facing, Is.EqualTo(capturedFacing),
@@ -175,8 +186,8 @@ namespace OpenRA.Test
 			SetUpCombat(parent);
 			parent.Tick(TicksBeforeCapture);
 
-			Assert.That(WorldForks.Capture(parent.OrderManager, 0), Is.True, "The capture was refused.");
-			Assert.That(WorldForks.TryRestore(parent.OrderManager, null, 1, out var restoreFailure), Is.True, restoreFailure);
+			Assert.That(WorldForks.Capture(parent.OrderManager), Is.True, "The capture was refused.");
+			Assert.That(WorldForks.Undo(parent.OrderManager, null, LiveAfterGap(parent), out var restoreFailure), Is.True, restoreFailure);
 
 			var adopting = parent.OrderManager.World.WorldActor.TraitsImplementing<IWorldAdopted>()
 				.Select(t => t.GetType().Name)
@@ -197,14 +208,14 @@ namespace OpenRA.Test
 				.GetValue(trait);
 		}
 
-		[TestCase(TestName = "The capture timer fires once per interval and restarts after a restore")]
+		[TestCase(TestName = "The capture timer fires once per game-time interval and restarts from the tick a restore lands on")]
 		public void CaptureTimerGate()
 		{
 			using var world = HeadlessWorld.Create(0xA11CE);
 			world.Tick(5);
 			var orderManager = world.OrderManager;
 
-			WorldForks.Clear(0);
+			WorldForks.Clear();
 			WorldForks.MaybeSnapshot(orderManager, 0);
 			Assert.That(WorldForks.Count, Is.Zero, "A snapshot was captured before the first interval elapsed.");
 
@@ -213,17 +224,57 @@ namespace OpenRA.Test
 
 			WorldForks.MaybeSnapshot(orderManager, WorldForks.CaptureIntervalMs);
 			Assert.That(WorldForks.Count, Is.EqualTo(1), "No snapshot was captured when the interval came due.");
+			var captured = StoredSnapshots();
 
-			// Restoring restarts the timer: nothing may be captured until a full interval after the restore.
-			const long RestoreAt = WorldForks.CaptureIntervalMs + 5;
-			Assert.That(WorldForks.TryRestore(orderManager, null, RestoreAt, out var restoreFailure), Is.True,
-				restoreFailure);
+			// The window holds the capture at world tick 5. Undo from a live clock 5 s past the interval lands on it.
+			const long LiveMs = WorldForks.CaptureIntervalMs + WorldForks.MinGapMs;
+			Assert.That(WorldForks.Undo(orderManager, null, LiveMs, out var restoreFailure), Is.True, restoreFailure);
+			Assert.That(orderManager.World.WorldTick, Is.EqualTo(5), "The restore did not land on the captured tick.");
+			var restoredMs = WorldForks.GameMsOf(orderManager.World);
 
-			WorldForks.MaybeSnapshot(orderManager, RestoreAt + 1);
-			Assert.That(WorldForks.Count, Is.Zero, "The restore did not restart the capture timer.");
+			// The clock jumped back, so the timer restarts from the restored tick: a capture comes one interval after
+			// it, not one interval after the live clock. The window is compared by snapshot identity, because a capture
+			// at the restored tick replaces its own entry and the count alone cannot show it.
+			WorldForks.MaybeSnapshot(orderManager, restoredMs + WorldForks.CaptureIntervalMs - 1);
+			Assert.That(StoredSnapshots(), Is.EqualTo(captured), "A snapshot was captured before a full interval had passed since the restore.");
 
-			WorldForks.MaybeSnapshot(orderManager, RestoreAt + WorldForks.CaptureIntervalMs);
-			Assert.That(WorldForks.Count, Is.EqualTo(1), "The timer did not fire one interval after the restore.");
+			WorldForks.MaybeSnapshot(orderManager, restoredMs + WorldForks.CaptureIntervalMs);
+			Assert.That(StoredSnapshots(), Is.Not.EqualTo(captured), "No snapshot was captured one interval after the restore.");
+			Assert.That(WorldForks.Count, Is.EqualTo(1), "The capture after the restore changed the window's size.");
+		}
+
+		[TestCase(TestName = "Two consecutive undos from the same live clock adopt the same snapshot and leave the window unchanged")]
+		public void ConsecutiveUndoRestoresReturnToTheSameTick()
+		{
+			using var parent = HeadlessWorld.Create(Seed);
+			SetUpCombat(parent);
+			parent.Tick(TicksBeforeCapture);
+
+			var orderManager = parent.OrderManager;
+			var captureTick = parent.World.WorldTick;
+			Assert.That(WorldForks.Capture(orderManager), Is.True, "The capture was refused.");
+			parent.Tick(TicksAfterCapture);
+
+			var liveMs = WorldForks.GameMsOf(parent.World) + WorldForks.MinGapMs;
+			Assert.That(WorldForks.Undo(orderManager, null, liveMs, out var firstFailure), Is.True, firstFailure);
+			var firstRestore = orderManager.World;
+			Assert.That(firstRestore.WorldTick, Is.EqualTo(captureTick), "The first undo did not land on the captured tick.");
+			Assert.That(WorldForks.Count, Is.EqualTo(1), "The first undo changed the window.");
+
+			Assert.That(WorldForks.Undo(orderManager, null, liveMs, out var secondFailure), Is.True, secondFailure);
+			Assert.That(orderManager.World.WorldTick, Is.EqualTo(captureTick), "The second undo did not land on the captured tick.");
+			Assert.That(WorldForks.Count, Is.EqualTo(1), "The second undo changed the window.");
+
+			// Each undo adopts its own clone of the stored snapshot, so the two restores never share a world.
+			Assert.That(orderManager.World, Is.Not.SameAs(firstRestore), "The second undo reused the first restore's world.");
+		}
+
+		/// <summary>The window's snapshots, read through the private list so a test can tell a replaced snapshot from a kept one.</summary>
+		static object[] StoredSnapshots()
+		{
+			var field = typeof(WorldForks).GetField("Snapshots", BindingFlags.Static | BindingFlags.NonPublic);
+			Assert.That(field, Is.Not.Null, "WorldForks.Snapshots was renamed; update this check.");
+			return ((IEnumerable)field.GetValue(null)).Cast<object>().ToArray();
 		}
 
 		/// <summary>
