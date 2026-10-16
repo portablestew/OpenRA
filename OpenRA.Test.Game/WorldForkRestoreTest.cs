@@ -9,13 +9,16 @@
  */
 #endregion
 
+using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using NUnit.Framework;
 using OpenRA.Graphics;
 using OpenRA.Network;
 using OpenRA.Traits;
+using OpenRA.Widgets;
 
 namespace OpenRA.Test
 {
@@ -195,6 +198,71 @@ namespace OpenRA.Test
 			Assert.That(adopting, Is.SupersetOf(SharedLayerRenderers),
 				"A renderer that shares its layer with the outgoing world does not adopt the restored world, so it keeps " +
 				"showing the outgoing world's last redraw.");
+		}
+
+		/// <summary>
+		/// Every subscriber of every delegate field on an object: the events and callbacks the restore must remap.
+		/// </summary>
+		static List<object> SubscriberTargets(object o)
+		{
+			return o.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+				.Select(f => f.GetValue(o))
+				.OfType<Delegate>()
+				.SelectMany(d => d.GetInvocationList())
+				.Select(d => d.Target)
+				.Where(t => t != null)
+				.ToList();
+		}
+
+		[TestCase(TestName = "After a restore, no world or shroud event keeps a subscriber from the outgoing widget tree, and keeps the rest")]
+		public void RestoreDropsOutgoingUiSubscribers()
+		{
+			using var parent = HeadlessWorld.Create(Seed);
+			SetUpCombat(parent);
+			parent.Tick(TicksBeforeCapture);
+
+			var ui = new UiSubscriberWidget();
+			var liveShroud = parent.LocalPlayer.Shroud;
+			var engineSeen = 0;
+			Action<Actor> engine = _ => engineSeen++;
+			parent.World.ActorAdded += ui.ActorChanged;
+			parent.World.ActorAdded += engine;
+			liveShroud.OnShroudChanged += ui.ShroudChanged;
+
+			Assert.That(SubscriberTargets(parent.World), Does.Contain(ui),
+				"Control: the widget is not subscribed to the live world, so the check below proves nothing.");
+			Assert.That(SubscriberTargets(liveShroud), Does.Contain(ui),
+				"Control: the widget is not subscribed to the live shroud, so the check below proves nothing.");
+			var liveNonUiWorld = SubscriberTargets(parent.World).Count(t => t is not Widget);
+			var liveNonUiShroud = SubscriberTargets(liveShroud).Count(t => t is not Widget);
+
+			// The shroud state the radar reads at the capture point, cell by cell.
+			var capturedVisibility = parent.World.Map.ProjectedCells.ToDictionary(p => p, p => liveShroud.GetVisibility(p));
+			Assert.That(capturedVisibility.Values.Any(v => v.HasFlag(Shroud.CellVisibility.Explored)), Is.True,
+				"No cell is explored at the capture point, so the refresh check below proves nothing.");
+
+			Assert.That(WorldForks.Capture(parent.OrderManager), Is.True, "The capture was refused.");
+			Assert.That(WorldForks.Undo(parent.OrderManager, null, LiveAfterGap(parent), out var restoreFailure), Is.True, restoreFailure);
+
+			var restored = parent.OrderManager.World;
+			Assert.That(restored, Is.Not.SameAs(parent.World), "Restore must adopt the cloned fork, not the outgoing world.");
+			Assert.That(restored.LocalPlayer, Is.Not.Null, "The restored world has no local player to read the shroud from.");
+			var restoredShroud = restored.LocalPlayer.Shroud;
+
+			Assert.That(SubscriberTargets(restored).OfType<Widget>(), Is.Empty,
+				"The restored world still holds a subscriber from the outgoing widget tree.");
+			Assert.That(SubscriberTargets(restoredShroud).OfType<Widget>(), Is.Empty,
+				"The restored shroud still holds a subscriber from the outgoing widget tree.");
+
+			Assert.That(SubscriberTargets(restored).Count(t => t is not Widget), Is.EqualTo(liveNonUiWorld),
+				"The restore dropped engine subscribers of the world, not only widget ones.");
+			Assert.That(SubscriberTargets(restoredShroud).Count(t => t is not Widget), Is.EqualTo(liveNonUiShroud),
+				"The restore dropped engine subscribers of the shroud, not only widget ones.");
+
+			// The radar repaints from the restored shroud, so every cell must read the state it had at the capture.
+			foreach (var (cell, visibility) in capturedVisibility)
+				Assert.That(restoredShroud.GetVisibility(cell), Is.EqualTo(visibility),
+					$"Cell {cell} reads a different shroud state after the restore than at the capture point.");
 		}
 
 		/// <summary>

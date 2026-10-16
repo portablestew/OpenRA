@@ -114,12 +114,11 @@ namespace OpenRA.Mods.Common.Widgets
 			var player = world.Type == WorldType.Regular ? world.LocalPlayer ?? world.RenderPlayer : null;
 			SetPlayer(player, true);
 
-			if (player == null)
-			{
-				// Set initial terrain data
-				foreach (var uv in world.Map.AllCells.MapCoords)
-					UpdateTerrainColor(uv);
-			}
+			// Set initial terrain data. This must run for a player too: PlayerRadarTerrain only paints the whole
+			// map once, in its own frame-end task, and a radar built later (e.g. against a restored world) would
+			// otherwise keep a blank terrain layer until each cell changed.
+			foreach (var uv in world.Map.AllCells.MapCoords)
+				UpdateTerrainColor(uv);
 
 			world.RenderPlayerChanged += WorldOnRenderPlayerChanged;
 		}

@@ -267,7 +267,7 @@ namespace OpenRA
 			World fork;
 			try
 			{
-				cloner = new ObjectGraphCloner(ShareLiveAsset);
+				cloner = new ObjectGraphCloner(ShareLiveAsset, DropUiSubscriber);
 				fork = cloner.Clone(source);
 			}
 			catch (Exception e)
@@ -633,10 +633,31 @@ namespace OpenRA
 			// prunes traversal at the UI boundary: widget bases live in OpenRA.Widgets, mods' widgets
 			// and their logic (including compiler-generated closures) in e.g.
 			// OpenRA.Mods.Common.Widgets[.Logic].
-			if ((type.Namespace ?? "").Contains(".Widgets", System.StringComparison.Ordinal))
+			if (IsWidgetTree(type))
 				return true;
 
 			return false;
+		}
+
+		/// <summary>
+		/// Whether a type belongs to the widget tree: the widget bases, mods' widgets and their logic, and their
+		/// compiler-generated closures.
+		/// </summary>
+		static bool IsWidgetTree(System.Type type)
+		{
+			return (type.Namespace ?? "").Contains(".Widgets", System.StringComparison.Ordinal);
+		}
+
+		/// <summary>
+		/// The share policy for widget subscribers. A widget tree is shared with the outgoing world, so a world event
+		/// handler that is a widget would otherwise come across still pointing at the outgoing UI, and keep
+		/// receiving the restored world's events there. Such delegates are left out of the copy instead. The live
+		/// game rebuilds the widget tree against the restored world in <see cref="IWorldAdopted"/>, and each rebuilt
+		/// widget subscribes itself.
+		/// </summary>
+		internal static bool DropUiSubscriber(object o)
+		{
+			return IsWidgetTree(o.GetType());
 		}
 	}
 }

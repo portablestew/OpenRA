@@ -52,6 +52,7 @@ namespace OpenRA.Support
 
 		readonly Dictionary<object, object> clones = new(ReferenceEqualityComparer.Instance);
 		readonly Func<object, bool> shareInstance;
+		readonly Func<object, bool> dropSubscriber;
 		readonly List<string> unsupported = [];
 
 		/// <summary>
@@ -80,8 +81,21 @@ namespace OpenRA.Support
 		/// for immutable or externally owned data, such as rules, map and asset definitions.
 		/// </param>
 		public ObjectGraphCloner(Func<object, bool> shareInstance = null)
+			: this(shareInstance, null)
+		{
+		}
+
+		/// <param name="shareInstance">See the other constructor.</param>
+		/// <param name="dropSubscriber">
+		/// Returns true for a delegate target that must not come across at all. A delegate whose target matches is
+		/// left out of the copy (a multicast delegate keeps its other entries), so the event it was subscribed to is
+		/// empty or lacks it. Used for subscribers that are shared with the original but belong to the original's
+		/// process-level state, which would otherwise keep receiving the copy's events.
+		/// </param>
+		public ObjectGraphCloner(Func<object, bool> shareInstance, Func<object, bool> dropSubscriber)
 		{
 			this.shareInstance = shareInstance ?? (_ => false);
+			this.dropSubscriber = dropSubscriber ?? (_ => false);
 		}
 
 		public T Clone<T>(T root)
@@ -171,17 +185,27 @@ namespace OpenRA.Support
 			{
 				// Multicast: rebuild each entry against its cloned target, then recombine in order. The
 				// combined delegate is registered so a second reference to this same multicast is shared.
-				var clonedEntries = new Delegate[invocationList.Length];
+				var clonedEntries = new List<Delegate>(invocationList.Length);
 				for (var i = 0; i < invocationList.Length; i++)
-					clonedEntries[i] = (Delegate)CloneDelegate(invocationList[i], invocationList[i].GetType(), trackPaths ? $"{path}[{i}]" : null);
+				{
+					var entry = (Delegate)CloneDelegate(invocationList[i], invocationList[i].GetType(), trackPaths ? $"{path}[{i}]" : null);
+					if (entry != null)
+						clonedEntries.Add(entry);
+				}
 
-				var combined = Delegate.Combine(clonedEntries);
+				if (clonedEntries.Count == 0)
+					return null;
+
+				var combined = Delegate.Combine(clonedEntries.ToArray());
 				return RegisterClone(del, combined);
 			}
 
 			// A static method has no target to clone; the delegate is immutable and safe to share.
 			if (del.Target == null)
 				return RegisterClone(del, del);
+
+			if (dropSubscriber(del.Target))
+				return null;
 
 			var clonedTarget = CloneValue(del.Target, trackPaths ? $"{path}.Target" : null);
 
