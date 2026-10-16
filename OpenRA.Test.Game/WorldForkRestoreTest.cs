@@ -224,9 +224,9 @@ namespace OpenRA.Test
 			var ui = new UiSubscriberWidget();
 			var liveShroud = parent.LocalPlayer.Shroud;
 			var engineSeen = 0;
-			Action<Actor> engine = _ => engineSeen++;
+			void Engine(Actor _) => engineSeen++;
 			parent.World.ActorAdded += ui.ActorChanged;
-			parent.World.ActorAdded += engine;
+			parent.World.ActorAdded += Engine;
 			liveShroud.OnShroudChanged += ui.ShroudChanged;
 
 			Assert.That(SubscriberTargets(parent.World), Does.Contain(ui),
@@ -237,7 +237,8 @@ namespace OpenRA.Test
 			var liveNonUiShroud = SubscriberTargets(liveShroud).Count(t => t is not Widget);
 
 			// The shroud state the radar reads at the capture point, cell by cell.
-			var capturedVisibility = parent.World.Map.ProjectedCells.ToDictionary(p => p, p => liveShroud.GetVisibility(p));
+			Func<PPos, Shroud.CellVisibility> visibilityOf = liveShroud.GetVisibility;
+			var capturedVisibility = parent.World.Map.ProjectedCells.ToDictionary(p => p, visibilityOf);
 			Assert.That(capturedVisibility.Values.Any(v => v.HasFlag(Shroud.CellVisibility.Explored)), Is.True,
 				"No cell is explored at the capture point, so the refresh check below proves nothing.");
 

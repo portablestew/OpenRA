@@ -9,9 +9,6 @@
  */
 #endregion
 
-using OpenRA.Traits;
-using OpenRA.Widgets;
-
 namespace OpenRA.Widgets
 {
 	/// <summary>
@@ -22,8 +19,20 @@ namespace OpenRA.Widgets
 	{
 		public int Notifications { get; private set; }
 
-		public void ActorChanged(Actor a) { Notifications++; }
+		public Actor LastActor { get; private set; }
 
-		public void ShroudChanged(PPos uv) { Notifications++; }
+		public PPos LastShroudCell { get; private set; }
+
+		public void ActorChanged(Actor a)
+		{
+			Notifications++;
+			LastActor = a;
+		}
+
+		public void ShroudChanged(PPos uv)
+		{
+			Notifications++;
+			LastShroudCell = uv;
+		}
 	}
 }

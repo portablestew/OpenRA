@@ -85,6 +85,7 @@ namespace OpenRA.Support
 		{
 		}
 
+		/// <summary>Creates a cloner with a policy for delegate targets that must not be copied.</summary>
 		/// <param name="shareInstance">See the other constructor.</param>
 		/// <param name="dropSubscriber">
 		/// Returns true for a delegate target that must not come across at all. A delegate whose target matches is
