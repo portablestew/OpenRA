@@ -18,6 +18,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using OpenRA.Network;
 using OpenRA.Traits;
 
 namespace OpenRA.Test
@@ -236,6 +237,55 @@ namespace OpenRA.Test
 			using var response = AgentStateDumpTest.Request(line);
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True, response.RootElement.ToString());
 			Assert.That(PendingCount(hw.World), Is.EqualTo(0), "A Move in a paused game left its await in the registry.");
+		}
+
+		[TestCase(TestName = "A Move the validators refuse replies valid:false with the reason and the actor's order names")]
+		public void RefusedMoveReplyCarriesReasonAndOrders()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+			var start = unit.Location;
+
+			// The socket's Accept refuses any order the local player's actor would not take, so the shipped ValidateOrder cannot
+			// refuse a socket Move. The world's validators are swapped for one that refuses everything, then restored.
+			var validators = hw.World.OrderValidators;
+			var saved = validators.ToArray();
+			Assert.That(saved, Is.Not.Empty, "The world has no validators to swap.");
+			for (var i = 0; i < validators.Length; i++)
+				validators[i] = new RefuseEveryOrder();
+
+			try
+			{
+				var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
+				using var response = AgentStateDumpTest.RequestWithTicks(hw, line);
+				var root = response.RootElement;
+
+				Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+				Assert.That(root.GetProperty("valid").GetBoolean(), Is.False, root.ToString());
+				Assert.That(root.GetProperty("reason").GetString(), Is.EqualTo("rejected by order validator"));
+
+				var orders = root.GetProperty("orders").EnumerateArray().Select(e => e.GetString()).ToArray();
+				Assert.That(orders, Is.Not.Empty, "The refusal listed no order names.");
+				Assert.That(orders, Does.Contain("Move"), "The actor accepts Move, so the refusal should list it.");
+			}
+			finally
+			{
+				for (var i = 0; i < saved.Length; i++)
+					validators[i] = saved[i];
+			}
+
+			Assert.That(unit.Location, Is.EqualTo(start), "A refused Move moved the unit.");
+		}
+
+		/// <summary>A validator that refuses every order. It stands in for the shipped one, which the socket cannot reach.</summary>
+		sealed class RefuseEveryOrder : IValidateOrder
+		{
+			public bool OrderValidation(OrderManager orderManager, World world, int clientId, Order order)
+			{
+				return false;
+			}
 		}
 
 		/// <summary>

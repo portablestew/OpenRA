@@ -39,6 +39,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " optional queued (bool), item (string), extra_data (uint), extra_location [x,y], settle_ticks (Move only),"
 				+ " await (bool, default true; false is Move only)\n"
 					+ "                -> tick, min_effect_tick, and for a Move, valid, effect_tick, settled, settled_ticks, path."
+					+ " valid:false adds reason and orders (the names the actor accepts)."
 				+ " await:false returns job (the id for wait) with tick, min_effect_tick, and does not wait."
 				+ " A name the actor does not accept is refused: ok:false, error, available (the names it accepts)"),
 			("wait", "job (int); optional timeout_ms (non-negative int, default 10000)\n"

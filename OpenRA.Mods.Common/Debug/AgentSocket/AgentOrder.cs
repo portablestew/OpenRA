@@ -12,6 +12,7 @@
 using System;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.AgentSocket
@@ -29,10 +30,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	/// <summary>
 	/// The Move reply (P1.3). Valid and EffectTick are null, and Settled is false, when the game was paused and the reply did not
-	/// wait. Path is the cells the Move planned, source cell first.
+	/// wait. Path is the cells the Move planned, source cell first. Reason and Orders (P1.5) are set only when the validators
+	/// refused the order, and are omitted from every other reply.
 	/// </summary>
 	public sealed record MoveV1(bool Ok, string Cmd, int Tick, int MinEffectTick, bool? Valid, int? EffectTick, bool Settled,
-		int SettledTicks, int[][] Path);
+		int SettledTicks, int[][] Path,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Orders = null);
 
 	/// <summary>
 	/// What Issue returns on the game thread. Move is true for a Move order. Await is the wait for a Move, and null for any other
@@ -65,6 +69,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// </summary>
 	public static class AgentOrder
 	{
+		/// <summary>The reason a Move reply gives when the validators refused the order (P1.5).</summary>
+		public const string ValidatorRejected = "rejected by order validator";
+
 		/// <summary>Parses the request on the socket thread. Returns an error message, or null when the request is valid.</summary>
 		public static string Parse(JsonElement root, out OrderRequest request)
 		{
@@ -193,8 +200,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The Move reply for an await that has finished. Cmd names the request that asked for it.</summary>
 		public static MoveV1 Reply(string cmd, OrderV1 ack, AgentOrderAwait await)
 		{
+			var refused = !await.Valid;
 			return new MoveV1(true, cmd, ack.Tick, ack.MinEffectTick, await.Valid, await.ResolvedTick, true, await.SettleTicks,
-				await.Path ?? []);
+				await.Path ?? [], refused ? ValidatorRejected : null, refused ? await.Orders : null);
 		}
 
 		/// <summary>

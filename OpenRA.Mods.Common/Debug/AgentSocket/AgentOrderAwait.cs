@@ -74,6 +74,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The path a Move planned, source cell first. Null until the Move's first path evaluation is captured.</summary>
 		public int[][] Path { get; private set; }
 
+		/// <summary>The order names the subject accepted when the validators refused the order. Null unless Valid is false.</summary>
+		public string[] Orders { get; private set; }
+
 		/// <summary>
 		/// Registers an await for an order that is about to be issued on its subject's world. Must run on the game thread.
 		/// </summary>
@@ -133,6 +136,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 				Pending.RemoveAt(index);
 				await.Resolved = true;
 				await.Valid = valid;
+				if (!valid)
+					await.Orders = AgentOrderNames.For(order.Subject);
+
 				await.ResolvedTick = world.WorldTick;
 				Settling.Add(await);
 			}
