@@ -13,6 +13,7 @@ using System;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.AgentSocket
@@ -24,9 +25,43 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>
 	/// A parsed order. At most one of Cell, Pos and TargetActor is set. None of them means an untargeted order, such as Stop.
 	/// Item, ExtraData and ExtraLocation become the order's TargetString, ExtraData and ExtraLocation. Null means absent.
+	/// A group (P1.14) sets Actors (the actor list) or Type and TypePattern (the type regex). Actor is 0 then, and unused.
 	/// </summary>
 	public sealed record OrderRequest(string Order, uint Actor, CPos? Cell, WPos? Pos, uint? TargetActor, bool Queued,
-		string Item, uint? ExtraData, CPos? ExtraLocation, int? SettleTicks, bool Await);
+		string Item, uint? ExtraData, CPos? ExtraLocation, int? SettleTicks, bool Await, uint[] Actors = null, string Type = null,
+		Regex TypePattern = null)
+	{
+		/// <summary>True for a group order (P1.14): the request names its actors by list or by type.</summary>
+		public bool Grouped => Actors != null || TypePattern != null;
+	}
+
+	/// <summary>
+	/// One actor's outcome in a grouped order (P1.14). Valid, EffectTick, SettledTicks, Path and Orders are the single-actor Move
+	/// reply's values for that actor. Outcome and Reason are the Attack or DeployTransform outcome. Error is set when the actor's
+	/// await failed: its subject died, or it did not resolve in time. A field that does not apply is omitted.
+	/// </summary>
+	public sealed record GroupResultV1(uint Actor, bool Settled,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Valid = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? EffectTick = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? SettledTicks = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int[][] Path = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Outcome = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Orders = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Error = null);
+
+	/// <summary>
+	/// The reply to a grouped order (P1.14). Ordered is the ids of the actors the one engine order went to, and Matched is how many
+	/// actors the selector matched. A request is refused as a whole when any matched actor refuses the order, so the two are equal.
+	/// Results has one entry per ordered actor, in the same order as Ordered.
+	/// </summary>
+	public sealed record GroupedOrderV1(bool Ok, string Cmd, int Tick, int MinEffectTick, uint[] Ordered, int Matched, GroupResultV1[] Results);
+
+	/// <summary>
+	/// What IssueGroup returns on the game thread. Awaits is null for an order no reply waits for. Otherwise it has one await per
+	/// ordered actor, in the same order as Ordered. Paused is true when the game is paused, so nothing will tick the awaits.
+	/// </summary>
+	public sealed record GroupIssued(OrderV1 Ack, uint[] Ordered, AgentOrderAwait[] Awaits, bool Paused);
 
 	/// <summary>
 	/// The Move reply (P1.3). Valid and EffectTick are null, and Settled is false, when the game was paused and the reply did not
@@ -94,8 +129,45 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (!root.TryGetProperty("order", out var orderElement) || orderElement.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(orderElement.GetString()))
 				return "order must be a non-empty string";
 
-			if (!root.TryGetProperty("actor", out var actorElement) || !actorElement.TryGetUInt32(out var actor))
-				return "actor must be an unsigned integer";
+			// Exactly one selector names the actors: one actor, a list of them, or a type regex (P1.14).
+			var selectors = (IsPresent(root, "actor") ? 1 : 0) + (IsPresent(root, "actors") ? 1 : 0) + (IsPresent(root, "type") ? 1 : 0);
+			if (selectors != 1)
+				return "give exactly one of actor, actors and type";
+
+			uint actor = 0;
+			uint[] actors = null;
+			string type = null;
+			Regex typePattern = null;
+			if (IsPresent(root, "actor"))
+			{
+				if (!root.GetProperty("actor").TryGetUInt32(out actor))
+					return "actor must be an unsigned integer";
+			}
+			else if (IsPresent(root, "actors"))
+			{
+				if (!TryGetUInts(root.GetProperty("actors"), out actors) || actors.Length == 0)
+					return "actors must be a non-empty array of unsigned integers";
+
+				if (actors.Distinct().Count() != actors.Length)
+					return "actors must not repeat an actor";
+			}
+			else
+			{
+				var typeElement = root.GetProperty("type");
+				if (typeElement.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(typeElement.GetString()))
+					return "type must be a non-empty string";
+
+				type = typeElement.GetString();
+				try
+				{
+					// Full match: the pattern covers the whole type name, so "e1" matches only e1, and "e." matches e1 through e9.
+					typePattern = new Regex(@"\A(?:" + type + @")\z");
+				}
+				catch (ArgumentException e)
+				{
+					return $"type is not a valid regular expression: {e.Message}";
+				}
+			}
 
 			CPos? cell = null;
 			WPos? pos = null;
@@ -192,10 +264,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 				if (orderElement.GetString() != "Move" && awaitElement.ValueKind == JsonValueKind.False)
 					return "await:false applies only to Move";
 
+				// A group has one await per actor, and a job holds one, so a group always waits (P1.14).
+				if ((actors != null || typePattern != null) && awaitElement.ValueKind == JsonValueKind.False)
+					return "await:false applies only to a single actor";
+
 				awaits = awaitElement.ValueKind == JsonValueKind.True;
 			}
 
-			request = new OrderRequest(orderElement.GetString(), actor, cell, pos, targetActor, queued, item, extraData, extraLocation, settleTicks, awaits);
+			request = new OrderRequest(orderElement.GetString(), actor, cell, pos, targetActor, queued, item, extraData, extraLocation,
+				settleTicks, awaits, actors, type, typePattern);
 			return null;
 		}
 
@@ -262,6 +339,122 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
+		/// Validates a grouped request (P1.14) and issues it as one engine Order with GroupedActors, so the engine resolves each actor
+		/// on its own. Every matched actor is checked before anything is issued, and one that does not accept the order name refuses
+		/// the whole request. Each ordered actor is selected (P1.15). Each actor gets its own await, on the per-subject copy the engine
+		/// resolves, so each actor reports its own outcome. Must run on the game thread: it reads live world state.
+		/// </summary>
+		public static GroupIssued IssueGroup(World world, OrderRequest request, AgentSelection selection)
+		{
+			var actors = GroupActors(world, request);
+			var order = ToGroupOrder(world, request, actors);
+			var move = order.OrderString == "Move";
+			var tracked = move || order.OrderString is "Attack" or "DeployTransform";
+
+			// Each await is registered on the copy of the order that the engine resolves for its actor, so Resolve matches it by subject.
+			var settleTicks = move ? request.SettleTicks ?? AgentOrderAwait.DefaultSettleTicks : 0;
+			var awaits = tracked
+				? actors.Select(a => AgentOrderAwait.Register(Order.FromGroupedOrder(order, a), settleTicks)).ToArray()
+				: null;
+			world.IssueOrder(order);
+			foreach (var actor in actors)
+				selection.Ordered(world, actor);
+
+			var ack = new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
+			return new GroupIssued(ack, actors.Select(a => a.ActorID).ToArray(), awaits, world.Paused);
+		}
+
+		/// <summary>
+		/// Builds the reply to a grouped order once every ordered actor's await has settled or failed (P1.14). A failed await becomes
+		/// that actor's error, and the other actors still report. Throws when the shared wall-clock limit passes first, and then
+		/// abandons every await. Must not run on the game thread.
+		/// </summary>
+		public static GroupedOrderV1 SettleGroup(GroupIssued issued)
+		{
+			var ack = issued.Ack;
+			var ids = issued.Ordered;
+			var awaits = issued.Awaits;
+			if (awaits == null || issued.Paused)
+			{
+				// Nothing ticks the awaits in a paused game, so drop them here, or they stay in the registry until the world is disposed.
+				if (awaits != null)
+					foreach (var await in awaits)
+						await.Abandon();
+
+				return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, ids.Length, ids.Select(id => new GroupResultV1(id, false)).ToArray());
+			}
+
+			var deadline = DateTime.UtcNow.AddMilliseconds(AgentOrderAwait.WallClockMs);
+			foreach (var await in awaits)
+			{
+				var remaining = Math.Max(0, (int)(deadline - DateTime.UtcNow).TotalMilliseconds);
+				if (await.TryWait(remaining))
+					continue;
+
+				foreach (var other in awaits)
+					other.Abandon();
+
+				throw new TimeoutException($"the order did not settle within {AgentOrderAwait.WallClockMs} ms of wall-clock time");
+			}
+
+			var results = new GroupResultV1[ids.Length];
+			for (var i = 0; i < ids.Length; i++)
+				results[i] = GroupResult(ids[i], awaits[i]);
+
+			return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, ids.Length, results);
+		}
+
+		/// <summary>One actor's entry in a grouped reply. Called once the actor's await has settled or failed. Must not run on the game thread.</summary>
+		static GroupResultV1 GroupResult(uint id, AgentOrderAwait await)
+		{
+			try
+			{
+				await.ThrowIfFailed();
+			}
+			catch (Exception e)
+			{
+				return new GroupResultV1(id, false, Error: e.Message);
+			}
+
+			if (await.IsAttack || await.IsDeploy)
+				return new GroupResultV1(id, true, Outcome: await.Outcome, Reason: await.Reason);
+
+			var refused = !await.Valid;
+			return new GroupResultV1(id, true, Valid: await.Valid, EffectTick: await.ResolvedTick, SettledTicks: await.SettleTicks,
+				Path: await.Path ?? [], Reason: refused ? ValidatorRejected : null, Orders: refused ? await.Orders : null);
+		}
+
+		/// <summary>
+		/// The actors a grouped request selects, each checked to be owned, live and to accept the order name. A list is checked as
+		/// given. A type matches the owned, live actors whose type name the pattern matches. No match is an error (fail loud).
+		/// Must run on the game thread.
+		/// </summary>
+		static Actor[] GroupActors(World world, OrderRequest request)
+		{
+			if (request.Actors != null)
+				return request.Actors.Select(id => Accept(world, id, request.Order)).ToArray();
+
+			var matched = world.Actors
+				.Where(a => a.Owner == world.LocalPlayer && !a.IsDead && request.TypePattern.IsMatch(a.Info.Name))
+				.ToArray();
+			if (matched.Length == 0)
+				throw new ArgumentException($"no owned actor's type matches \"{request.Type}\"");
+
+			return matched.Select(a => Accept(world, a.ActorID, request.Order)).ToArray();
+		}
+
+		/// <summary>The Order a grouped request stands for. Its subject is null, as the engine's own grouped orders are: each actor's copy has its subject. Must run on the game thread.</summary>
+		static Order ToGroupOrder(World world, OrderRequest request, Actor[] actors)
+		{
+			return new Order(request.Order, null, TargetOf(world, request), request.Queued, groupedActors: actors)
+			{
+				TargetString = request.Item,
+				ExtraData = request.ExtraData ?? 0,
+				ExtraLocation = request.ExtraLocation ?? CPos.Zero,
+			};
+		}
+
+		/// <summary>
 		/// The Order the request stands for, after the checks Issue makes. It is the object Issue passes to World.IssueOrder.
 		/// Must run on the game thread: it reads live world state.
 		/// </summary>
@@ -269,27 +462,32 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			var actor = Accept(world, request.Actor, request.Order);
 
-			Target target;
-			if (request.Cell is { } cell)
-			{
-				if (!world.Map.Contains(cell))
-					throw new ArgumentException($"cell {cell.X},{cell.Y} is outside the map");
-
-				target = Target.FromCell(world, cell);
-			}
-			else if (request.Pos is { } pos)
-				target = Target.FromPos(pos);
-			else if (request.TargetActor is { } targetId)
-				target = Target.FromActor(Live(world, targetId));
-			else
-				target = Target.Invalid;
-
-			return new Order(request.Order, actor, target, request.Queued)
+			return new Order(request.Order, actor, TargetOf(world, request), request.Queued)
 			{
 				TargetString = request.Item,
 				ExtraData = request.ExtraData ?? 0,
 				ExtraLocation = request.ExtraLocation ?? CPos.Zero,
 			};
+		}
+
+		/// <summary>The target the request names, or Invalid when it names none. Must run on the game thread.</summary>
+		static Target TargetOf(World world, OrderRequest request)
+		{
+			if (request.Cell is { } cell)
+			{
+				if (!world.Map.Contains(cell))
+					throw new ArgumentException($"cell {cell.X},{cell.Y} is outside the map");
+
+				return Target.FromCell(world, cell);
+			}
+
+			if (request.Pos is { } pos)
+				return Target.FromPos(pos);
+
+			if (request.TargetActor is { } targetId)
+				return Target.FromActor(Live(world, targetId));
+
+			return Target.Invalid;
 		}
 
 		/// <summary>Lists the order names a local-player actor accepts. Must run on the game thread.</summary>
@@ -352,6 +550,21 @@ namespace OpenRA.Mods.Common.AgentSocket
 			values = new int[count];
 			for (var i = 0; i < count; i++)
 				if (element[i].ValueKind != JsonValueKind.Number || !element[i].TryGetInt32(out values[i]))
+					return false;
+
+			return true;
+		}
+
+		/// <summary>True for a JSON array whose every item is an unsigned integer. An empty array is true, with no values.</summary>
+		static bool TryGetUInts(JsonElement element, out uint[] values)
+		{
+			values = null;
+			if (element.ValueKind != JsonValueKind.Array)
+				return false;
+
+			values = new uint[element.GetArrayLength()];
+			for (var i = 0; i < values.Length; i++)
+				if (!TryGetUInt(element[i], out values[i]))
 					return false;
 
 			return true;

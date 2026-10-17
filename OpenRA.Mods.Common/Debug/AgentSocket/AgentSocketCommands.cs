@@ -167,6 +167,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			try
 			{
+				// A group is one engine order for many actors. Its reply waits for each actor's outcome (P1.14).
+				if (request.Grouped)
+				{
+					var grouped = AgentMarshal.ExecuteOnGameThread(() => AgentOrder.IssueGroup(AgentWorldBridge.RequireWorld(), request, selection));
+					return Serialize(AgentOrder.SettleGroup(grouped));
+				}
+
 				// await:false takes a job instead: the game thread issues the Move and records it, and the reply is the job id.
 				if (!request.Await)
 					return Serialize(AgentMarshal.ExecuteOnGameThread(() => AgentOrderJobs.Issue(AgentWorldBridge.RequireWorld(), request, selection)));
