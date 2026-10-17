@@ -96,7 +96,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("undo", "offset (string): \"-<seconds>\" rewinds, \"+<seconds>\" advances, \"@<seconds>\" jumps to that"
 				+ " absolute game time, read at 25 ticks per second\n"
 				+ "                -> tick, requested_tick, moved_ticks (signed), held. The snapshot nearest the target game"
-				+ " time is restored; nothing is consumed. A missing or unprefixed offset, or no snapshot in range:"
+				+ " time is restored; nothing is consumed. Pending orders and jobs fail with error restored. In an array, undo must be the only or the last item,"
+				+ " or it is refused. A missing or unprefixed offset, or no snapshot in range:"
 				+ " ok:false, error (the usage)",
 				"{\"cmd\":\"undo\",\"offset\":\"-10\"}"),
 		];

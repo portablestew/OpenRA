@@ -64,9 +64,7 @@ namespace OpenRA.Test
 		[TearDown]
 		public void RestoreAgentSocket()
 		{
-			if (subscriber != null)
-				subscriber.GetType().GetMethod("Close").Invoke(subscriber, null);
-
+			subscriber?.GetType().GetMethod("Close").Invoke(subscriber, null);
 			subscriber = null;
 			Game.Settings.Debug.AgentSocket = savedAgentSocket;
 		}

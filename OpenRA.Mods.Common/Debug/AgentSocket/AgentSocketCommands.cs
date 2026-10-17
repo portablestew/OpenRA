@@ -83,7 +83,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				if (root.ValueKind == JsonValueKind.Array)
 				{
 					var items = root.EnumerateArray().ToArray();
-					var results = "[" + string.Join(",", items.Select(item => HandleItem(item, subscriber, selection))) + "]";
+					var results = "[" + string.Join(",", items.Select((item, index) =>
+						UndoRefusal(item, index, items.Length) ?? HandleItem(item, subscriber, selection))) + "]";
 					return AgentEnvelope.Wrap(results, AgentEnvelope.WantsState(items));
 				}
 
@@ -94,6 +95,24 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 				return AgentEnvelope.Wrap(HandleItem(root, subscriber, selection), AgentEnvelope.WantsState(root));
 			}
+		}
+
+		/// <summary>
+		/// An undo swaps the world under the rest of its request, so an array refuses it unless it is the only item or the last
+		/// (P1.19). The refusal is that item's result alone: the other items run as usual. Returns null when the item may run.
+		/// </summary>
+		static string UndoRefusal(JsonElement item, int index, int count)
+		{
+			if (count == 1 || index == count - 1 || !IsUndo(item))
+				return null;
+
+			return Error("undo", "undo must be the only item of an array, or its last: it swaps the world under the other items");
+		}
+
+		static bool IsUndo(JsonElement item)
+		{
+			return item.ValueKind == JsonValueKind.Object && item.TryGetProperty("cmd", out var cmd)
+				&& cmd.ValueKind == JsonValueKind.String && cmd.GetString() == "undo";
 		}
 
 		/// <summary>Answers one request object. A value that is not an object is an error for that item alone.</summary>
