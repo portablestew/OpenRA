@@ -62,6 +62,23 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The file name in the workspace. The render replaces it through a temporary file.</summary>
 		public const string FileName = "map-state.png";
 
+		/// <summary>The last render, and the world and tick it was taken at. The envelope reuses it until the world's tick moves (P2.13).</summary>
+		static World latestWorld;
+		static int latestTick;
+		static MapStateV1 latest;
+
+		/// <summary>
+		/// The map-state image as of the world's current tick: the last render when the world has not moved since, else a new render.
+		/// The envelope calls this, so the file it names is always the one written at map_state_tick.
+		/// </summary>
+		public static MapStateV1 Refresh(World world, Player observer)
+		{
+			if (latest != null && ReferenceEquals(latestWorld, world) && latestTick == world.WorldTick)
+				return latest;
+
+			return Render(world, observer);
+		}
+
 		/// <summary>Renders the map-state image for the observer and writes it to the workspace. A failure is reported in the reply, not thrown.</summary>
 		public static MapStateV1 Render(World world, Player observer)
 		{
@@ -70,15 +87,21 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var origin = new[] { bounds.Left, bounds.Top };
 			var size = new[] { bounds.Width * MapPxPerCell, bounds.Height * MapPxPerCell };
 
+			MapStateV1 result;
 			try
 			{
 				var path = Write(Encode(world, observer, bounds));
-				return new MapStateV1(true, "map_state", path, "ok", null, MapPxPerCell, origin, size, tick);
+				result = new MapStateV1(true, "map_state", path, "ok", null, MapPxPerCell, origin, size, tick);
 			}
 			catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or ArgumentException)
 			{
-				return new MapStateV1(true, "map_state", null, "unavailable", e.Message, MapPxPerCell, origin, size, tick);
+				result = new MapStateV1(true, "map_state", null, "unavailable", e.Message, MapPxPerCell, origin, size, tick);
 			}
+
+			latestWorld = world;
+			latestTick = tick;
+			latest = result;
+			return result;
 		}
 
 		/// <summary>The PNG bytes of the image: terrain, then the overlays, then the blips.</summary>

@@ -39,6 +39,7 @@ namespace OpenRA.Test
 
 		bool savedAgentSocket;
 		string workspace;
+		string savedWorkspace;
 
 		[OneTimeSetUp]
 		public void InitializeMod()
@@ -54,13 +55,14 @@ namespace OpenRA.Test
 
 			workspace = Path.Combine(Path.GetTempPath(), "openra-map-state-" + Guid.NewGuid().ToString("N"));
 			Directory.CreateDirectory(workspace);
+			savedWorkspace = AgentWorkspaceRoot.Get();
 			AgentWorkspaceRoot.Set(workspace);
 		}
 
 		[TearDown]
 		public void RestoreSettings()
 		{
-			AgentWorkspaceRoot.Set(null);
+			AgentWorkspaceRoot.Set(savedWorkspace);
 			if (Directory.Exists(workspace))
 				Directory.Delete(workspace, true);
 
@@ -239,6 +241,11 @@ namespace OpenRA.Test
 	/// <summary>Sets the agent workspace root, which lives in the mod assembly. Test use.</summary>
 	static class AgentWorkspaceRoot
 	{
+		public static string Get()
+		{
+			return (string)HeadlessMod.ModData.ObjectCreator.FindType("AgentSocket.AgentWorkspace").GetProperty("Root").GetValue(null);
+		}
+
 		public static void Set(string root)
 		{
 			HeadlessMod.ModData.ObjectCreator.FindType("AgentSocket.AgentWorkspace").GetProperty("Root").SetValue(null, root);

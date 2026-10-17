@@ -25,7 +25,8 @@ namespace OpenRA.Test
 		const string HintJson = "\"hint\":\"see {\\u0022cmd\\u0022:\\u0022help\\u0022}\"}";
 
 		/// <summary>The keys of the turn envelope (P1.16), in the order the server writes them.</summary>
-		static readonly string[] EnvelopeKeys = ["results", "events", "state", "tick", "map_state_png", "map_state_tick"];
+		static readonly string[] EnvelopeKeys = ["results", "events", "state", "tick", "map_state_png", "map_state_tick", "map_state_render",
+			"map_px_per_cell", "map_origin", "map_size"];
 
 		static string[] Run(string input)
 		{

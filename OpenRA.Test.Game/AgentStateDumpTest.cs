@@ -110,6 +110,13 @@ namespace OpenRA.Test
 		/// <summary>Like <see cref="RequestWithTicks(HeadlessWorld, string)"/>, and onTick runs on the test thread after each tick while the request waits.</summary>
 		internal static JsonDocument RequestWithTicks(HeadlessWorld hw, string line, Action onTick)
 		{
+			using var envelope = RawRequestWithTicks(hw, line, onTick);
+			return Results(envelope);
+		}
+
+		/// <summary>Like <see cref="RequestWithTicks(HeadlessWorld, string)"/>, and returns the whole turn envelope, as <see cref="RawRequest"/> does (P2.13).</summary>
+		internal static JsonDocument RawRequestWithTicks(HeadlessWorld hw, string line, Action onTick = null)
+		{
 			var request = Task.Run(() => (string)Handle.Value.Invoke(null, [line, null]));
 
 			var deadline = DateTime.UtcNow.AddSeconds(10);
@@ -121,8 +128,7 @@ namespace OpenRA.Test
 				Thread.Sleep(1);
 			}
 
-			using var envelope = JsonDocument.Parse(request.GetAwaiter().GetResult());
-			return Results(envelope);
+			return JsonDocument.Parse(request.GetAwaiter().GetResult());
 		}
 
 		static IEnumerable<string> Keys(JsonElement element)

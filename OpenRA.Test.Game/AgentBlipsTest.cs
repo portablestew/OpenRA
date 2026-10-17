@@ -36,6 +36,7 @@ namespace OpenRA.Test
 
 		bool savedAgentSocket;
 		string workspace;
+		string savedWorkspace;
 
 		[OneTimeSetUp]
 		public void InitializeMod()
@@ -51,13 +52,14 @@ namespace OpenRA.Test
 
 			workspace = Path.Combine(Path.GetTempPath(), "openra-blips-" + Guid.NewGuid().ToString("N"));
 			Directory.CreateDirectory(workspace);
+			savedWorkspace = AgentWorkspaceRoot.Get();
 			SetWorkspace(workspace);
 		}
 
 		[TearDown]
 		public void RestoreSettings()
 		{
-			SetWorkspace(null);
+			SetWorkspace(savedWorkspace);
 			if (Directory.Exists(workspace))
 				Directory.Delete(workspace, true);
 
@@ -71,7 +73,7 @@ namespace OpenRA.Test
 
 		static void SetWorkspace(string root)
 		{
-			ModType("AgentSocket.AgentWorkspace").GetProperty("Root").SetValue(null, root);
+			AgentWorkspaceRoot.Set(root);
 		}
 
 		/// <summary>The fog helper under test, read through the mod's type.</summary>

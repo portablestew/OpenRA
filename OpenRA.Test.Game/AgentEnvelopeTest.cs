@@ -23,7 +23,8 @@ namespace OpenRA.Test
 	sealed class AgentEnvelopeTest
 	{
 		const string Hint = "see {\"cmd\":\"help\"}";
-		static readonly string[] EnvelopeKeys = ["results", "events", "state", "tick", "map_state_png", "map_state_tick"];
+		static readonly string[] EnvelopeKeys = ["results", "events", "state", "tick", "map_state_png", "map_state_tick", "map_state_render",
+			"map_px_per_cell", "map_origin", "map_size"];
 		static readonly string[] PingKeys = ["ok", "cmd", "tick"];
 		static readonly string[] HelpKeys = ["ok", "cmd", "banner"];
 		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "paused", "game_over", "local_player", "players", "units", "threats"];
@@ -54,7 +55,7 @@ namespace OpenRA.Test
 			return element.EnumerateObject().Select(p => p.Name).ToArray();
 		}
 
-		[TestCase(TestName = "An object request answers one envelope: its result, no events yet, the state digest, the tick, and null map state")]
+		[TestCase(TestName = "An object request answers one envelope: its result, no events yet, the state digest, the tick, and the map image")]
 		public void ObjectRequestHasTheEnvelope()
 		{
 			using var hw = HeadlessWorld.Create(1);
@@ -66,8 +67,8 @@ namespace OpenRA.Test
 			Assert.That(root.GetProperty("events").GetArrayLength(), Is.Zero);
 			Assert.That(Keys(root.GetProperty("state")), Is.EquivalentTo(StateKeys));
 			Assert.That(root.GetProperty("tick").GetInt32(), Is.EqualTo(hw.World.WorldTick));
-			Assert.That(root.GetProperty("map_state_png").ValueKind, Is.EqualTo(JsonValueKind.Null));
-			Assert.That(root.GetProperty("map_state_tick").ValueKind, Is.EqualTo(JsonValueKind.Null));
+			Assert.That(root.GetProperty("map_state_render").GetString(), Is.EqualTo("ok"));
+			Assert.That(root.GetProperty("map_state_tick").GetInt32(), Is.EqualTo(hw.World.WorldTick));
 		}
 
 		[TestCase(TestName = "An array request answers one envelope whose results is the array of per-item results")]
@@ -92,7 +93,7 @@ namespace OpenRA.Test
 
 			using (var off = AgentStateDumpTest.RawRequest("{\"cmd\":\"ping\",\"digest\":false}"))
 			{
-				Assert.That(Keys(off.RootElement), Is.EqualTo(EnvelopeKeys.Where(k => k != "state").ToArray()));
+				Assert.That(Keys(off.RootElement), Is.EqualTo(new[] { "results", "events", "tick" }));
 				Assert.That(off.RootElement.GetProperty("tick").GetInt32(), Is.EqualTo(hw.World.WorldTick));
 			}
 
@@ -130,6 +131,7 @@ namespace OpenRA.Test
 			Assert.That(Keys(root), Is.EqualTo(EnvelopeKeys));
 			Assert.That(root.GetProperty("tick").ValueKind, Is.EqualTo(JsonValueKind.Null));
 			Assert.That(root.GetProperty("state").ValueKind, Is.EqualTo(JsonValueKind.Null));
+			Assert.That(root.GetProperty("map_state_render").GetString(), Is.EqualTo("unavailable"));
 			Assert.That(root.GetProperty("results").GetProperty("ok").GetBoolean(), Is.False);
 		}
 

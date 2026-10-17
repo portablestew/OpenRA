@@ -20,26 +20,43 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// The turn envelope (P1.16). Every response except help is wrapped here, once per request, so its keys live in one
 	/// place. results is the result of an object request, or an array of results for an array request. events is empty
 	/// until P3. state is the schema v1 digest, left out when the request sets digest:false. tick is the game clock after
-	/// the request ran. map_state_png and map_state_tick are null until P2.
+	/// the request ran. The map keys name the map-state image (P2.13): map_state_png is its workspace path, map_state_tick
+	/// the tick it was rendered at, map_state_render "ok" or "unavailable", and map_px_per_cell, map_origin and map_size its
+	/// geometry. They are left out when the request sets digest:false.
 	/// </summary>
 	public static class AgentEnvelope
 	{
 		/// <summary>
 		/// Wraps one serialized result, or an array of them, after the request has run. The game thread is asked for the
-		/// tick (and the digest, when wanted) only when a world is loaded, so a request with no world never waits on it.
-		/// A read that fails leaves tick and state null rather than failing the request.
+		/// tick (and the digest and map image, when wanted) only when a world is loaded, so a request with no world never
+		/// waits on it. A read that fails leaves tick and state null rather than failing the request; a render that fails
+		/// reports map_state_render "unavailable" and does not fail the request either.
 		/// </summary>
 		public static string Wrap(string results, bool includeState)
 		{
-			var (tick, state) = Read(includeState);
+			var (tick, state, map) = Read(includeState);
 
 			var text = new StringBuilder("{\"results\":").Append(results).Append(",\"events\":[]");
 			if (includeState)
 				text.Append(",\"state\":").Append(state ?? "null");
 
-			text.Append(",\"tick\":").Append(tick.HasValue ? tick.Value.ToString() : "null")
-				.Append(",\"map_state_png\":null,\"map_state_tick\":null}");
-			return text.ToString();
+			text.Append(",\"tick\":").Append(tick.HasValue ? tick.Value.ToString() : "null");
+			if (includeState)
+				AppendMap(text, map);
+
+			return text.Append('}').ToString();
+		}
+
+		/// <summary>Appends the map keys. The tick is null when there is no image to name, so the tick always matches the file.</summary>
+		static void AppendMap(StringBuilder text, MapStateV1 map)
+		{
+			var named = map?.Path != null;
+			text.Append(",\"map_state_png\":").Append(AgentSocketCommands.Serialize(map?.Path))
+				.Append(",\"map_state_tick\":").Append(AgentSocketCommands.Serialize(named ? (int?)map.Tick : null))
+				.Append(",\"map_state_render\":").Append(AgentSocketCommands.Serialize(map?.Render ?? "unavailable"))
+				.Append(",\"map_px_per_cell\":").Append(AgentSocketCommands.Serialize(map == null ? null : (int?)map.MapPxPerCell))
+				.Append(",\"map_origin\":").Append(AgentSocketCommands.Serialize(map?.Origin))
+				.Append(",\"map_size\":").Append(AgentSocketCommands.Serialize(map?.Size));
 		}
 
 		/// <summary>An object request sets digest:false to drop state. Every other request keeps it.</summary>
@@ -55,10 +72,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return items.Length == 0 || items.Any(WantsState);
 		}
 
-		static (int? Tick, string State) Read(bool includeState)
+		static (int? Tick, string State, MapStateV1 Map) Read(bool includeState)
 		{
 			if (!AgentWorldBridge.Loaded)
-				return (null, null);
+				return (null, null, null);
 
 			try
 			{
@@ -66,15 +83,28 @@ namespace OpenRA.Mods.Common.AgentSocket
 				{
 					var world = AgentWorldBridge.Active;
 					if (world == null)
-						return ((int?)null, (string)null);
+						return ((int?)null, (string)null, (MapStateV1)null);
 
 					var state = includeState ? AgentSocketCommands.Serialize(AgentStateDump.Snapshot(world)) : null;
-					return ((int?)world.WorldTick, state);
+					return ((int?)world.WorldTick, state, includeState ? RefreshMap(world) : null);
 				});
 			}
 			catch (Exception)
 			{
-				return (null, null);
+				return (null, null, null);
+			}
+		}
+
+		/// <summary>The map image as of this tick. A render that throws leaves it null, which the envelope reports as unavailable.</summary>
+		static MapStateV1 RefreshMap(World world)
+		{
+			try
+			{
+				return AgentMapState.Refresh(world, world.LocalPlayer);
+			}
+			catch (Exception)
+			{
+				return null;
 			}
 		}
 	}

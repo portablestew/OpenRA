@@ -83,7 +83,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ "                -> ok, item, requested_cell (null if omitted), search_from, cell, tick, min_effect_tick. The nearest"
 				+ " valid cell within 10 of search_from is used. Not done: ok:false, error. No valid cell: ok:false, error,"
 				+ " cells_checked, candidates (the nearest 8 cells, each with cell and reason), and look (the look command's reply over those"
-				+ " cells, so the blockers show). A successful place has no look",
+				+ " cells, so the blockers show). A successful place has no look. A refusal has one, empty with no candidates, and omits it with no local player.",
 				"{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[40,50]}"),
 			("deploy", "actor (uint, an mcv); optional at [x,y] (the top-left cell, anywhere on the map, no search); optional await (default"
 				+ " true; false returns a job id, and wait {job} returns the outcome)\n"
@@ -91,7 +91,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " settled, outcome (completed or canceled; null when unsettled), reason (null unless canceled), tick, min_effect_tick."
 				+ " The cell is the actor's own when its footprint is valid there, else the nearest valid, reachable cell within 20. One reply covers"
 				+ " the Move and the deploy. No valid cell: ok:false, error, cells_checked, candidates (the nearest 8 cells, each with cell and reason),"
-				+ " and look (the look reply over those cells, so the blockers show). A successful deploy has no look.",
+				+ " and look (the look reply over those cells, so the blockers show). A successful deploy has no look."
+				+ " A refusal has one, empty with no candidates, and omits it with no local player.",
 				"{\"cmd\":\"deploy\",\"actor\":123}"),
 			("screenshot", "optional actor (uint): centre the view on that live unit first\n"
 				+ "                -> ok, cmd, path (the PNG, already written), actor (null if omitted), center_px, unit_px (map pixels, not window pixels; null if"
@@ -152,7 +153,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			var text = new StringBuilder();
 			text.Append("OpenRA agent debug socket, schema v1. Send one JSON object per line, or one JSON array of objects per line; one response line per request.\n");
-			text.Append("Every response but help is an envelope: results, events, state, tick, map_state_png, map_state_tick.\n");
+			text.Append("Every response but help is an envelope: results, events, state, tick, map_state_png, map_state_tick, map_state_render,\n"
+					+ "    map_px_per_cell, map_origin, map_size.\n");
 			text.Append("Inside results, responses echo cmd and carry ok. Errors carry ok:false and error.\n");
 			text.Append("Commands (request keys, then response keys):\n");
 			foreach (var (name, summary, example) in Commands)
@@ -187,10 +189,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("  After the banner, and after every response, the server sends a lone > line as a prompt: it is your turn.\n");
 			text.Append("  A > line is not a response and not an event; skip lines that are just >.\n");
 			text.Append("  An array is one request: the items run in order and results is one JSON array, one result per item.\n");
-			text.Append("  The envelope: results (the request's result, or the array), events (since the last response; empty until P3),\n");
-			text.Append("    state (the state digest, as the state command returns it), tick (the game clock after the request), map_state_png\n");
-			text.Append("    and map_state_tick (null until P2). With no world loaded, tick and state are null.\n");
-			text.Append("  Add \"digest\":false to an object request to drop state. An array drops it only when every item sets digest:false.\n");
+			text.Append("  The envelope: results (the request's result, or the array), events (empty until P3), state (the digest, as the state\n");
+			text.Append("    command returns it), tick (the game clock after the request). The map image: map_state_png (its workspace path, or\n");
+			text.Append("    null), map_state_tick (the tick it was rendered at, equal to tick after a world-changing request), map_state_render\n");
+			text.Append("    (ok or unavailable), and map_px_per_cell, map_origin, map_size (its geometry). With no world loaded, tick, state and\n");
+			text.Append("    the image are null, and render is unavailable.\n");
+			text.Append("  Add \"digest\":false to an object request to drop state and the map keys. An array drops them only when every item sets it.\n");
 			text.Append("  Selection: an issued order selects its actor, so world.Selection is the actors a request ordered (an array: their union).\n");
 			text.Append("    A request with no order leaves the selection alone.\n");
 			text.Append("  A failing item does not stop the rest. A slow awaited item delays the response until it settles or times out.\n");
