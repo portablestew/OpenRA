@@ -36,7 +36,7 @@ namespace OpenRA.Test
 		};
 
 		/// <summary>Commands whose examples answer ok:true on a headless world with no selection, so their examples must succeed.</summary>
-		static readonly string[] ReadOnly = ["ping", "help", "state", "actors", "maps", "production"];
+		static readonly string[] ReadOnly = ["ping", "help", "state", "actors", "maps", "production", "look"];
 
 		bool savedAgentSocket;
 

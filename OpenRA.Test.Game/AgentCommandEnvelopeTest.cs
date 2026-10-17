@@ -28,6 +28,7 @@ namespace OpenRA.Test
 		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "paused", "game_over", "local_player", "players", "units", "threats"];
 		static readonly string[] ActorsKeys = ["ok", "cmd", "units"];
 		static readonly string[] MapsKeys = ["ok", "cmd", "maps"];
+		static readonly string[] LookKeys = ["ok", "cmd", "cells", "actors"];
 		static readonly string[] OrdersKeys = ["ok", "cmd", "actor", "type", "orders"];
 		static readonly string[] ProductionKeys = ["ok", "cmd", "player", "cash", "resources", "power", "queues"];
 		static readonly string[] ErrorKeys = ["ok", "cmd", "error", "hint"];
@@ -83,6 +84,9 @@ namespace OpenRA.Test
 
 			using (var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}"))
 				Assert.That(Keys(production.RootElement), Is.EquivalentTo(ProductionKeys));
+
+			using (var look = AgentStateDumpTest.Request("{\"cmd\":\"look\",\"points\":[[50,50]]}"))
+				Assert.That(Keys(look.RootElement), Is.EquivalentTo(LookKeys));
 
 			var fact = hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
 			hw.Tick(1);

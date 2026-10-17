@@ -45,7 +45,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static readonly string[] Names =
 		[
 			"ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "wait",
-			"production", "build", "cancel", "place", "deploy", "screenshot", "subscribe", "unsubscribe", "undo",
+			"production", "build", "cancel", "place", "deploy", "screenshot", "subscribe", "unsubscribe", "undo", "look",
 		];
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
@@ -145,6 +145,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"subscribe" => Subscribe(cmd, root, subscriber),
 				"unsubscribe" => Unsubscribe(cmd, root, subscriber),
 				"undo" => SnapshotStep(cmd, root),
+				"look" => Look(cmd, root),
 				_ => Error(cmd, "unknown command"),
 			};
 		}
@@ -337,6 +338,19 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// Reads the job id and optional timeout on the socket thread, then waits for the job there, so the game keeps ticking.
 		/// A timeout is a pending reply, not an error: the job stays open for another wait.
 		/// </summary>
+		/// <summary>
+		/// Parses the at or points selector and the optional k on the socket thread, then looks on the game thread (P2.8). An empty or
+		/// invalid selector is an error with the help hint, as every error is.
+		/// </summary>
+		static string Look(string cmd, JsonElement root)
+		{
+			var error = AgentLook.Parse(root, out var request);
+			if (error != null)
+				return Error(cmd, error);
+
+			return Run(cmd, () => AgentLook.Build(AgentWorldBridge.RequireWorld(), AgentWorldBridge.RequireWorld().LocalPlayer, request));
+		}
+
 		static string Wait(string cmd, JsonElement root)
 		{
 			if (!root.TryGetProperty("job", out var jobElement) || !jobElement.TryGetInt32(out var job))

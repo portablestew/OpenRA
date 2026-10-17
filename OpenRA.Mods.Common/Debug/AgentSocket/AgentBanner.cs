@@ -37,7 +37,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " players[].known_counts is the count by type of the actors you know: all of your own, and another player's only"
 				+ " where you see them, know them from a snapshot, or a satellite shows them."
 				+ " threats: the top 15 known enemies by standoff (at most 3 per type; a recent attacker first), each with id, type, cell,"
-				+ " hp, attack_target (a friendly id, or null), heading (the way it faces), bearing (from its closest friendly toward it),"
+				+ " hp, attack_target (the friendly it hit recently, or null: only a recent attacker has one), heading (the way it faces),"
+				+ " bearing (from its closest friendly toward it),"
 				+ " friendly_id and distance (world units, 1024 per cell) of that friendly.",
 				"{\"cmd\":\"state\"}"),
 			("actors", "owner, type (optional filters) -> units", "{\"cmd\":\"actors\",\"type\":\"e1\"}"),
@@ -108,6 +109,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " or it is refused. A missing or unprefixed offset, or no snapshot in range:"
 				+ " ok:false, error (the usage)",
 				"{\"cmd\":\"undo\",\"offset\":\"-10\"}"),
+			("look", "at [x, y] or points [[x, y], ...] (at most 16), and an optional k (1 to 100, default 20)\n"
+				+ "                -> cells (per cell: cell, terrain, buildable, and resource and density when the cell has them) and actors"
+				+ " (the k nearest you know, of any owner: id, type, owner, cell, hp). With points, each actor also has dist (world units,"
+				+ " 1024 per cell) and pt, the point it is nearest to, and the k is shared so each point gets a fair share. Scenery is left"
+				+ " out. buildable means a construction yard could stand on the cell. An empty or invalid selector is ok:false, error",
+				"{\"cmd\":\"look\",\"points\":[[40,50]],\"k\":5}"),
 		];
 
 		/// <summary>Each event group, the event type it carries, and the record that defines the payload.</summary>
