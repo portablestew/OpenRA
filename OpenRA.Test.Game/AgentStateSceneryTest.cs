@@ -9,6 +9,7 @@
  */
 #endregion
 
+using System;
 using System.Linq;
 using NUnit.Framework;
 
@@ -24,6 +25,7 @@ namespace OpenRA.Test
 	{
 		const int Seed = 0x5C3E;
 		const string SpawnMarker = "mpspawn";
+		const string Satellite = "atek";
 		const string Infantry = "e1";
 
 		/// <summary>Ticks to let the map's starting units settle before adding the test actors.</summary>
@@ -68,9 +70,11 @@ namespace OpenRA.Test
 
 			Assert.That(spawn.IsDead, Is.False, "The spawn marker should exist in the world.");
 
-			// The expected set: every occupying actor that is not owned by the neutral world and not a spawn marker.
+			// The expected set (adjusted for the fog policy): every occupying actor that is not owned by the neutral world and not a
+			// spawn marker, and that the local player owns or knows (AgentFog). The enemy unit is fogged and never seen, so it is out.
 			var expected = hw.World.Actors
-				.Where(a => a.OccupiesSpace != null && !a.IsDead && a.Owner != neutral && a.Info.Name != SpawnMarker)
+				.Where(a => a.OccupiesSpace != null && !a.IsDead && a.Owner != neutral && a.Info.Name != SpawnMarker
+					&& (a.Owner == hw.LocalPlayer || Known(a, hw.LocalPlayer)))
 				.Select(a => (Owner: a.Owner.PlayerName, Type: a.Info.Name, Id: a.ActorID))
 				.ToArray();
 
@@ -87,7 +91,70 @@ namespace OpenRA.Test
 			Assert.That(units.Any(u => u.Type == SpawnMarker), Is.False, "No mpspawn should appear in state units.");
 			Assert.That(units.Any(u => u.Id == own.ActorID && u.Owner == hw.LocalPlayer.PlayerName), Is.True,
 				"A player-owned unit should still appear in state units.");
-			Assert.That(units.Any(u => u.Id == enemy.ActorID), Is.True, "An enemy unit should still appear in state units.");
+			Assert.That(units.Any(u => u.Id == enemy.ActorID), Is.False,
+				"A fogged, never-seen enemy unit should not appear in state units.");
+		}
+
+		[TestCase(TestName = "A fogged, never-seen enemy is absent from state units until a real GPS launch makes it known; own units are always present")]
+		public void StateUnitsFollowTheFogPolicy()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			// The AgentFogTest setup: an enemy unit at the enemy's home, out of every local unit's sight.
+			var enemy = hw.CreateActor(Infantry, hw.FindClearArea(hw.EnemyPlayer.HomeLocation, 3, 3), hw.EnemyPlayer);
+			var own = hw.CreateActor(Infantry, hw.FindClearArea(local.HomeLocation, 3, 3), local);
+			hw.Tick(SettleTicks);
+
+			Assert.That(local.Shroud.IsVisible(enemy.CenterPosition), Is.False, "Precondition: the enemy unit should be out of sight.");
+			Assert.That(Known(enemy, local), Is.False, "Precondition: the enemy unit should be unknown before the launch.");
+
+			Assert.That(StateHas(enemy), Is.False, "A hidden, never-seen enemy must be absent from state units.");
+			Assert.That(StateHas(own), Is.True, "The local player's own unit must always be in state units.");
+
+			// The real GPS entry points: the satellite building is added to the watcher, then the satellite reaches orbit.
+			LaunchSatellite(hw, local);
+			hw.Tick(SettleTicks);
+
+			Assert.That(Known(enemy, local), Is.True, "After the real GPS launch, the enemy unit should be known.");
+			Assert.That(StateHas(enemy), Is.True, "After the launch, the known enemy unit should be in state units.");
+			Assert.That(StateHas(own), Is.True, "The own unit should still be in state units after the launch.");
+		}
+
+		static Type ModType(string name)
+		{
+			return HeadlessMod.ModData.ObjectCreator.FindType(name);
+		}
+
+		/// <summary>The fog helper under test, read through the mod's type.</summary>
+		static bool Known(Actor actor, Player observer)
+		{
+			return (bool)ModType("AgentSocket.AgentFog").GetMethod("Known").Invoke(null, [actor, observer]);
+		}
+
+		/// <summary>Whether the state's units include the actor, read from a fresh state request.</summary>
+		static bool StateHas(Actor actor)
+		{
+			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			return state.RootElement.GetProperty("units").EnumerateArray().Any(u => u.GetProperty("id").GetUInt32() == actor.ActorID);
+		}
+
+		/// <summary>The player's GpsWatcher trait, read through the mod's type.</summary>
+		static object Watcher(Player player)
+		{
+			var trait = ModType("Traits.GpsWatcher");
+			return typeof(Actor).GetMethod("Trait").MakeGenericMethod(trait).Invoke(player.PlayerActor, null);
+		}
+
+		/// <summary>Launches the player's satellite through its real entry points: the satellite building is added, then it reaches orbit.</summary>
+		static void LaunchSatellite(HeadlessWorld hw, Player player)
+		{
+			var watcher = Watcher(player);
+			var satellite = hw.CreateActor(Satellite, hw.FindClearArea(player.HomeLocation, 4, 4), player);
+			var type = watcher.GetType();
+			type.GetMethod("GpsAdd").Invoke(watcher, [satellite]);
+			type.GetMethod("ReachedOrbit").Invoke(watcher, [player]);
 		}
 
 		[TestCase(TestName = "The actors command still lists neutral scenery when it is asked for the neutral owner")]

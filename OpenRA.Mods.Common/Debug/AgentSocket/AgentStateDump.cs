@@ -113,17 +113,26 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// The state's units (P2.5): the scenery-free occupying actors in ActorID order. The local player's structures are slim
-		/// (StructureV1); every other unit keeps the full UnitV1 entry.
+		/// The state's units (P2.5, fog policy): the occupying, non-scenery actors the local player owns or knows (IsInState), in
+		/// ActorID order. The local player's structures are slim (StructureV1); every other unit keeps the full UnitV1 entry.
 		/// </summary>
 		static object[] StateUnits(World world)
 		{
 			var observer = world.LocalPlayer;
 			return world.Actors
-				.Where(a => a.OccupiesSpace != null && !a.IsDead && !IsScenery(a))
+				.Where(a => a.OccupiesSpace != null && !a.IsDead && !IsScenery(a) && IsInState(a, observer))
 				.OrderBy(a => a.ActorID)
 				.Select(a => IsOwnStructure(a, observer) ? (object)StructureState(a) : UnitState(a))
 				.ToArray();
+		}
+
+		/// <summary>
+		/// The fog policy for the state's units (P2.7 defers enemy detail to the threat list): the local player's own actors always
+		/// appear, and every other actor only when AgentFog says the local player knows it. Without a local player nothing appears.
+		/// </summary>
+		static bool IsInState(Actor a, Player observer)
+		{
+			return observer != null && (a.Owner == observer || AgentFog.Known(a, observer));
 		}
 
 		static bool IsOwnStructure(Actor a, Player observer)

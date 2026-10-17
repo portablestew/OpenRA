@@ -200,7 +200,10 @@ namespace OpenRA.Test
 			var units = state.RootElement.GetProperty("units").EnumerateArray().ToList();
 			var type = units[0].GetProperty("type").GetString();
 			var owner = units[0].GetProperty("owner").GetString();
-			var expected = units.Count(u => u.GetProperty("type").GetString() == type);
+
+			// The expected count comes from the unfiltered actors command: state now omits the fogged enemies, and actors does not.
+			using var all = Request("{\"cmd\":\"actors\"}");
+			var expected = all.RootElement.GetProperty("units").EnumerateArray().Count(u => u.GetProperty("type").GetString() == type);
 
 			using var byType = Request($"{{\"cmd\":\"actors\",\"type\":\"{type}\"}}");
 			var typed = byType.RootElement.GetProperty("units").EnumerateArray().ToList();
