@@ -275,6 +275,12 @@ namespace OpenRA.Mods.Common.Activities
 				yield return new TargetLineNode(useLastVisibleTarget ? lastVisibleTarget : target, targetLineColor.Value);
 		}
 
+		/// <summary>
+		/// The target this attack is on now: the last visible position of the target when that is in use, else the target itself.
+		/// The map-state overlay reads it for the target line (P2.12).
+		/// </summary>
+		public Target CurrentTarget => useLastVisibleTarget ? lastVisibleTarget : target;
+
 		bool HasArmamentsFor(Target target)
 		{
 			return attackTraits.Any(attack => attack.ChooseArmamentsForTarget(target, forceAttack).Any());

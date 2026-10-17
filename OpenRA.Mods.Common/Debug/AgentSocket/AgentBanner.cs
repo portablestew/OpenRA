@@ -111,8 +111,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " ok:false, error (the usage)",
 				"{\"cmd\":\"undo\",\"offset\":\"-10\"}"),
 			("map_state", "-> ok, cmd, path (map-state.png in the workspace, or null), render (ok or unavailable), reason (only when"
-				+ " unavailable), map_px_per_cell (4), origin [x, y] (the top-left map cell), size [w, h] (pixels), tick. The terrain"
-				+ " is drawn in its colour; unexplored cells are black, and explored cells you cannot see are darkened. Writes a file",
+				+ " unavailable), map_px_per_cell (4), origin [x, y] (the top-left map cell), size [w, h] (pixels), tick. Terrain: unexplored"
+				+ " black, explored but unseen darkened. Overlays: blips in owner colour (actors you know); selected units get a green"
+				+ " crosshair, a yellow path ending in a red X, and a red line to their attack target. Writes a file",
 				"{\"cmd\":\"map_state\"}"),
 			("look", "at [x, y] or points [[x, y], ...] (at most 16), and an optional k (1 to 100, default 20)\n"
 				+ "                -> cells (per cell: cell, terrain, buildable, and resource and density when the cell has them) and actors"

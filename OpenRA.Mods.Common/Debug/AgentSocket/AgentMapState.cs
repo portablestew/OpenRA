@@ -15,8 +15,10 @@ using System.Linq;
 using System.Text.Json.Serialization;
 using OpenRA.FileFormats;
 using OpenRA.Graphics;
+using OpenRA.Mods.Common.Activities;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Primitives;
+using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.AgentSocket
 {
@@ -30,10 +32,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 		int MapPxPerCell, int[] Origin, int[] Size, int Tick);
 
 	/// <summary>
-	/// The map-state terrain and fog layer (P2.11). Each map cell is drawn at MapPxPerCell pixels square, with its terrain colour from
-	/// PlayerRadarTerrain.GetColor, split along the diagonal as the radar splits it. An unexplored cell is the shroud colour. An explored
-	/// cell the observer cannot see is the terrain under the fog colour. A visible cell is its terrain colour. The fog colours are
-	/// constants that copy RadarWidget's, so the socket does not depend on a widget. Rendering is CPU-only, with no renderer or GPU.
+	/// The map-state image (P2.11, P2.12). Each map cell is drawn at MapPxPerCell pixels square. The terrain comes first, from
+	/// PlayerRadarTerrain.GetColor, split along the diagonal as the radar splits it. An unexplored cell is the shroud colour, and an
+	/// explored cell the observer cannot see is its terrain under the fog colour. Then the overlays, in this order: a green crosshair
+	/// across the map through each selected unit, the yellow path of each moving selected unit ending in a red X, a red line from each
+	/// selected unit to its attack target, and last the blips, one owner-coloured block per actor the observer knows. The fog colours
+	/// copy RadarWidget's, as constants. Rendering is CPU-only, with no renderer or GPU.
 	/// </summary>
 	public static class AgentMapState
 	{
@@ -45,6 +49,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>The fog's alpha over the terrain, black: RadarWidget.ColorFog is black at 128.</summary>
 		public const byte FogAlpha = 128;
+
+		/// <summary>The selection crosshair: green, as TODO asks.</summary>
+		public const uint GreenArgb = 0xFF00FF00;
+
+		/// <summary>The path segments: yellow, as TODO asks.</summary>
+		public const uint YellowArgb = 0xFFFFFF00;
+
+		/// <summary>The path's end X and the target line: red, as TODO asks.</summary>
+		public const uint RedArgb = 0xFFFF0000;
 
 		/// <summary>The file name in the workspace. The render replaces it through a temporary file.</summary>
 		public const string FileName = "map-state.png";
@@ -68,14 +81,60 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 		}
 
-		/// <summary>The PNG bytes of the image: RGBA, one block of MapPxPerCell pixels per map cell in the bounds.</summary>
+		/// <summary>The PNG bytes of the image: terrain, then the overlays, then the blips.</summary>
 		static byte[] Encode(World world, Player observer, Rectangle bounds)
+		{
+			var canvas = new Canvas(bounds);
+			DrawTerrain(canvas, world, observer, bounds);
+
+			var selected = world.Selection.Actors.Where(a => !a.IsDead && a.OccupiesSpace != null).ToArray();
+			foreach (var unit in selected)
+				canvas.Crosshair(unit.Location, GreenArgb);
+
+			foreach (var unit in selected)
+			{
+				var activities = unit.CurrentActivity?.ActivitiesImplementing<IActivityInterface>().ToArray() ?? [];
+
+				foreach (var move in activities.OfType<Move>())
+				{
+					var previous = unit.Location;
+					CPos? last = null;
+					foreach (var cell in move.RemainingPath)
+					{
+						canvas.Line(previous, cell, YellowArgb);
+						previous = cell;
+						last = cell;
+					}
+
+					if (last is { } end)
+						canvas.Cross(end, RedArgb);
+				}
+
+				foreach (var attack in activities.OfType<Attack>())
+				{
+					var target = attack.CurrentTarget;
+					if (target.Type != TargetType.Invalid)
+						canvas.Line(unit.Location, world.Map.CellContaining(target.CenterPosition), RedArgb);
+				}
+			}
+
+			foreach (var actor in world.Actors)
+			{
+				if (actor.OccupiesSpace == null || actor.IsDead || AgentStateDump.IsScenery(actor))
+					continue;
+
+				if (actor.Owner == observer || AgentFog.Known(actor, observer))
+					canvas.FillCell(actor.Location, actor.Owner.Color.ToArgb());
+			}
+
+			return new Png(canvas.Data, SpriteFrameType.Rgba32, canvas.Width, canvas.Height).Save();
+		}
+
+		/// <summary>The terrain layer (P2.11): each cell's colour, split along the diagonal, shaded by the observer's shroud.</summary>
+		static void DrawTerrain(Canvas canvas, World world, Player observer, Rectangle bounds)
 		{
 			var map = world.Map;
 			var layers = world.WorldActor.TraitsImplementing<IRadarTerrainLayer>().ToArray();
-			var width = bounds.Width * MapPxPerCell;
-			var height = bounds.Height * MapPxPerCell;
-			var data = new byte[width * height * 4];
 
 			for (var y = bounds.Top; y < bounds.Bottom; y++)
 				for (var x = bounds.Left; x < bounds.Right; x++)
@@ -89,17 +148,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 					var rightShade = Shade(right, explored, visible);
 					for (var py = 0; py < MapPxPerCell; py++)
 						for (var px = 0; px < MapPxPerCell; px++)
-						{
-							var shade = px + py < MapPxPerCell ? leftShade : rightShade;
-							var index = (((y - bounds.Top) * MapPxPerCell + py) * width + (x - bounds.Left) * MapPxPerCell + px) * 4;
-							data[index] = (byte)(shade >> 16);
-							data[index + 1] = (byte)(shade >> 8);
-							data[index + 2] = (byte)shade;
-							data[index + 3] = (byte)(shade >> 24);
-						}
+							canvas.Set(new CPos(x, y), px, py, px + py < MapPxPerCell ? leftShade : rightShade);
 				}
-
-			return new Png(data, SpriteFrameType.Rgba32, width, height).Save();
 		}
 
 		/// <summary>The colour a cell's half is drawn in: shroud when unexplored, the terrain under fog when explored but not visible, else the terrain.</summary>
@@ -147,6 +197,122 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 
 			return path;
+		}
+
+		/// <summary>
+		/// The RGBA pixel buffer the image is drawn into, with the map's top-left cell at pixel 0,0. Cells outside the bounds are skipped.
+		/// Each pixel is set from its colour, in RGBA order for the PNG encoder.
+		/// </summary>
+		sealed class Canvas
+		{
+			readonly Rectangle bounds;
+
+			public Canvas(Rectangle bounds)
+			{
+				this.bounds = bounds;
+				Width = bounds.Width * MapPxPerCell;
+				Height = bounds.Height * MapPxPerCell;
+				Data = new byte[Width * Height * 4];
+			}
+
+			public int Width { get; }
+
+			public int Height { get; }
+
+			public byte[] Data { get; }
+
+			/// <summary>Sets pixel (px, py) of a cell's block. The pixel is skipped when the cell is off the bounds.</summary>
+			public void Set(CPos cell, int px, int py, uint argb)
+			{
+				if (!bounds.Contains(cell.X, cell.Y))
+					return;
+
+				SetPixel((cell.X - bounds.Left) * MapPxPerCell + px, (cell.Y - bounds.Top) * MapPxPerCell + py, argb);
+			}
+
+			void SetPixel(int x, int y, uint argb)
+			{
+				if (x < 0 || y < 0 || x >= Width || y >= Height)
+					return;
+
+				var index = (y * Width + x) * 4;
+				Data[index] = (byte)(argb >> 16);
+				Data[index + 1] = (byte)(argb >> 8);
+				Data[index + 2] = (byte)argb;
+				Data[index + 3] = (byte)(argb >> 24);
+			}
+
+			/// <summary>Fills a cell's whole block: a blip.</summary>
+			public void FillCell(CPos cell, uint argb)
+			{
+				for (var py = 0; py < MapPxPerCell; py++)
+					for (var px = 0; px < MapPxPerCell; px++)
+						Set(cell, px, py, argb);
+			}
+
+			/// <summary>The centre pixel column of a cell, across the whole image: the vertical line of a crosshair.</summary>
+			int CenterX(CPos cell)
+			{
+				return (cell.X - bounds.Left) * MapPxPerCell + MapPxPerCell / 2;
+			}
+
+			/// <summary>The centre pixel row of a cell, across the whole image: the horizontal line of a crosshair.</summary>
+			int CenterY(CPos cell)
+			{
+				return (cell.Y - bounds.Top) * MapPxPerCell + MapPxPerCell / 2;
+			}
+
+			/// <summary>A green crosshair through a cell: its centre row and column, spanning the whole map.</summary>
+			public void Crosshair(CPos cell, uint argb)
+			{
+				var row = CenterY(cell);
+				var column = CenterX(cell);
+				for (var x = 0; x < Width; x++)
+					SetPixel(x, row, argb);
+
+				for (var y = 0; y < Height; y++)
+					SetPixel(column, y, argb);
+			}
+
+			/// <summary>A line from one cell's centre to another's, drawn with Bresenham's algorithm.</summary>
+			public void Line(CPos from, CPos to, uint argb)
+			{
+				int x0 = CenterX(from), y0 = CenterY(from), x1 = CenterX(to), y1 = CenterY(to);
+				var dx = Math.Abs(x1 - x0);
+				var dy = -Math.Abs(y1 - y0);
+				var sx = x0 < x1 ? 1 : -1;
+				var sy = y0 < y1 ? 1 : -1;
+				var error = dx + dy;
+				while (true)
+				{
+					SetPixel(x0, y0, argb);
+					if (x0 == x1 && y0 == y1)
+						break;
+
+					var doubled = 2 * error;
+					if (doubled >= dy)
+					{
+						error += dy;
+						x0 += sx;
+					}
+
+					if (doubled <= dx)
+					{
+						error += dx;
+						y0 += sy;
+					}
+				}
+			}
+
+			/// <summary>A small X over a cell: its two diagonals.</summary>
+			public void Cross(CPos cell, uint argb)
+			{
+				for (var i = 0; i < MapPxPerCell; i++)
+				{
+					Set(cell, i, i, argb);
+					Set(cell, MapPxPerCell - 1 - i, i, argb);
+				}
+			}
 		}
 	}
 }

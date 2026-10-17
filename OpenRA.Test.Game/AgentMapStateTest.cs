@@ -132,9 +132,9 @@ namespace OpenRA.Test
 			var local = hw.LocalPlayer;
 			hw.Tick(SettleTicks);
 
-			// A unit on the cell makes it visible to its owner.
+			// A unit beside the cell makes it visible to its owner, and leaves no blip on the cell itself.
 			var cell = hw.FindClearArea(local.HomeLocation, 3, 3);
-			hw.CreateActor(Infantry, cell, local);
+			hw.CreateActor(Infantry, new CPos(cell.X + 1, cell.Y), local);
 			hw.Tick(SettleTicks);
 			Assert.That(local.Shroud.IsVisible(cell.ToMPos(hw.World.Map)), Is.True, "Precondition: the cell should be visible.");
 
@@ -179,8 +179,8 @@ namespace OpenRA.Test
 					"An explored cell out of sight should be its terrain under the fog, not the shroud colour.");
 			}
 
-			// A unit on the cell makes it visible: the terrain colour.
-			hw.CreateActor(Infantry, cell, local);
+			// A unit beside the cell makes it visible: the terrain colour, with no blip on the cell.
+			hw.CreateActor(Infantry, new CPos(cell.X + 1, cell.Y), local);
 			hw.Tick(SettleTicks);
 			using (var seen = MapState())
 			{

@@ -429,6 +429,21 @@ namespace OpenRA.Mods.Common.Activities
 			return Target.None;
 		}
 
+		/// <summary>
+		/// The cells this move still has to walk, nearest first, ending at the destination. Empty before the path is computed and
+		/// after it is cleared. The map-state overlay reads it (P2.12).
+		/// </summary>
+		public IEnumerable<CPos> RemainingPath
+		{
+			get
+			{
+				if (path == null)
+					return [];
+
+				return Enumerable.Reverse(path);
+			}
+		}
+
 		public override IEnumerable<TargetLineNode> TargetLineNodes(Actor self)
 		{
 			// destination might be initialized with null, but will be set in a subsequent tick
