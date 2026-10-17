@@ -232,15 +232,15 @@ namespace OpenRA
 		[Desc("Throw an exception if the world sync hash changes while evaluating BotModules.")]
 		public bool SyncCheckBotModuleCode = false;
 
-		// Launch-only: set with Debug.AgentSocket=true on the command line. Ignored when loading and saving settings.yaml
-		// so a debug flag never persists and silently re-enables the listener on a later launch.
+		// Launch-only and on by default so the agent debug socket is always available. Set Debug.AgentSocket=false
+		// on the command line to disable it. Ignored when loading and saving settings.yaml, so the toggle never persists.
 		[FieldLoader.Ignore]
 		[Desc("Listen on 127.0.0.1 for the agent debug socket (JSON lines).")]
-		public bool AgentSocket = false;
+		public bool AgentSocket = true;
 
 		[FieldLoader.Ignore]
 		[Desc("TCP port for the agent debug socket on 127.0.0.1.")]
-		public int AgentSocketPort = 37655;
+		public int AgentSocketPort = 3000;
 	}
 
 	[YamlNode("Graphics", shared: true)]
