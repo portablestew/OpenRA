@@ -193,7 +193,7 @@ namespace OpenRA.Test
 		public void SubscribeWithoutConnectionIsAnError()
 		{
 			Assert.That(Result(AgentSocketCommands.Handle("{\"cmd\":\"subscribe\",\"events\":[\"damage\"]}", null)),
-				Is.EqualTo("{\"ok\":false,\"cmd\":\"subscribe\",\"error\":\"events need a connection\"}"));
+				Is.EqualTo("{\"ok\":false,\"cmd\":\"subscribe\",\"error\":\"events need a connection\",\"hint\":\"see {\\u0022cmd\\u0022:\\u0022help\\u0022}\"}"));
 		}
 
 		[TestCase(TestName = "A subscribed connection receives its events as lines, and ends cleanly when its input closes")]

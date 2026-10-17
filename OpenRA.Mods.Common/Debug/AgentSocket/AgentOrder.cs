@@ -63,7 +63,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record OrdersV1(bool Ok, string Cmd, uint Actor, string Type, string[] Orders);
 
 	/// <summary>The refusal for an order name the actor does not accept. Available lists the names it does accept.</summary>
-	public sealed record OrderRefusedV1(bool Ok, string Cmd, string Error, string[] Available);
+	public sealed record OrderRefusedV1(bool Ok, string Cmd, string Error, string[] Available, string Hint);
 
 	/// <summary>Thrown on the game thread when an actor does not accept the order name. Carries the names it does accept.</summary>
 	public sealed class OrderRefusedException : Exception

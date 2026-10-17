@@ -33,7 +33,7 @@ namespace OpenRA.Test
 
 		const string FakePath = "fake/ra-test.png";
 
-		static readonly string[] ErrorKeys = ["ok", "cmd", "error"];
+		static readonly string[] ErrorKeys = ["ok", "cmd", "error", "hint"];
 
 		bool savedAgentSocket;
 

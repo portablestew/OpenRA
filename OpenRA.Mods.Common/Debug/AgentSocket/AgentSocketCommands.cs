@@ -19,10 +19,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 {
 	public static class AgentSocketCommands
 	{
-		sealed record Envelope(bool Ok, string Cmd, string Error);
+		sealed record Envelope(bool Ok, string Cmd, string Error, string Hint);
 		sealed record PingResponse(bool Ok, string Cmd, int Tick);
 		sealed record SubscriptionV1(bool Ok, string Cmd, string[] Subscribed);
 		sealed record HelpV1(bool Ok, string Cmd, string Banner);
+
+		/// <summary>Every error envelope and refusal carries this hint, so an agent that gets an error finds the command list on its own (P1.18).</summary>
+		const string Hint = "see {\"cmd\":\"help\"}";
 
 		/// <summary>
 		/// The result of a snapshot step. Tick is the game clock of the world left active, RequestedTick the game
@@ -177,7 +180,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 			catch (OrderRefusedException e)
 			{
-				return Serialize(new OrderRefusedV1(false, cmd, e.Message, e.Available));
+				return Serialize(new OrderRefusedV1(false, cmd, e.Message, e.Available, Hint));
 			}
 			catch (Exception e)
 			{
@@ -198,11 +201,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 			catch (BuildRefusedException e)
 			{
-				return Serialize(new BuildRefusedV1(false, cmd, e.Message, e.Available));
+				return Serialize(new BuildRefusedV1(false, cmd, e.Message, e.Available, Hint));
 			}
 			catch (OrderRefusedException e)
 			{
-				return Serialize(new OrderRefusedV1(false, cmd, e.Message, e.Available));
+				return Serialize(new OrderRefusedV1(false, cmd, e.Message, e.Available, Hint));
 			}
 			catch (Exception e)
 			{
@@ -415,7 +418,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		static string Error(string cmd, string error)
 		{
-			return JsonSerializer.Serialize(new Envelope(false, cmd, error), Json);
+			return JsonSerializer.Serialize(new Envelope(false, cmd, error, Hint), Json);
 		}
 	}
 }

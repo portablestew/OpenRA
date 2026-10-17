@@ -98,7 +98,7 @@ namespace OpenRA.Test
 			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{mcv.ActorID},\"order\":\"Deploy\"}}");
 			var root = response.RootElement;
 
-			Assert.That(Keys(root), Is.EquivalentTo(["ok", "cmd", "error", "available"]));
+			Assert.That(Keys(root), Is.EquivalentTo(["ok", "cmd", "error", "available", "hint"]));
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False);
 			Assert.That(root.GetProperty("cmd").GetString(), Is.EqualTo("order"));
 			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo($"actor {mcv.ActorID} does not accept order 'Deploy'"));

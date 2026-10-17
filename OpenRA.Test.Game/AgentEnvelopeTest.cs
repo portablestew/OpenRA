@@ -17,11 +17,12 @@ namespace OpenRA.Test
 {
 	/// <summary>
 	/// The turn envelope (P1.16), checked through the whole socket path: an object request, an array request, digest:false,
-	/// help (which has none), and a request with no world loaded.
+	/// help (which has none), a request with no world loaded, and the help hint on errors (P1.18).
 	/// </summary>
 	[TestFixture]
 	sealed class AgentEnvelopeTest
 	{
+		const string Hint = "see {\"cmd\":\"help\"}";
 		static readonly string[] EnvelopeKeys = ["results", "events", "state", "tick", "map_state_png", "map_state_tick"];
 		static readonly string[] PingKeys = ["ok", "cmd", "tick"];
 		static readonly string[] HelpKeys = ["ok", "cmd", "banner"];
@@ -130,6 +131,28 @@ namespace OpenRA.Test
 			Assert.That(root.GetProperty("tick").ValueKind, Is.EqualTo(JsonValueKind.Null));
 			Assert.That(root.GetProperty("state").ValueKind, Is.EqualTo(JsonValueKind.Null));
 			Assert.That(root.GetProperty("results").GetProperty("ok").GetBoolean(), Is.False);
+		}
+
+		[TestCase(TestName = "An error carries the help hint: an unknown command, malformed JSON, and an error item in an array; a success carries none")]
+		public void ErrorsCarryTheHelpHint()
+		{
+			using var hw = HeadlessWorld.Create(1);
+
+			using (var unknown = AgentStateDumpTest.RawRequest("{\"cmd\":\"nope\"}"))
+				Assert.That(unknown.RootElement.GetProperty("results").GetProperty("hint").GetString(), Is.EqualTo(Hint));
+
+			using (var malformed = AgentStateDumpTest.RawRequest("{not json"))
+				Assert.That(malformed.RootElement.GetProperty("results").GetProperty("hint").GetString(), Is.EqualTo(Hint));
+
+			using (var array = AgentStateDumpTest.RawRequest("[{\"cmd\":\"ping\"},{\"cmd\":\"nope\"}]"))
+			{
+				var results = array.RootElement.GetProperty("results").EnumerateArray().ToArray();
+				Assert.That(results[0].TryGetProperty("hint", out _), Is.False, "A success has no hint.");
+				Assert.That(results[1].GetProperty("hint").GetString(), Is.EqualTo(Hint));
+			}
+
+			using var ping = AgentStateDumpTest.RawRequest("{\"cmd\":\"ping\"}");
+			Assert.That(ping.RootElement.GetProperty("results").TryGetProperty("hint", out _), Is.False, "A success has no hint.");
 		}
 	}
 }

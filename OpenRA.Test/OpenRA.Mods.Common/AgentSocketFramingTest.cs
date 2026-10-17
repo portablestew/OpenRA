@@ -72,9 +72,9 @@ namespace OpenRA.Test
 			var lines = tail.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 			Assert.That(lines.Length, Is.EqualTo(5));
 			Assert.That(lines[0], Is.EqualTo(AgentSocketServer.Prompt));
-			Assert.That(ResultsOf(lines[1]), Is.EqualTo("{\"ok\":false,\"cmd\":\"nope\",\"error\":\"unknown command\"}"));
+			Assert.That(ResultsOf(lines[1]), Is.EqualTo("{\"ok\":false,\"cmd\":\"nope\",\"error\":\"unknown command\",\"hint\":\"see {\\u0022cmd\\u0022:\\u0022help\\u0022}\"}"));
 			Assert.That(lines[2], Is.EqualTo(AgentSocketServer.Prompt));
-			Assert.That(ResultsOf(lines[3]), Is.EqualTo("{\"ok\":false,\"cmd\":null,\"error\":\"missing cmd\"}"));
+			Assert.That(ResultsOf(lines[3]), Is.EqualTo("{\"ok\":false,\"cmd\":null,\"error\":\"missing cmd\",\"hint\":\"see {\\u0022cmd\\u0022:\\u0022help\\u0022}\"}"));
 			Assert.That(lines[4], Is.EqualTo(AgentSocketServer.Prompt));
 		}
 
@@ -84,10 +84,10 @@ namespace OpenRA.Test
 			var lines = Run("{bad\n\n   \n{\"cmd\":\"nope\"}\r\n[1]\n{\"x\":1}\n");
 
 			Assert.That(lines.Length, Is.EqualTo(4));
-			Assert.That(ResultsOf(lines[0]), Is.EqualTo("{\"ok\":false,\"cmd\":null,\"error\":\"invalid json\"}"));
-			Assert.That(ResultsOf(lines[1]), Is.EqualTo("{\"ok\":false,\"cmd\":\"nope\",\"error\":\"unknown command\"}"));
-			Assert.That(ResultsOf(lines[2]), Is.EqualTo("[{\"ok\":false,\"cmd\":null,\"error\":\"expected a JSON object\"}]"));
-			Assert.That(ResultsOf(lines[3]), Is.EqualTo("{\"ok\":false,\"cmd\":null,\"error\":\"missing cmd\"}"));
+			Assert.That(ResultsOf(lines[0]), Is.EqualTo("{\"ok\":false,\"cmd\":null,\"error\":\"invalid json\",\"hint\":\"see {\\u0022cmd\\u0022:\\u0022help\\u0022}\"}"));
+			Assert.That(ResultsOf(lines[1]), Is.EqualTo("{\"ok\":false,\"cmd\":\"nope\",\"error\":\"unknown command\",\"hint\":\"see {\\u0022cmd\\u0022:\\u0022help\\u0022}\"}"));
+			Assert.That(ResultsOf(lines[2]), Is.EqualTo("[{\"ok\":false,\"cmd\":null,\"error\":\"expected a JSON object\",\"hint\":\"see {\\u0022cmd\\u0022:\\u0022help\\u0022}\"}]"));
+			Assert.That(ResultsOf(lines[3]), Is.EqualTo("{\"ok\":false,\"cmd\":null,\"error\":\"missing cmd\",\"hint\":\"see {\\u0022cmd\\u0022:\\u0022help\\u0022}\"}"));
 		}
 
 		[TestCase(TestName = "A root array is one request: one envelope holds a result per item, and a failing item does not stop the rest")]
@@ -118,7 +118,7 @@ namespace OpenRA.Test
 		{
 			var lines = Run("{\"cmd\":\"nope\"}").Last();
 
-			Assert.That(ResultsOf(lines), Is.EqualTo("{\"ok\":false,\"cmd\":\"nope\",\"error\":\"unknown command\"}"));
+			Assert.That(ResultsOf(lines), Is.EqualTo("{\"ok\":false,\"cmd\":\"nope\",\"error\":\"unknown command\",\"hint\":\"see {\\u0022cmd\\u0022:\\u0022help\\u0022}\"}"));
 		}
 	}
 }

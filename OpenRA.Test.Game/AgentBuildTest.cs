@@ -25,7 +25,7 @@ namespace OpenRA.Test
 	sealed class AgentBuildTest
 	{
 		static readonly string[] SuccessKeys = ["ok", "cmd", "actor", "queue_type", "item", "count", "tick", "min_effect_tick"];
-		static readonly string[] RefusedKeys = ["ok", "cmd", "error", "available"];
+		static readonly string[] RefusedKeys = ["ok", "cmd", "error", "available", "hint"];
 
 		bool savedAgentSocket;
 

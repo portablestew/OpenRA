@@ -22,7 +22,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record BuildV1(bool Ok, string Cmd, uint Actor, string QueueType, string Item, int Count, int Tick, int MinEffectTick);
 
 	/// <summary>The refusal for a build the queue cannot start. Available lists the items build would accept now.</summary>
-	public sealed record BuildRefusedV1(bool Ok, string Cmd, string Error, string[] Available);
+	public sealed record BuildRefusedV1(bool Ok, string Cmd, string Error, string[] Available, string Hint);
 
 	/// <summary>A parsed build request. Count is at least 1.</summary>
 	public sealed record BuildRequest(string Item, int Count);
