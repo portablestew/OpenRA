@@ -31,7 +31,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 		[
 			("ping", "-> tick", "{\"cmd\":\"ping\"}"),
 			("help", "-> banner (this text, as one string)", "{\"cmd\":\"help\"}"),
-			("state", "-> tick, net_frame, map, paused, game_over, local_player, players, units", "{\"cmd\":\"state\"}"),
+			("state", "-> tick, net_frame, map, paused, game_over, local_player, players, units\n"
+				+ "                -> map is uid, title, bounds ([x, y, width, height], Map.Bounds in cells) and spawns (one per player with a home"
+				+ " cell: player, cell [x, y])",
+				"{\"cmd\":\"state\"}"),
 			("actors", "owner, type (optional filters) -> units", "{\"cmd\":\"actors\",\"type\":\"e1\"}"),
 			("maps", "-> maps", "{\"cmd\":\"maps\"}"),
 			("load_map", "map (string, uid or title) -> the state shape, once the new world is ready",

@@ -140,7 +140,7 @@ namespace OpenRA.Test
 			Assert.That(Keys(root), Is.EquivalentTo(StateKeys));
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True);
 			Assert.That(root.GetProperty("cmd").GetString(), Is.EqualTo("state"));
-			Assert.That(Keys(root.GetProperty("map")), Is.EquivalentTo(["uid", "title"]));
+			Assert.That(Keys(root.GetProperty("map")), Is.EquivalentTo(["uid", "title", "bounds", "spawns"]));
 			Assert.That(root.GetProperty("map").GetProperty("uid").GetString(), Is.EqualTo(hw.World.Map.Uid));
 
 			var players = root.GetProperty("players");

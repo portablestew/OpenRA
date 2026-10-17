@@ -17,12 +17,21 @@ namespace OpenRA.Mods.Common.AgentSocket
 {
 	// Schema v1. Wire keys are snake_case (AgentSocketCommands.Json). The envelope fields ok and cmd are part of the
 	// state and actors lines, so every key a client sees is declared here.
-	public sealed record StateV1(bool Ok, string Cmd, int Tick, int NetFrame, MapV1 Map, bool Paused, bool GameOver,
+	public sealed record StateV1(bool Ok, string Cmd, int Tick, int NetFrame, StateMapV1 Map, bool Paused, bool GameOver,
 		string LocalPlayer, PlayerV1[] Players, UnitV1[] Units);
 
 	public sealed record ActorsV1(bool Ok, string Cmd, UnitV1[] Units);
 
 	public sealed record MapV1(string Uid, string Title);
+
+	/// <summary>
+	/// The state's map (P2.6). Bounds is Map.Bounds as [x, y, width, height]. Spawns has one entry per player that has a home cell.
+	/// The maps command keeps the uid and title only (MapV1).
+	/// </summary>
+	public sealed record StateMapV1(string Uid, string Title, int[] Bounds, SpawnV1[] Spawns);
+
+	/// <summary>A player's home cell (P2.6): Cell is the top-left cell of Player's HomeLocation.</summary>
+	public sealed record SpawnV1(string Player, int[] Cell);
 
 	/// <summary>Resources are 0 for a player without a PlayerResources trait. Dead means WinState.Lost. Power is null without a PowerManager trait.</summary>
 	public sealed record PlayerV1(string Name, string Faction, int Cash, int Resources, int ResourceCapacity, bool Dead, PowerV1 Power);
@@ -46,8 +55,19 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static StateV1 Snapshot(World world)
 		{
 			return new StateV1(true, "state", world.WorldTick, world.NetFrameNumber,
-				new MapV1(world.Map.Uid, world.Map.Title), world.Paused, world.IsGameOver,
+				StateMap(world), world.Paused, world.IsGameOver,
 				world.LocalPlayer?.PlayerName, world.Players.Select(PlayerState).ToArray(), Units(world, null, null, includeScenery: false));
+		}
+
+		/// <summary>The state's map: uid, title, Map.Bounds, and each player's home cell (P2.6).</summary>
+		static StateMapV1 StateMap(World world)
+		{
+			var bounds = world.Map.Bounds;
+			var spawns = world.Players.Where(p => p.HomeLocation != CPos.Zero)
+				.Select(p => new SpawnV1(p.PlayerName, [p.HomeLocation.X, p.HomeLocation.Y]))
+				.ToArray();
+
+			return new StateMapV1(world.Map.Uid, world.Map.Title, [bounds.X, bounds.Y, bounds.Width, bounds.Height], spawns);
 		}
 
 		public static ActorsV1 Actors(World world, string owner, string type)
