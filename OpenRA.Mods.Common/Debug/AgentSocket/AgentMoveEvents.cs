@@ -17,7 +17,7 @@ using OpenRA.Mods.Common.Traits;
 namespace OpenRA.Mods.Common.AgentSocket
 {
 	/// <summary>
-	/// Builds the path and move_result payloads (M10, <c>3k-move-hooks</c>). Move calls these behind
+	/// Builds the path payload (M10, <c>3k-move-hooks</c>). Move calls these behind
 	/// AgentEvents.HasSubscribers. They are pure observers: they read the path and the locomotor's terrain cost, and
 	/// they touch no RNG and no world state.
 	/// </summary>
@@ -75,21 +75,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			AgentEvents.Raise("path", self.Owner.PlayerName, new PathV1("path", self.World.WorldTick, self.ActorID,
 				self.Info.Name, self.Owner.PlayerName, from, [to.X, to.Y], check.ToString(), repath, result, cells, metrics));
-		}
-
-		/// <summary>Raises a move_result event when a Move activity completes or is canceled.</summary>
-		public static void Completed(Actor self, CPos from, CPos to, MoveResult result, int startTicks, int remainingCells)
-		{
-			var outcome = result switch
-			{
-				MoveResult.CompleteCanceled => "canceled",
-				MoveResult.CompleteDestinationBlocked => "blocked",
-				_ => "reached",
-			};
-
-			AgentEvents.Raise("move_result", self.Owner.PlayerName, new MoveResultV1("move_result", self.World.WorldTick,
-				self.ActorID, self.Info.Name, self.Owner.PlayerName, [from.X, from.Y], [to.X, to.Y], outcome,
-				self.World.WorldTick - startTicks, remainingCells));
 		}
 
 		/// <summary>

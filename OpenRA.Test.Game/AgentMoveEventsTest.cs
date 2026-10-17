@@ -22,7 +22,7 @@ using OpenRA.Traits;
 namespace OpenRA.Test
 {
 	/// <summary>
-	/// The path and move_result payloads from the Move activity (M10, <c>3k-move-hooks</c>). Moves run through the real
+	/// The path and activity payloads from the Move activity (M10, <c>3k-move-hooks</c>). Moves run through the real
 	/// activity and the hub, and the mod's types are reached by reflection, as in AgentOrderStanceEventsTest. The custom
 	/// path callbacks are built as expression trees, because BlockedByActor is a mod type.
 	/// </summary>
@@ -111,27 +111,33 @@ namespace OpenRA.Test
 			unit.QueueActivity((Activity)Activator.CreateInstance(ModType("Activities.Move"), unit, unit.Location, null));
 		}
 
-		[TestCase(TestName = "A Move order yields one path event (found, not a repath) then one reached move_result")]
+		[TestCase(TestName = "A Move order yields a started activity, one path event (found, not a repath), then a completed activity")]
 		public void MoveProducesOnePathThenReachedEvent()
 		{
 			using var hw = HeadlessWorld.Create(1);
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
-			Call(subscriber, "Subscribe", new[] { "path", "move_result" }, null);
+			Call(subscriber, "Subscribe", new[] { "path", "activity" }, null);
 
 			var origin = unit.Location;
 			var destination = hw.FindClearArea(origin, 1, 1, 6);
 			hw.World.IssueOrder(new Order("Move", unit, Target.FromCell(hw.World, destination), false));
 
-			// move_result is raised when the activity completes, a tick after the unit arrives, so wait for both events.
-			Assert.That(hw.TickUntil(() => Pending() >= 2, 500), Is.Not.Null, "The move did not complete.");
+			// The activity completes a tick after the unit arrives, so wait for all three events.
+			Assert.That(hw.TickUntil(() => Pending() >= 3, 500), Is.Not.Null, "The move did not complete.");
 			Assert.That(unit.Location, Is.EqualTo(destination));
 
 			var events = Drain();
-			Assert.That(events.ConvertAll(KindOf), Is.EqualTo(new[] { "PathV1", "MoveResultV1" }));
+			Assert.That(events.ConvertAll(KindOf), Is.EqualTo(new[] { "ActivityV1", "PathV1", "ActivityV1" }));
 
-			var path = events[0];
+			var started = events[0];
+			Assert.That(Field<string>(started, "Kind"), Is.EqualTo("move"));
+			Assert.That(Field<string>(started, "State"), Is.EqualTo("started"));
+			Assert.That(Field<string>(started, "Reason"), Is.Null);
+			Assert.That(Field<uint>(started, "Actor"), Is.EqualTo(unit.ActorID));
+
+			var path = events[1];
 			Assert.That(Field<string>(path, "Event"), Is.EqualTo("path"));
 			Assert.That(Field<bool>(path, "Repath"), Is.False);
 			Assert.That(Field<string>(path, "Result"), Is.EqualTo("found"));
@@ -149,13 +155,10 @@ namespace OpenRA.Test
 			Assert.That(Field<int>(metrics, "PathLenCells"), Is.EqualTo(cells.Length - 1));
 			Assert.That(Field<double>(metrics, "DetourRatio"), Is.GreaterThanOrEqualTo(1.0));
 
-			var result = events[1];
-			Assert.That(Field<string>(result, "Event"), Is.EqualTo("move_result"));
-			Assert.That(Field<string>(result, "Outcome"), Is.EqualTo("reached"));
-			Assert.That(Field<int>(result, "RemainingCells"), Is.EqualTo(0));
-			Assert.That(Field<int[]>(result, "From"), Is.EqualTo(new[] { origin.X, origin.Y }));
-			Assert.That(Field<int[]>(result, "To"), Is.EqualTo(new[] { destination.X, destination.Y }));
-			Assert.That(Field<int>(result, "Ticks"), Is.GreaterThanOrEqualTo(0));
+			var result = events[2];
+			Assert.That(Field<string>(result, "Event"), Is.EqualTo("activity"));
+			Assert.That(Field<string>(result, "State"), Is.EqualTo("completed"));
+			Assert.That(Field<string>(result, "Reason"), Is.EqualTo("reached"));
 		}
 
 		[TestCase(TestName = "A move to the cell the unit already occupies reports a zero-length found path, then reached")]
@@ -165,16 +168,16 @@ namespace OpenRA.Test
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
-			Call(subscriber, "Subscribe", new[] { "path", "move_result" }, null);
+			Call(subscriber, "Subscribe", new[] { "path", "activity" }, null);
 
 			QueueMoveToOwnCell(unit);
 			hw.Tick(3);
 
 			var events = Drain();
-			Assert.That(events.ConvertAll(KindOf), Is.EqualTo(new[] { "PathV1", "MoveResultV1" }));
+			Assert.That(events.ConvertAll(KindOf), Is.EqualTo(new[] { "ActivityV1", "PathV1", "ActivityV1" }));
 
 			var origin = unit.Location;
-			var path = events[0];
+			var path = events[1];
 			Assert.That(Field<string>(path, "Result"), Is.EqualTo("found"));
 			Assert.That(Field<bool>(path, "Repath"), Is.False);
 			Assert.That(Field<int[][]>(path, "Cells"), Has.Length.EqualTo(1));
@@ -185,7 +188,7 @@ namespace OpenRA.Test
 			Assert.That(Field<double>(metrics, "CrowCells"), Is.EqualTo(0.0));
 			Assert.That(Field<double>(metrics, "DetourRatio"), Is.EqualTo(1.0));
 
-			Assert.That(Field<string>(events[1], "Outcome"), Is.EqualTo("reached"));
+			Assert.That(Field<string>(events[2], "Reason"), Is.EqualTo("reached"));
 		}
 
 		[TestCase(TestName = "An empty path reports no_path with no cells and null metrics, then blocked")]
@@ -195,20 +198,20 @@ namespace OpenRA.Test
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
-			Call(subscriber, "Subscribe", new[] { "path", "move_result" }, null);
+			Call(subscriber, "Subscribe", new[] { "path", "activity" }, null);
 
 			QueueMoveWithPath(unit, []);
 			hw.Tick(5);
 
 			var events = Drain();
-			Assert.That(events.ConvertAll(KindOf), Is.EqualTo(new[] { "PathV1", "MoveResultV1" }));
+			Assert.That(events.ConvertAll(KindOf), Is.EqualTo(new[] { "ActivityV1", "PathV1", "ActivityV1" }));
 
-			var path = events[0];
+			var path = events[1];
 			Assert.That(Field<string>(path, "Result"), Is.EqualTo("no_path"));
 			Assert.That(Field<int[][]>(path, "Cells"), Has.Length.EqualTo(0));
 			Assert.That(Field<object>(path, "Metrics"), Is.Null);
 
-			Assert.That(Field<string>(events[1], "Outcome"), Is.EqualTo("blocked"));
+			Assert.That(Field<string>(events[2], "Reason"), Is.EqualTo("blocked"));
 		}
 
 		[TestCase(TestName = "A path that is not a chain of adjacent cells reports null metrics and does not throw")]
@@ -218,7 +221,7 @@ namespace OpenRA.Test
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
-			Call(subscriber, "Subscribe", new[] { "path", "move_result" }, null);
+			Call(subscriber, "Subscribe", new[] { "path", "activity" }, null);
 
 			var origin = unit.Location;
 			var near = new CPos(origin.X + 2, origin.Y);
@@ -229,22 +232,22 @@ namespace OpenRA.Test
 			Assert.That(() => hw.Tick(5), Throws.Nothing, "An invalid path must not throw on the game thread.");
 
 			var events = Drain();
-			Assert.That(events.ConvertAll(KindOf), Is.EqualTo(new[] { "PathV1", "PathV1", "MoveResultV1" }));
+			Assert.That(events.ConvertAll(KindOf), Is.EqualTo(new[] { "ActivityV1", "PathV1", "PathV1", "ActivityV1" }));
 
-			var first = events[0];
+			var first = events[1];
 			Assert.That(Field<bool>(first, "Repath"), Is.False);
 			Assert.That(Field<string>(first, "Result"), Is.EqualTo("found"));
 			Assert.That(Field<object>(first, "Metrics"), Is.Null);
 			Assert.That(Field<int[][]>(first, "Cells"), Has.Length.EqualTo(3));
 
-			Assert.That(Field<bool>(events[1], "Repath"), Is.True);
-			Assert.That(Field<object>(events[1], "Metrics"), Is.Null);
+			Assert.That(Field<bool>(events[2], "Repath"), Is.True);
+			Assert.That(Field<object>(events[2], "Metrics"), Is.Null);
 
-			Assert.That(Field<string>(events[2], "Outcome"), Is.EqualTo("blocked"));
+			Assert.That(Field<string>(events[3], "Reason"), Is.EqualTo("blocked"));
 		}
 
-		[TestCase(TestName = "A move cancelled with cells still on its path reports canceled with zero remaining cells")]
-		public void CanceledMoveReportsZeroRemainingCells()
+		[TestCase(TestName = "A move cancelled with cells still on its path reports canceled with reason interrupted")]
+		public void CanceledMoveReportsInterrupted()
 		{
 			using var hw = HeadlessWorld.Create(1);
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
@@ -259,24 +262,50 @@ namespace OpenRA.Test
 			Assert.That(move.GetType().Name, Is.EqualTo("Move"));
 
 			// Put the activity into Canceling without Move.Cancel, which clears the path first. That leaves cells on the path
-			// when the cancel branch of Tick runs, the state the event must still report as zero remaining.
+			// when the cancel branch of Tick runs.
 			var path = (IList)move.GetType().GetField("path", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(move);
 			Assert.That(path.Count, Is.GreaterThan(0), "The move has no cells left on its path, so the cancel did not exercise the bug.");
 
 			typeof(Activity).GetProperty("State").GetSetMethod(true).Invoke(move, [ActivityState.Canceling]);
 
-			Call(subscriber, "Subscribe", new[] { "move_result" }, null);
+			Call(subscriber, "Subscribe", new[] { "activity" }, null);
 
-			// Move hands its cancel branch to Tick only after its child move part finishes, so wait for the result.
-			Assert.That(hw.TickUntil(() => Pending() > 0, 200), Is.Not.Null, "The canceled move never reported a result.");
+			// Move hands its cancel branch to Tick only after its child move part finishes, so wait for the event.
+			Assert.That(hw.TickUntil(() => Pending() > 0, 200), Is.Not.Null, "The canceled move never reported an activity event.");
 
 			var events = Drain();
-			Assert.That(events.ConvertAll(KindOf), Is.EqualTo(new[] { "MoveResultV1" }));
-			Assert.That(Field<string>(events[0], "Outcome"), Is.EqualTo("canceled"));
-			Assert.That(Field<int>(events[0], "RemainingCells"), Is.EqualTo(0));
+			Assert.That(events.ConvertAll(KindOf), Is.EqualTo(new[] { "ActivityV1" }));
+			Assert.That(Field<string>(events[0], "Kind"), Is.EqualTo("move"));
+			Assert.That(Field<string>(events[0], "State"), Is.EqualTo("canceled"));
+			Assert.That(Field<string>(events[0], "Reason"), Is.EqualTo("interrupted"));
 		}
 
-		[TestCase(TestName = "With the socket disabled, a subscriber gets no path or move_result events")]
+		[TestCase(TestName = "A Stop order during a Move reports canceled with reason interrupted")]
+		public void StopMidMoveReportsInterrupted()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+
+			// Sixteen cells away, so the move is still under way when the Stop arrives.
+			var destination = hw.FindClearArea(new CPos(unit.Location.X + 16, unit.Location.Y), 1, 1, 2);
+			hw.World.IssueOrder(new Order("Move", unit, Target.FromCell(hw.World, destination), false));
+			hw.Tick(2);
+
+			Call(subscriber, "Subscribe", new[] { "activity" }, null);
+			hw.World.IssueOrder(new Order("Stop", unit, false));
+
+			Assert.That(hw.TickUntil(() => Pending() > 0, 200), Is.Not.Null, "The stopped move never reported an activity event.");
+			Assert.That(unit.Location, Is.Not.EqualTo(destination), "The unit reached the destination before the Stop took effect.");
+
+			var events = Drain();
+			Assert.That(events.ConvertAll(KindOf), Is.EqualTo(new[] { "ActivityV1" }));
+			Assert.That(Field<string>(events[0], "Kind"), Is.EqualTo("move"));
+			Assert.That(Field<string>(events[0], "State"), Is.EqualTo("canceled"));
+			Assert.That(Field<string>(events[0], "Reason"), Is.EqualTo("interrupted"));
+		}
+
+		[TestCase(TestName = "With the socket disabled, a subscriber gets no path or activity events")]
 		public void NoEventsWhenSocketDisabled()
 		{
 			Game.Settings.Debug.AgentSocket = false;
@@ -286,7 +315,7 @@ namespace OpenRA.Test
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
-			Call(subscriber, "Subscribe", new[] { "path", "move_result" }, null);
+			Call(subscriber, "Subscribe", new[] { "path", "activity" }, null);
 			Assert.That((bool)ModType("AgentSocket.AgentEvents").GetProperty("HasSubscribers").GetValue(null), Is.False);
 
 			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);

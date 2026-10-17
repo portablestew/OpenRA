@@ -82,7 +82,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("production", "placed", typeof(PlacedV1)),
 			("stance", "stance", typeof(StanceV1)),
 			("path", "path", typeof(PathV1)),
-			("move_result", "move_result", typeof(MoveResultV1)),
+			("activity", "activity", typeof(ActivityV1)),
 			("power", "power_low", typeof(PowerEventV1)),
 			("power", "power_restored", typeof(PowerEventV1)),
 			("player", "defeated", typeof(DefeatedV1)),
@@ -110,6 +110,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			Row(text, "(any)", 12, $"{OverflowEvent}: {Fields(typeof(OverflowV1))}");
 			Row(text, "path", 12, $"metrics (in path events): {Fields(typeof(PathMetrics))}");
+			Row(text, "activity", 12, "kind: move or transform; state: started, completed or canceled; reason (null unless the activity"
+				+ " says why it ended): reached or blocked (a move completed), interrupted (a Stop or a new order canceled it),"
+				+ " cannot_deploy or destroyed (a transform canceled)");
 
 			text.Append("Player keys, in state.players:\n");
 			Row(text, "player", 12, Fields(typeof(PlayerV1)));

@@ -39,8 +39,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record PathV1(string Event, int Tick, uint Actor, string Type, string Owner, int[] From, int[] To, string Check,
 		bool Repath, string Result, int[][] Cells, PathMetrics Metrics);
 
-	public sealed record MoveResultV1(string Event, int Tick, uint Actor, string Type, string Owner, int[] From, int[] To,
-		string Outcome, int Ticks, int RemainingCells);
+	// Kind is move, transform or attack. State is started, completed or canceled. Reason says how an activity ended, or null.
+	public sealed record ActivityV1(string Event, int Tick, uint Actor, string Type, string Owner, string Kind, string State,
+		string Reason);
 
 	public sealed record PlacedV1(string Event, int Tick, uint Actor, string Type, string Owner, int[] Cell);
 
@@ -59,7 +60,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public static class AgentEvents
 	{
 		/// <summary>The v1 event groups, in the canonical order that subscribe echoes.</summary>
-		public static readonly string[] Groups = ["damage", "killed", "captured", "orders", "production", "stance", "path", "move_result",
+		public static readonly string[] Groups = ["damage", "killed", "captured", "orders", "production", "stance", "path", "activity",
 			"power", "player"];
 
 		static volatile bool enabled;

@@ -46,10 +46,6 @@ namespace OpenRA.Mods.Common.Activities
 		int startTicks;
 		bool hadNoPath;
 
-		// Origin and target for the move_result event (M10)
-		CPos moveOrigin;
-		CPos moveTarget;
-
 		// For dealing with blockers
 		bool hasWaited;
 		int waitTicksRemaining;
@@ -128,7 +124,8 @@ namespace OpenRA.Mods.Common.Activities
 		{
 			startTicks = self.World.WorldTick;
 			mobile.MoveResult = MoveResult.InProgress;
-			moveOrigin = mobile.ToCell;
+			if (AgentEvents.HasSubscribers)
+				AgentActivityEvents.Raise(self, "move", "started");
 
 			if (evaluateNearestMovableCell && destination.HasValue)
 			{
@@ -146,9 +143,9 @@ namespace OpenRA.Mods.Common.Activities
 					break;
 			}
 
-			moveTarget = path.Count > 0 ? path[0] : destination ?? mobile.ToCell;
 			if (AgentMoveEvents.Wanted(self))
-				AgentMoveEvents.Path(self, mobile.Locomotor, mobile.ToCell, moveTarget, pathCheck, false, alreadyAtDestination, path);
+				AgentMoveEvents.Path(self, mobile.Locomotor, mobile.ToCell, path.Count > 0 ? path[0] : destination ?? mobile.ToCell,
+					pathCheck, false, alreadyAtDestination, path);
 		}
 
 		public override bool Tick(Actor self)
@@ -158,10 +155,8 @@ namespace OpenRA.Mods.Common.Activities
 			if (IsCanceling && mobile.CanStayInCell(mobile.ToCell))
 			{
 				path?.Clear();
-
-				// The path is cleared above, so no cells remain for the move_result event.
 				if (AgentEvents.HasSubscribers)
-					AgentMoveEvents.Completed(self, moveOrigin, moveTarget, MoveResult.CompleteCanceled, startTicks, 0);
+					AgentActivityEvents.Raise(self, "move", "canceled", "interrupted");
 
 				mobile.MoveResult = MoveResult.CompleteCanceled;
 				return true;
@@ -173,8 +168,7 @@ namespace OpenRA.Mods.Common.Activities
 			if (alreadyAtDestination)
 			{
 				mobile.MoveResult = MoveResult.CompleteDestinationReached;
-				if (AgentEvents.HasSubscribers)
-					AgentMoveEvents.Completed(self, moveOrigin, moveTarget, mobile.MoveResult, startTicks, path.Count);
+				ReportCompleted(self);
 
 				return true;
 			}
@@ -186,8 +180,7 @@ namespace OpenRA.Mods.Common.Activities
 				else
 					mobile.MoveResult = MoveResult.CompleteDestinationReached;
 
-				if (AgentEvents.HasSubscribers)
-					AgentMoveEvents.Completed(self, moveOrigin, moveTarget, mobile.MoveResult, startTicks, path.Count);
+				ReportCompleted(self);
 
 				return true;
 			}
@@ -220,8 +213,7 @@ namespace OpenRA.Mods.Common.Activities
 				if (!shouldTryAgain)
 				{
 					mobile.MoveResult = MoveResult.CompleteDestinationBlocked;
-					if (AgentEvents.HasSubscribers)
-						AgentMoveEvents.Completed(self, moveOrigin, moveTarget, mobile.MoveResult, startTicks, path.Count);
+					ReportCompleted(self);
 
 					return true;
 				}
@@ -391,6 +383,12 @@ namespace OpenRA.Mods.Common.Activities
 			if (adjacent == null)
 				return null;
 			return (adjacent.Value, mobile.GetAvailableSubCell(adjacent.Value, mobile.FromSubCell, ignoreActor));
+		}
+
+		void ReportCompleted(Actor self)
+		{
+			if (AgentEvents.HasSubscribers)
+				AgentActivityEvents.Raise(self, "move", "completed", mobile.MoveResult == MoveResult.CompleteDestinationBlocked ? "blocked" : "reached");
 		}
 
 		protected override void OnLastRun(Actor self)

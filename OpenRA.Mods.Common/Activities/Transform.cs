@@ -12,6 +12,7 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using OpenRA.Activities;
+using OpenRA.Mods.Common.AgentSocket;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Mods.Common.Traits.Render;
 using OpenRA.Primitives;
@@ -31,6 +32,9 @@ namespace OpenRA.Mods.Common.Activities
 		public bool SkipMakeAnims = false;
 		public string Faction = null;
 
+		// The lifecycle event ends once. A trait abort cancels the activity, and the cancel then reaches Tick too.
+		bool lifecycleEnded;
+
 		public Transform(string toActor)
 		{
 			ToActor = toActor;
@@ -38,6 +42,9 @@ namespace OpenRA.Mods.Common.Activities
 
 		protected override void OnFirstRun(Actor self)
 		{
+			if (AgentEvents.HasSubscribers)
+				AgentActivityEvents.Raise(self, "transform", "started");
+
 			if (self.Info.HasTraitInfo<IFacingInfo>())
 				QueueChild(new Turn(self, Facing));
 
@@ -48,12 +55,18 @@ namespace OpenRA.Mods.Common.Activities
 		public override bool Tick(Actor self)
 		{
 			if (IsCanceling)
+			{
+				EndLifecycle(self, "canceled", "interrupted");
 				return true;
+			}
 
 			// Prevent deployment in bogus locations
 			var transforms = self.TraitOrDefault<Transforms>();
 			if (transforms != null && !transforms.CanDeploy())
+			{
+				EndLifecycle(self, "canceled", "cannot_deploy");
 				return true;
+			}
 
 			foreach (var nt in self.TraitsImplementing<INotifyTransform>())
 				nt.BeforeTransform(self);
@@ -74,6 +87,16 @@ namespace OpenRA.Mods.Common.Activities
 			return true;
 		}
 
+		void EndLifecycle(Actor self, string state, string reason)
+		{
+			if (lifecycleEnded)
+				return;
+
+			lifecycleEnded = true;
+			if (AgentEvents.HasSubscribers)
+				AgentActivityEvents.Raise(self, "transform", state, reason);
+		}
+
 		void DoTransform(Actor self, Transforms transforms, WithMakeAnimation makeAnimation)
 		{
 			// This activity may be buried as a child within one or more parents
@@ -83,11 +106,16 @@ namespace OpenRA.Mods.Common.Activities
 			self.World.AddFrameEndTask(w =>
 			{
 				if (self.IsDead || self.WillDispose)
+				{
+					EndLifecycle(self, "canceled", "destroyed");
 					return;
+				}
 
 				// Prevent deployment in bogus locations
 				if (transforms != null && !transforms.CanDeploy())
 				{
+					EndLifecycle(self, "canceled", "cannot_deploy");
+
 					if (!SkipMakeAnims && makeAnimation != null)
 						makeAnimation.Forward(self, () => { IsInterruptible = true; Cancel(self, true); });
 					else
@@ -105,6 +133,7 @@ namespace OpenRA.Mods.Common.Activities
 				var selected = w.Selection.Contains(self);
 				var controlgroup = w.ControlGroups.GetControlGroupForActor(self);
 
+				EndLifecycle(self, "completed", null);
 				self.Dispose();
 				foreach (var s in Sounds)
 					Game.Sound.PlayToPlayer(SoundType.World, self.Owner, s, self.CenterPosition);
