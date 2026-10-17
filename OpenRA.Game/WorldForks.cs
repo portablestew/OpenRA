@@ -26,7 +26,8 @@ namespace OpenRA
 	/// restore path that adopts one of them as the active game state - an interactive, memory-backed
 	/// counterpart to the MCTS fork primitive. One snapshot is captured every
 	/// <see cref="CaptureIntervalMs"/> of wall-clock time; the window holds at most <see cref="Capacity"/>,
-	/// evicting the snapshot farthest in game time from the live tick. <see cref="Undo"/> and <see cref="Redo"/>
+	/// evicting the snapshot farthest in game time from the live tick. <see cref="Undo(OrderManager, WorldRenderer, long, out string)"/>
+	/// and <see cref="Redo(OrderManager, WorldRenderer, long, out string)"/>
 	/// step to the nearest stored snapshot in their direction that is at least <see cref="MinGapMs"/> from the
 	/// live tick, swap a fresh clone of it in for the live world, and restart the capture timer from the restored
 	/// tick. Restoring never consumes a snapshot, so the window keeps every checkpoint for further steps.
@@ -211,6 +212,31 @@ namespace OpenRA
 		}
 
 		/// <summary>
+		/// The snapshot nearest <paramref name="targetMs"/> in game time, or null only when the window is
+		/// empty. Ties go to the older snapshot, consistent with <see cref="EvictFarthest"/>. This is the
+		/// targeting rule a caller uses when it names a game time directly (rewind or advance by a span, or
+		/// jump to an absolute tick) rather than stepping one <see cref="MinGapMs"/> in a direction.
+		/// </summary>
+		internal static Snapshot FindNearest(long targetMs)
+		{
+			Snapshot nearest = null;
+			var nearestDistance = long.MaxValue;
+
+			// Snapshots are in ascending game time, so the strict comparison keeps the older of two equally distant ones.
+			foreach (var snapshot in Snapshots)
+			{
+				var distance = Math.Abs(snapshot.GameMs - targetMs);
+				if (distance < nearestDistance)
+				{
+					nearest = snapshot;
+					nearestDistance = distance;
+				}
+			}
+
+			return nearest;
+		}
+
+		/// <summary>
 		/// Drops every snapshot and schedules the next capture one interval into game time, the clock a new
 		/// world starts at. Called on game start and disconnect so a window never leaks across two games
 		/// (snapshots share the outgoing game's <see cref="Map"/>).
@@ -341,7 +367,8 @@ namespace OpenRA
 		public static bool Undo(OrderManager orderManager, WorldRenderer worldRenderer, long liveMs,
 			out string failureReason)
 		{
-			return TryRestore(orderManager, worldRenderer, liveMs, FindUndo, out failureReason);
+			return TryRestore(orderManager, worldRenderer, liveMs, FindUndo,
+				$"no snapshot is at least {MinGapMs} ms older than the live tick", out failureReason);
 		}
 
 		/// <summary>
@@ -351,11 +378,26 @@ namespace OpenRA
 		public static bool Redo(OrderManager orderManager, WorldRenderer worldRenderer, long liveMs,
 			out string failureReason)
 		{
-			return TryRestore(orderManager, worldRenderer, liveMs, FindRedo, out failureReason);
+			return TryRestore(orderManager, worldRenderer, liveMs, FindRedo,
+				$"no snapshot is at least {MinGapMs} ms newer than the live tick", out failureReason);
 		}
 
 		/// <summary>
-		/// Adopts a fresh clone of the snapshot <paramref name="find"/> picks for <paramref name="liveMs"/> as the
+		/// Makes the snapshot nearest <paramref name="targetMs"/> in game time the active game state - the
+		/// targeting rule for a caller that names a game time directly (a rewind or advance by a span, or a jump
+		/// to an absolute tick) rather than stepping one <see cref="MinGapMs"/> in a direction. Takes the
+		/// <see cref="World"/> rather than its <see cref="OrderManager"/> because the agent socket, outside
+		/// OpenRA.Game, holds the former. See <see cref="TryRestore"/> for what adopting a snapshot involves;
+		/// like Undo and Redo, this never consumes the snapshot.
+		/// </summary>
+		public static bool RestoreNearest(World world, WorldRenderer worldRenderer, long targetMs, out string failureReason)
+		{
+			return TryRestore(world?.OrderManager, worldRenderer, targetMs, FindNearest,
+				"no snapshot is stored", out failureReason);
+		}
+
+		/// <summary>
+		/// Adopts a fresh clone of the snapshot <paramref name="find"/> picks for <paramref name="findMs"/> as the
 		/// active game state: the shared <see cref="OrderManager"/> adopts it as its world, the renderer re-binds
 		/// to it, world traits that opted in via <see cref="IWorldAdopted"/> re-bind (the in-game widget tree
 		/// reloads against the restored world), and the capture timer restarts from the restored tick. The stored
@@ -363,8 +405,8 @@ namespace OpenRA
 		/// with a reason when the window is empty, no snapshot is in range, the clone fails, or the live world is
 		/// not in a state that can be swapped; nothing changes in that case.
 		/// </summary>
-		static bool TryRestore(OrderManager orderManager, WorldRenderer worldRenderer, long liveMs,
-			Func<long, Snapshot> find, out string failureReason)
+		static bool TryRestore(OrderManager orderManager, WorldRenderer worldRenderer, long findMs,
+			Func<long, Snapshot> find, string noSnapshotReason, out string failureReason)
 		{
 			if (Snapshots.Count == 0)
 			{
@@ -391,10 +433,10 @@ namespace OpenRA
 				return false;
 			}
 
-			var snapshot = find(liveMs);
+			var snapshot = find(findMs);
 			if (snapshot == null)
 			{
-				failureReason = $"no snapshot is at least {MinGapMs} ms away from the live tick in that direction";
+				failureReason = noSnapshotReason;
 				return false;
 			}
 
