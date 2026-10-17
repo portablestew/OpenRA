@@ -25,9 +25,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// One ProductionQueue the local player owns and can build with. Actor is the actor that holds the queue: the player
 	/// actor for the RA queues. Producers are the owned actors whose Production trait produces the queue type, where an item is built.
 	/// Options are the items the queue lists, in build palette order. Items are the live queue, head first. Enabled is
-	/// false while the queue's production trait is disabled or the faction is wrong.
+	/// false while the queue's production trait is disabled or the faction is wrong. Blocker is the name of the head item when
+	/// it is finished and waits for placement, which holds the items behind it; null otherwise (P1.12).
 	/// </summary>
-	public sealed record ProductionQueueV1(uint Actor, uint[] Producers, string QueueType, bool Enabled, ProductionOptionV1[] Options, ProductionItemV1[] Items);
+	public sealed record ProductionQueueV1(uint Actor, uint[] Producers, string QueueType, bool Enabled, ProductionOptionV1[] Options, ProductionItemV1[] Items,
+		string Blocker);
 
 	/// <summary>
 	/// Buildable is the engine's ProductionQueue.BuildableItems set: the item can be queued now. An option listed with
@@ -82,8 +84,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 				.Order()
 				.ToArray();
 
+			// The engine ticks only the head of a queue, so a finished head holds everything behind it.
+			var head = queue.AllQueued().FirstOrDefault();
+			var blocker = head is { Done: true } ? head.Item : null;
+
 			return new ProductionQueueV1(actor.ActorID, producers, queue.Info.Type, queue.Enabled, options,
-				queue.AllQueued().Select(i => ItemOf(queue, i)).ToArray());
+				queue.AllQueued().Select(i => ItemOf(queue, i)).ToArray(), blocker);
 		}
 
 		static ProductionOptionV1 OptionOf(ProductionQueue queue, ActorInfo info, ISet<string> buildable, int cash)

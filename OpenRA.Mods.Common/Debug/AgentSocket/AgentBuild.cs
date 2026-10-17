@@ -22,17 +22,19 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// The build command's success: the StartProduction order was issued to the queue, which then holds the count. Ready and
 	/// EtaTicks describe a copy of the item already queued when the request arrived (P1.11): Ready is true when that copy is done
 	/// and waits for placement, and otherwise false with EtaTicks, the ticks until it is done. Both are null when no copy was queued.
+	/// BlockedBy names the finished item at the head of the queue the item joins, which holds the new item until it is placed
+	/// (P1.12); null when that head is not finished.
 	/// </summary>
 	public sealed record BuildV1(bool Ok, string Cmd, uint Actor, string QueueType, string Item, int Count, int Tick, int MinEffectTick,
-		bool? Ready, int? EtaTicks);
+		bool? Ready, int? EtaTicks, string BlockedBy);
 
 	/// <summary>
 	/// The refusal for a build the queue cannot start. Available lists the items build would accept now. MissingPrerequisites
-	/// names every prerequisite the player does not meet, and is null when the refusal is not about prerequisites. Ready and
+	/// names every prerequisite the player does not meet, and is null when the refusal is not about prerequisites. Ready, BlockedBy and
 	/// EtaTicks are as in BuildV1.
 	/// </summary>
 	public sealed record BuildRefusedV1(bool Ok, string Cmd, string Error, string[] Available, string[] MissingPrerequisites,
-		bool? Ready, int? EtaTicks, string Hint);
+		bool? Ready, int? EtaTicks, string BlockedBy, string Hint);
 
 	/// <summary>A parsed build request. Count is at least 1.</summary>
 	public sealed record BuildRequest(string Item, int Count);
@@ -40,19 +42,21 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>Thrown on the game thread when a build cannot start. Carries the items build would accept now, and the answers BuildRefusedV1 reports.</summary>
 	public sealed class BuildRefusedException : Exception
 	{
-		public BuildRefusedException(string error, string[] available, string[] missingPrerequisites, bool? ready, int? etaTicks)
+		public BuildRefusedException(string error, string[] available, string[] missingPrerequisites, bool? ready, int? etaTicks, string blockedBy)
 			: base(error)
 		{
 			Available = available;
 			MissingPrerequisites = missingPrerequisites;
 			Ready = ready;
 			EtaTicks = etaTicks;
+			BlockedBy = blockedBy;
 		}
 
 		public string[] Available { get; }
 		public string[] MissingPrerequisites { get; }
 		public bool? Ready { get; }
 		public int? EtaTicks { get; }
+		public string BlockedBy { get; }
 	}
 
 	/// <summary>
@@ -124,7 +128,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			selection.Ordered(world, actor);
 
 			return new BuildV1(true, "build", actor.ActorID, queue.QueueType, item, request.Count, world.WorldTick, world.WorldTick + 1,
-				ready, etaTicks);
+				ready, etaTicks, queue.Blocker);
 		}
 
 		/// <summary>
@@ -212,10 +216,20 @@ namespace OpenRA.Mods.Common.AgentSocket
 				.First(t => t.Actor.ActorID == queue.Actor && t.Trait.Info.Type == queue.QueueType).Trait;
 		}
 
+		/// <summary>The blocker of the first queue the item would join whose head is finished (P1.12). Null when no such queue exists.</summary>
+		static string BlockedBy(World world, string item, ProductionV1 production)
+		{
+			var buildable = world.Map.Rules.Actors.TryGetValue(item, out var info) ? info.TraitInfoOrDefault<BuildableInfo>() : null;
+			return production.Queues
+				.Where(q => buildable != null && buildable.Queue.Contains(q.QueueType))
+				.Select(q => q.Blocker)
+				.FirstOrDefault(b => b != null);
+		}
+
 		static BuildRefusedException Refused(World world, string item, string error, ProductionV1 production, string[] missing = null)
 		{
 			var (ready, etaTicks) = Progress(world, production, item);
-			return new BuildRefusedException(error, Available(world, production), missing, ready, etaTicks);
+			return new BuildRefusedException(error, Available(world, production), missing, ready, etaTicks, BlockedBy(world, item, production));
 		}
 	}
 }

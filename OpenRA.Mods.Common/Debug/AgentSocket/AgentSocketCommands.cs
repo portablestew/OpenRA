@@ -45,7 +45,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static readonly string[] Names =
 		[
 			"ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "wait",
-			"production", "build", "place", "screenshot", "subscribe", "unsubscribe", "undo",
+			"production", "build", "cancel", "place", "screenshot", "subscribe", "unsubscribe", "undo",
 		];
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
@@ -119,6 +119,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"wait" => Wait(cmd, root),
 				"production" => Run(cmd, () => AgentProduction.List(AgentWorldBridge.RequireWorld())),
 				"build" => StartBuild(cmd, root, selection),
+				"cancel" => StartCancel(cmd, root),
 				"place" => StartPlace(cmd, root, selection),
 				"screenshot" => Screenshot(cmd, root),
 				"subscribe" => Subscribe(cmd, root, subscriber),
@@ -208,7 +209,28 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 			catch (BuildRefusedException e)
 			{
-				return Serialize(new BuildRefusedV1(false, cmd, e.Message, e.Available, e.MissingPrerequisites, e.Ready, e.EtaTicks, Hint));
+				return Serialize(new BuildRefusedV1(false, cmd, e.Message, e.Available, e.MissingPrerequisites, e.Ready, e.EtaTicks, e.BlockedBy, Hint));
+			}
+			catch (OrderRefusedException e)
+			{
+				return Serialize(new OrderRefusedV1(false, cmd, e.Message, e.Available, Hint));
+			}
+			catch (Exception e)
+			{
+				return Error(cmd, e.Message);
+			}
+		}
+
+		/// <summary>Parses the item and count on the socket thread, then cancels the queued copies on the game thread. Nothing queued is ok:false with the reason.</summary>
+		static string StartCancel(string cmd, JsonElement root)
+		{
+			var error = AgentCancel.Parse(root, out var request);
+			if (error != null)
+				return Error(cmd, error);
+
+			try
+			{
+				return Serialize(AgentMarshal.ExecuteOnGameThread(() => AgentCancel.Start(AgentWorldBridge.RequireWorld(), request)));
 			}
 			catch (OrderRefusedException e)
 			{

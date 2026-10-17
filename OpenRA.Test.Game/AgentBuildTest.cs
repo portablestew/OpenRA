@@ -24,8 +24,8 @@ namespace OpenRA.Test
 	[TestFixture]
 	sealed class AgentBuildTest
 	{
-		static readonly string[] SuccessKeys = ["ok", "cmd", "actor", "queue_type", "item", "count", "tick", "min_effect_tick", "ready", "eta_ticks"];
-		static readonly string[] RefusedKeys = ["ok", "cmd", "error", "available", "missing_prerequisites", "ready", "eta_ticks", "hint"];
+		static readonly string[] SuccessKeys = ["ok", "cmd", "actor", "queue_type", "item", "count", "tick", "min_effect_tick", "ready", "eta_ticks", "blocked_by"];
+		static readonly string[] RefusedKeys = ["ok", "cmd", "error", "available", "missing_prerequisites", "ready", "eta_ticks", "blocked_by", "hint"];
 
 		bool savedAgentSocket;
 
@@ -155,6 +155,7 @@ namespace OpenRA.Test
 				Assert.That(first.RootElement.GetProperty("ok").GetBoolean(), Is.True);
 				Assert.That(first.RootElement.GetProperty("ready").ValueKind, Is.EqualTo(JsonValueKind.Null));
 				Assert.That(first.RootElement.GetProperty("eta_ticks").ValueKind, Is.EqualTo(JsonValueKind.Null));
+				Assert.That(first.RootElement.GetProperty("blocked_by").ValueKind, Is.EqualTo(JsonValueKind.Null), "Nothing is finished at the head, so nothing blocks");
 			}
 
 			Assert.That(hw.TickUntil(PowrBuilding, 100), Is.Not.Null, "The POWR never started building.");
@@ -173,6 +174,33 @@ namespace OpenRA.Test
 			using var finished = AgentStateDumpTest.Request("{\"cmd\":\"build\",\"item\":\"powr\"}");
 			Assert.That(finished.RootElement.GetProperty("ready").GetBoolean(), Is.True, "A finished item is ready");
 			Assert.That(finished.RootElement.GetProperty("eta_ticks").GetInt32(), Is.EqualTo(0));
+		}
+
+		[TestCase(TestName = "A finished head blocks the queue: a build into it names the blocker, and the queue view names it too")]
+		public void FinishedHeadNamesTheBlocker()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using (var first = AgentStateDumpTest.Request("{\"cmd\":\"build\",\"item\":\"powr\"}"))
+				Assert.That(first.RootElement.GetProperty("ok").GetBoolean(), Is.True);
+
+			// The POWR finishes and waits for placement at the head. Nothing places it, so it holds the queue.
+			Assert.That(hw.TickUntil(PowrFinished, 3000), Is.Not.Null, "The POWR never finished building.");
+
+			// A second POWR joins behind the finished head, so the response names the head as its blocker.
+			using (var second = AgentStateDumpTest.Request("{\"cmd\":\"build\",\"item\":\"powr\"}"))
+			{
+				var root = second.RootElement;
+				Assert.That(root.GetProperty("ok").GetBoolean(), Is.True);
+				Assert.That(root.GetProperty("blocked_by").GetString(), Is.EqualTo("powr"));
+			}
+
+			hw.Tick(5);
+
+			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
+			Assert.That(AgentProductionTest.QueueOf(production.RootElement, "Building").GetProperty("blocker").GetString(), Is.EqualTo("powr"));
 		}
 
 		[TestCase(TestName = "An item with no queue that builds it is refused, and the available items are listed")]
@@ -222,20 +250,20 @@ namespace OpenRA.Test
 		}
 
 		/// <summary>True when a POWR in the building queue is the head of the queue and in progress, read through the production command.</summary>
-		static bool PowrBuilding()
+		internal static bool PowrBuilding()
 		{
 			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
 			return PowrItems(production.RootElement).Any(i => i.GetProperty("state").GetString() == "building");
 		}
 
 		/// <summary>True when a POWR in the building queue is finished and waits for placement, read through the production command.</summary>
-		static bool PowrFinished()
+		internal static bool PowrFinished()
 		{
 			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
 			return PowrItems(production.RootElement).Any(i => i.GetProperty("state").GetString() == "done");
 		}
 
-		static JsonElement[] PowrItems(JsonElement root)
+		internal static JsonElement[] PowrItems(JsonElement root)
 		{
 			return AgentProductionTest.QueueOf(root, "Building").GetProperty("items").EnumerateArray()
 				.Where(i => i.GetProperty("name").GetString() == "powr")

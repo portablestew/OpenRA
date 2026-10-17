@@ -26,7 +26,7 @@ namespace OpenRA.Test
 	sealed class AgentProductionTest
 	{
 		static readonly string[] ProductionKeys = ["ok", "cmd", "player", "cash", "resources", "power", "queues"];
-		static readonly string[] QueueKeys = ["actor", "producers", "queue_type", "enabled", "options", "items"];
+		static readonly string[] QueueKeys = ["actor", "producers", "queue_type", "enabled", "options", "items", "blocker"];
 		static readonly string[] OptionKeys = ["name", "cost", "power_amount", "prerequisites", "buildable", "can_afford"];
 		static readonly string[] ItemKeys = ["name", "cost", "remaining_cost", "progress", "state"];
 		static readonly string[] PowerKeys = ["provided", "drained", "excess", "state"];

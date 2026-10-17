@@ -58,11 +58,18 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("orders", "actor (uint) -> type, orders (the order names the actor accepts)", "{\"cmd\":\"orders\",\"actor\":12}"),
 			("production", "-> player, cash, resources, power, queues (the local player's queues; see Production keys)", "{\"cmd\":\"production\"}"),
 			("build", "item (string); optional count (positive int, default 1)\n"
-				+ "                -> ok, actor, queue_type, item, count, tick, min_effect_tick, ready, eta_ticks. Not buildable now: ok:false, error,"
+				+ "                -> ok, actor, queue_type, item, count, tick, min_effect_tick, ready, eta_ticks, blocked_by. Not buildable now: ok:false, error,"
 				+ " available (the items build accepts now: buildable and affordable), missing_prerequisites (every unmet prerequisite;"
 				+ " null if the refusal is not about prerequisites), ready, eta_ticks. ready and eta_ticks describe a copy of the item already"
-				+ " queued: ready:true when it is done, else ready:false with eta_ticks, the ticks until it is done (null when none is queued)",
+				+ " queued: ready:true when it is done, else ready:false with eta_ticks, the ticks until it is done (null when none is queued)."
+				+ " blocked_by names the finished item at the head of the queue this one joins, which holds the queue until it is placed"
+				+ " (null when that head is not finished); a refusal carries it too",
 				"{\"cmd\":\"build\",\"item\":\"e1\",\"count\":2}"),
+			("cancel", "item (string); optional count (positive int, default 1)\n"
+				+ "                -> ok, actor, queue_type, item, canceled, tick, min_effect_tick. Removes up to count queued copies of item from the"
+				+ " first owned queue that holds it, last copy first. A copy in progress goes when it is the last copy. Nothing queued,"
+				+ " or the producer disabled: ok:false, error",
+				"{\"cmd\":\"cancel\",\"item\":\"powr\",\"count\":1}"),
 			("place", "item (string); optional cell [x,y] (default: the producer's location)\n"
 				+ "                -> ok, item, requested_cell (null if omitted), search_from, cell, tick, min_effect_tick. The nearest"
 				+ " valid cell within 10 of search_from is used. Not done: ok:false, error. No valid cell: ok:false, error,"
