@@ -45,7 +45,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static readonly string[] Names =
 		[
 			"ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "wait",
-			"production", "build", "cancel", "place", "deploy", "screenshot", "subscribe", "unsubscribe", "undo", "look",
+			"production", "build", "cancel", "place", "deploy", "screenshot", "subscribe", "unsubscribe", "undo", "look", "map_state",
 		];
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
@@ -146,6 +146,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"unsubscribe" => Unsubscribe(cmd, root, subscriber),
 				"undo" => SnapshotStep(cmd, root),
 				"look" => Look(cmd, root),
+				"map_state" => Run(cmd, () => AgentMapState.Render(AgentWorldBridge.RequireWorld(), AgentWorldBridge.RequireWorld().LocalPlayer)),
 				_ => Error(cmd, "unknown command"),
 			};
 		}
