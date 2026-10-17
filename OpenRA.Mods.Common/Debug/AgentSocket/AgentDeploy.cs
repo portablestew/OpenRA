@@ -127,7 +127,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			else if (request.At is { } at)
 			{
 				if (!Fits(at) || !Reaches(at))
-					throw new DeployRefusedException(AgentPlace.Refuse("deploy", $"no valid cell for '{actor.Info.Name}' at {at.X},{at.Y}", at, 0, Reason));
+				{
+					var error = $"no valid cell for '{actor.Info.Name}' at {at.X},{at.Y}";
+					throw new DeployRefusedException(AgentPlace.WithLook(world, AgentPlace.Refuse("deploy", error, at, 0, Reason)));
+				}
 
 				cell = at;
 			}
@@ -136,7 +139,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			else
 			{
 				var error = $"no valid cell for '{actor.Info.Name}' within {SearchRadius} cells of {here.X},{here.Y}";
-				throw new DeployRefusedException(AgentPlace.Refuse("deploy", error, here, SearchRadius, Reason));
+				throw new DeployRefusedException(AgentPlace.WithLook(world, AgentPlace.Refuse("deploy", error, here, SearchRadius, Reason)));
 			}
 
 			var moved = cell != here;

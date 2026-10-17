@@ -82,14 +82,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("place", "item (string); optional cell [x,y] (default: the producer's location)\n"
 				+ "                -> ok, item, requested_cell (null if omitted), search_from, cell, tick, min_effect_tick. The nearest"
 				+ " valid cell within 10 of search_from is used. Not done: ok:false, error. No valid cell: ok:false, error,"
-				+ " cells_checked, candidates (the nearest 8 cells, each with cell and reason)",
+				+ " cells_checked, candidates (the nearest 8 cells, each with cell and reason), and look (the look command's reply over those"
+				+ " cells, so the blockers show). A successful place has no look",
 				"{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[40,50]}"),
 			("deploy", "actor (uint, an mcv); optional at [x,y] (the top-left cell, anywhere on the map, no search); optional await (default"
 				+ " true; false returns a job id, and wait {job} returns the outcome)\n"
 				+ "                -> ok, cmd, actor, requested_cell (null if omitted), cell, moved (true when a Move took the actor there first),"
 				+ " settled, outcome (completed or canceled; null when unsettled), reason (null unless canceled), tick, min_effect_tick."
 				+ " The cell is the actor's own when its footprint is valid there, else the nearest valid, reachable cell within 20. One reply covers"
-				+ " the Move and the deploy. No valid cell: ok:false, error, cells_checked, candidates (the nearest 8 cells, each with cell and reason)."
+				+ " the Move and the deploy. No valid cell: ok:false, error, cells_checked, candidates (the nearest 8 cells, each with cell and reason),"
+				+ " and look (the look reply over those cells, so the blockers show). A successful deploy has no look."
 				+ " Auto-look is not done yet.",
 				"{\"cmd\":\"deploy\",\"actor\":123}"),
 			("screenshot", "optional actor (uint): centre the view on that live unit first\n"

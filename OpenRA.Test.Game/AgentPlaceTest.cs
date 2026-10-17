@@ -28,7 +28,7 @@ namespace OpenRA.Test
 		const int MaxRadius = 10;
 		const int MaxCandidates = 8;
 
-		static readonly string[] RefusalKeys = ["ok", "cmd", "error", "hint", "cells_checked", "candidates"];
+		static readonly string[] RefusalKeys = ["ok", "cmd", "error", "hint", "cells_checked", "candidates", "look"];
 
 		static readonly string[] SuccessKeys = ["ok", "cmd", "item", "requested_cell", "search_from", "cell", "tick", "min_effect_tick"];
 

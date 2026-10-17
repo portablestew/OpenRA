@@ -34,7 +34,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// The place command's refusal when no cell in the search square is valid. CellsChecked is the number of cells the search
 	/// examined. Candidates lists the nearest refused cells, nearest first, capped at AgentPlace.MaxCandidates.
 	/// </summary>
-	public sealed record PlaceRefusedV1(bool Ok, string Cmd, string Error, string Hint, int CellsChecked, PlaceCandidateV1[] Candidates);
+	public sealed record PlaceRefusedV1(bool Ok, string Cmd, string Error, string Hint, int CellsChecked, PlaceCandidateV1[] Candidates,
+		LookV1 Look);
 
 	/// <summary>A parsed place request. Cell is null when the request omitted it.</summary>
 	public sealed record PlaceRequest(string Item, CPos? Cell);
@@ -112,7 +113,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (FindValidCell(searchFrom, MaxRadius, c => IsValid(world, info, building, owner, c, null)) is not { } cell)
 			{
 				var error = $"no valid cell for '{item}' within {MaxRadius} cells of {searchFrom.X},{searchFrom.Y}";
-				return Refuse("place", error, searchFrom, MaxRadius, c => AgentCellReason.Of(world, info, building, c, null, owner));
+				return WithLook(world, Refuse("place", error, searchFrom, MaxRadius, c => AgentCellReason.Of(world, info, building, c, null, owner)));
 			}
 
 			// ExtraData is the actor that holds the queue, as PlaceBuilding resolves it, not the producer that makes the item.
@@ -161,6 +162,24 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
+		/// Attaches the auto-look to a refusal (P2.9): an AgentLook over the refused cells, the nearest candidates first, so the reply shows
+		/// what blocks them. Only refusals carry a look; a successful place or deploy has none. Cells off the map are left out.
+		/// </summary>
+		public static PlaceRefusedV1 WithLook(World world, PlaceRefusedV1 refusal)
+		{
+			if (world.LocalPlayer == null)
+				return refusal;
+
+			var points = refusal.Candidates.Take(AgentLook.MaxPoints)
+				.Select(c => new CPos(c.Cell[0], c.Cell[1]))
+				.Where(world.Map.Contains)
+				.ToArray();
+
+			var look = AgentLook.Build(world, world.LocalPlayer, new LookRequest(points, true, AgentLook.DefaultK));
+			return refusal with { Look = look };
+		}
+
+		/// <summary>
 		/// Names the reason for every cell in the square of the given radius around start, and lists the nearest MaxCandidates
 		/// of them, nearest first. Every cell in the square is checked, so CellsChecked is the square's size. Only called when no
 		/// cell is valid, so reasonOf must give a reason for each cell it is asked about.
@@ -181,7 +200,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				.Select(c => new PlaceCandidateV1([c.Cell.X, c.Cell.Y], c.Reason))
 				.ToArray();
 
-			return new PlaceRefusedV1(false, cmd, error, AgentSocketCommands.Hint, checkedCells.Count, candidates);
+			return new PlaceRefusedV1(false, cmd, error, AgentSocketCommands.Hint, checkedCells.Count, candidates, null);
 		}
 
 		/// <summary>
