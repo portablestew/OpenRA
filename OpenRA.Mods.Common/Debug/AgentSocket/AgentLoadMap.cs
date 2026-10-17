@@ -18,7 +18,7 @@ using OpenRA.Widgets;
 namespace OpenRA.Mods.Common.AgentSocket
 {
 	/// <summary>
-	/// Starts a fresh local skirmish on a map and waits for its Regular world (D7, D10). Never records a replay and never
+	/// Starts a fresh local game on a map and waits for its Regular world (D7, D10). Never records a replay and never
 	/// rejoins one. The game thread runs only the short start and check steps; the waiting happens on the socket thread,
 	/// so the game loop is never blocked.
 	/// </summary>
@@ -91,15 +91,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return request;
 		}
 
-		/// <summary>Tears down the current game and starts a fresh local skirmish on the map. Game thread.</summary>
+		/// <summary>Tears down the current game and starts a fresh local game on the map. Game thread.</summary>
 		static void StartSkirmish(string uid)
 		{
 			Game.Disconnect();
 			Ui.ResetAll();
 
-			var om = Game.JoinServer(Game.CreateLocalServer(uid, isSkirmish: true), "", recordReplay: false);
+			// Mirror Game.CreateAndStartLocalServer: a Local (not Skirmish) server, so SkirmishLogic
+			// does not restore the player's last saved skirmish setup over the requested map and bots.
+			OrderManager om = null;
 
-			// Same setup as Game.LoadMap. The server starts the game once this local client is ready (CheckAutoStart).
 			void LobbyReady()
 			{
 				Game.LobbyInfoChanged -= LobbyReady;
@@ -108,6 +109,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 
 			Game.LobbyInfoChanged += LobbyReady;
+
+			om = Game.JoinServer(Game.CreateLocalServer(uid), "", recordReplay: false);
 		}
 
 		/// <summary>Returns the new world's state once it is a live Regular world for the requested map, otherwise null. Game thread.</summary>
