@@ -46,6 +46,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null);
 
 	/// <summary>
+	/// The deploy reply (P1.8). Outcome is completed when the transform replaced the actor, or canceled with Reason naming the
+	/// cell reason (occupied, terrain, ramp) or the trait abort. Ok is false only for a canceled deploy. Outcome and Reason are
+	/// null when the game was paused and the reply did not wait.
+	/// </summary>
+	public sealed record DeployV1(bool Ok, string Cmd, int Tick, int MinEffectTick, bool Settled, string Outcome,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null);
+
+	/// <summary>
 	/// What Issue returns on the game thread. Move is true for a Move order. Await is the wait for a Move or an Attack, and null
 	/// for any other order. Paused is true for a Move or an Attack in a paused game, which never ticks, so Settle does not wait for it (Q1).
 	/// </summary>
@@ -197,12 +205,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var order = ToOrder(world, request);
 			var move = order.OrderString == "Move";
 			var attack = order.OrderString == "Attack";
+			var deploy = order.OrderString == "DeployTransform";
 			var await = AgentOrderAwait.Register(order, move ? request.SettleTicks ?? AgentOrderAwait.DefaultSettleTicks : 0);
 			world.IssueOrder(order);
 
-			// A paused game never ticks, so Settle does not wait for a Move or an Attack there (Q1), and drops the await it will never settle.
+			// A paused game never ticks, so Settle does not wait for a Move, an Attack or a DeployTransform there (Q1), and drops the await it will never settle.
 			var ack = new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
-			return new Issued(ack, move, world.Paused, move || attack ? await : null);
+			return new Issued(ack, move, world.Paused, move || attack || deploy ? await : null);
 		}
 
 		/// <summary>The Move reply for an await that has finished. Cmd names the request that asked for it.</summary>
@@ -226,18 +235,26 @@ namespace OpenRA.Mods.Common.AgentSocket
 			{
 				// Nothing will tick the await in a paused game, so drop it here, or it stays in the registry until the world is disposed.
 				await?.Abandon();
-				return await is { IsAttack: true }
-					? new AttackV1(true, "order", ack.Tick, ack.MinEffectTick, false, null)
-					: new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
+				if (await is { IsAttack: true })
+					return new AttackV1(true, "order", ack.Tick, ack.MinEffectTick, false, null);
+
+				if (await is { IsDeploy: true })
+					return new DeployV1(true, "order", ack.Tick, ack.MinEffectTick, false, null);
+
+				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
 			}
 
 			if (await == null)
 				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
 
 			await.Wait();
-			return await.IsAttack
-				? new AttackV1(true, "order", ack.Tick, ack.MinEffectTick, true, await.Outcome, await.Reason)
-				: Reply("order", ack, await);
+			if (await.IsAttack)
+				return new AttackV1(true, "order", ack.Tick, ack.MinEffectTick, true, await.Outcome, await.Reason);
+
+			if (await.IsDeploy)
+				return new DeployV1(await.Outcome == AgentOrderAwait.Completed, "order", ack.Tick, ack.MinEffectTick, true, await.Outcome, await.Reason);
+
+			return Reply("order", ack, await);
 		}
 
 		/// <summary>

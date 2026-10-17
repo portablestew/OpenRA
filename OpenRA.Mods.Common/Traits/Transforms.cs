@@ -14,6 +14,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using OpenRA.Activities;
 using OpenRA.Mods.Common.Activities;
+using OpenRA.Mods.Common.AgentSocket;
 using OpenRA.Mods.Common.Orders;
 using OpenRA.Traits;
 
@@ -96,6 +97,18 @@ namespace OpenRA.Mods.Common.Traits
 				return false;
 
 			return buildingInfo == null || self.World.CanPlaceBuilding(self.Location + Info.Offset, actorInfo, buildingInfo, self);
+		}
+
+		/// <summary>
+		/// Why the deploy footprint refuses the transform (P1.8), or null when the footprint is clear. CanDeploy still decides;
+		/// this only names the cell reason for the socket's reply.
+		/// </summary>
+		public string DeployRefusalReason()
+		{
+			if (buildingInfo == null)
+				return null;
+
+			return AgentCellReason.Of(self.World, actorInfo, buildingInfo, self.Location + Info.Offset, self);
 		}
 
 		IEnumerable<Order> ClearBlockersOrders(CPos topLeft)

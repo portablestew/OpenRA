@@ -46,6 +46,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The attack outcome when the attack never started. Reason says why (P1.6).</summary>
 		public const string NoValidTarget = "no_valid_target";
 
+		/// <summary>The deploy outcome when the transform replaced the actor (P1.8).</summary>
+		public const string Completed = "completed";
+
+		/// <summary>The deploy outcome when the transform did not finish. Reason says why (P1.8).</summary>
+		public const string Canceled = "canceled";
+
 		static readonly Lock Gate = new();
 		static readonly List<AgentOrderAwait> Pending = [];
 		static readonly List<AgentOrderAwait> Settling = [];
@@ -91,6 +97,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>True for an Attack await. Its outcome is set by Tick or Resolve, not by settling (P1.6).</summary>
 		public bool IsAttack => order == "Attack";
+
+		/// <summary>True for a DeployTransform await. Its outcome is set by the transform activity's end, or by a refusal (P1.8).</summary>
+		public bool IsDeploy => order == "DeployTransform";
 
 		/// <summary>The outcome of a finished Attack await: Started or NoValidTarget. Null for other awaits, and for an attack in a paused game.</summary>
 		public string Outcome { get; private set; }
@@ -158,6 +167,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 				await.Valid = valid;
 				await.ResolvedTick = world.WorldTick;
 
+				// A deploy that can start stays Pending: its transform activity ends it (P1.8). A refused one never starts an activity.
+				if (await.IsDeploy)
+				{
+					var refusal = valid ? DeployRefusal(order.Subject, order.Queued) : AgentOrder.ValidatorRejected;
+					if (refusal != null)
+						Finish(await, Canceled, refusal);
+
+					return;
+				}
+
 				// A valid Attack stays Pending: Tick finishes it from the attack activity (P1.6). A refused one has no activity to wait for.
 				if (await.IsAttack)
 				{
@@ -209,7 +228,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 				foreach (var p in Pending.Where(p => p.World == world).ToArray())
 				{
-					if (p.IsAttack && p.Resolved)
+					if (p.IsDeploy && p.Resolved)
+					{
+						// The transform activity ends the deploy, so only a dead subject, which can end no activity, fails it here.
+						if (p.subject.IsDead)
+							Fail(p, new InvalidOperationException($"actor {p.subject.ActorID} died before the transform ended"));
+					}
+					else if (p.IsAttack && p.Resolved)
 					{
 						// The attack outcome: started once its activity is on the subject, and no_valid_target when the budget runs out first.
 						if (AttackStarted(p.subject, p.target))
@@ -229,6 +254,50 @@ namespace OpenRA.Mods.Common.AgentSocket
 					if (world.WorldTick - p.ResolvedTick >= p.SettleTicks)
 						Complete(p);
 			}
+		}
+
+		/// <summary>
+		/// The transform activity reports its end here (P1.8): completed when the actor was replaced, or canceled with a reason. A
+		/// cannot_deploy cancel takes the cell reason the footprint fails, so the reply names the cell. Called for every transform
+		/// event, with or without a subscriber. Must run on the game thread.
+		/// </summary>
+		public static void Activity(Actor self, string kind, string state, string reason)
+		{
+			if (kind != "transform" || state == "started")
+				return;
+
+			lock (Gate)
+			{
+				var await = Pending.Find(a => a.IsDeploy && a.Resolved && ReferenceEquals(a.subject, self));
+				if (await == null)
+					return;
+
+				if (state == "completed")
+					Finish(await, Completed, null);
+				else
+					Finish(await, Canceled, reason == "cannot_deploy" ? self.TraitOrDefault<Transforms>()?.DeployRefusalReason() ?? reason : reason);
+			}
+		}
+
+		/// <summary>
+		/// Why a DeployTransform cannot start, or null when it can. A refused non-queued deploy never starts an activity, since
+		/// DeployTransform plays the refusal and returns. A paused or disabled trait ignores the order, so nothing starts either.
+		/// A queued deploy on a clear footprint starts, and a blocked one is refused at its tick (Transform.Tick), so it is not refused here.
+		/// Must run on the game thread.
+		/// </summary>
+		static string DeployRefusal(Actor subject, bool queued)
+		{
+			var transforms = subject.TraitOrDefault<Transforms>();
+			if (transforms == null)
+				return "actor has no transform";
+
+			if (transforms.IsTraitPaused || transforms.IsTraitDisabled)
+				return "transform is paused or disabled";
+
+			if (queued || transforms.CanDeploy())
+				return null;
+
+			return transforms.DeployRefusalReason() ?? "cannot_deploy";
 		}
 
 		/// <summary>

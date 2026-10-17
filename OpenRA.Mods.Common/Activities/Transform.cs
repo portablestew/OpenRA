@@ -42,8 +42,7 @@ namespace OpenRA.Mods.Common.Activities
 
 		protected override void OnFirstRun(Actor self)
 		{
-			if (AgentEvents.HasSubscribers)
-				AgentActivityEvents.Raise(self, "transform", "started");
+			AgentActivityEvents.Raise(self, "transform", "started");
 
 			if (self.Info.HasTraitInfo<IFacingInfo>())
 				QueueChild(new Turn(self, Facing));
@@ -93,8 +92,7 @@ namespace OpenRA.Mods.Common.Activities
 				return;
 
 			lifecycleEnded = true;
-			if (AgentEvents.HasSubscribers)
-				AgentActivityEvents.Raise(self, "transform", state, reason);
+			AgentActivityEvents.Raise(self, "transform", state, reason);
 		}
 
 		void DoTransform(Actor self, Transforms transforms, WithMakeAnimation makeAnimation)
