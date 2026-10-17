@@ -90,7 +90,7 @@ namespace OpenRA.Test
 		{
 			var events = new object[]
 			{
-				new DamagedV1("damaged", 1, 2, "e1", "P", null, null, null, 3, 4, 5, "Normal"),
+				new DamagedV1("damaged", 1, 2, "e1", "P", null, null, null, 3, 4, 5, "Normal", null, false),
 				new KilledV1("killed", 1, 2, "e1", "P", 7, "e2", "Q", 100),
 				new CapturedV1("captured", 1, 2, "e1", "P", "Q", 7),
 				new OrderEventV1("order", 1, 1, true, 0, "Move", 2, "e1", "P", [3, 4], null, false),

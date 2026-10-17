@@ -21,7 +21,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	// Schema v1 payloads. Wire keys are snake_case (AgentSocketCommands.Json). Only primitives, so the queue holds no live objects.
 	public sealed record DamagedV1(string Event, int Tick, uint Actor, string Type, string Owner, uint? Attacker,
-		string AttackerType, string AttackerOwner, int Damage, int Hp, int MaxHp, string DamageState);
+		string AttackerType, string AttackerOwner, int Damage, int Hp, int MaxHp, string DamageState, string AttackerBearing, bool AttackerShrouded);
 
 	public sealed record KilledV1(string Event, int Tick, uint Actor, string Type, string Owner, uint? Attacker,
 		string AttackerType, string AttackerOwner, int Cost);

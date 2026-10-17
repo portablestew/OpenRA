@@ -163,6 +163,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			text.Append("Notes:\n");
 			text.Append("  Bearings: 8-way N/NE/E/SE/S/SW/W/NW on map axes (+X East, +Y South), from a friendly actor toward the target.\n");
+			text.Append("  damaged (the fog policy): attacker, attacker_type and attacker_owner are null, and attacker_shrouded is true,\n");
+			text.Append("    when the attacker is not known to you. attacker_bearing is 8-way from the damaged actor toward the attacker.\n");
 			text.Append("  After the banner, and after every response, the server sends a lone > line as a prompt: it is your turn.\n");
 			text.Append("  A > line is not a response and not an event; skip lines that are just >.\n");
 			text.Append("  An array is one request: the items run in order and results is one JSON array, one result per item.\n");

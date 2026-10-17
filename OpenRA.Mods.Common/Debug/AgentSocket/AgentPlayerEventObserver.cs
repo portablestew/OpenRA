@@ -35,9 +35,20 @@ namespace OpenRA.Mods.Common
 				return;
 
 			var health = self.TraitOrDefault<Health>();
+			var attacker = e.Attacker;
+
+			// The fog policy (P2.3): the attacker is named only when the local player knows it (AgentFog). Its bearing is always
+			// given, from the damaged actor (AgentBearing). That actor is the friendly reference when it is the local player's.
+			var known = attacker != null && AgentFog.Known(attacker, self.World.LocalPlayer);
+			var attackerId = known ? (uint?)attacker.ActorID : null;
+			var attackerType = known ? attacker.Info.Name : null;
+			var attackerOwner = known ? attacker.Owner.PlayerName : null;
+			var shrouded = attacker != null && !known;
+			var bearing = attacker == null ? null : AgentBearing.Of(self.CenterPosition, attacker.CenterPosition);
+
 			AgentEvents.Raise("damage", self.Owner.PlayerName, new DamagedV1("damaged", self.World.WorldTick, self.ActorID,
-				self.Info.Name, self.Owner.PlayerName, e.Attacker?.ActorID, e.Attacker?.Info.Name, e.Attacker?.Owner.PlayerName,
-				e.Damage.Value, health?.HP ?? 0, health?.MaxHP ?? 0, e.DamageState.ToString()));
+				self.Info.Name, self.Owner.PlayerName, attackerId, attackerType, attackerOwner,
+				e.Damage.Value, health?.HP ?? 0, health?.MaxHP ?? 0, e.DamageState.ToString(), bearing, shrouded));
 		}
 
 		void INotifyKilled.Killed(Actor self, AttackInfo e)
