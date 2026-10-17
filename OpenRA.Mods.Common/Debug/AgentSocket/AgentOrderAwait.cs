@@ -62,6 +62,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 		readonly int registeredTick;
 		readonly TaskCompletionSource<bool> done = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+		// A resolved deploy's stall clock (P1.13): the cell the subject last stood on, and the tick it last changed.
+		CPos lastCell;
+		int lastCellTick;
+
 		AgentOrderAwait(Actor subject, string order, Target target, int settleTicks)
 		{
 			this.subject = subject;
@@ -170,6 +174,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				// A deploy that can start stays Pending: its transform activity ends it (P1.8). A refused one never starts an activity.
 				if (await.IsDeploy)
 				{
+					await.lastCell = order.Subject.Location;
+					await.lastCellTick = world.WorldTick;
 					var refusal = valid ? DeployRefusal(order.Subject, order.Queued) : AgentOrder.ValidatorRejected;
 					if (refusal != null)
 						Finish(await, Canceled, refusal);
@@ -230,9 +236,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 				{
 					if (p.IsDeploy && p.Resolved)
 					{
-						// The transform activity ends the deploy, so only a dead subject, which can end no activity, fails it here.
+						// The transform activity ends the deploy. A dead subject can end no activity, so it fails here. A subject that has
+						// not changed cell for the resolve budget has stalled, and its Move or transform will not end (Q13, in game ticks).
 						if (p.subject.IsDead)
 							Fail(p, new InvalidOperationException($"actor {p.subject.ActorID} died before the transform ended"));
+						else if (p.subject.Location != p.lastCell)
+						{
+							p.lastCell = p.subject.Location;
+							p.lastCellTick = world.WorldTick;
+						}
+						else if (world.WorldTick - p.lastCellTick >= ResolveBudgetTicks)
+							Fail(p, new TimeoutException($"the deploy stalled: the actor did not move for {ResolveBudgetTicks} ticks"));
 					}
 					else if (p.IsAttack && p.Resolved)
 					{

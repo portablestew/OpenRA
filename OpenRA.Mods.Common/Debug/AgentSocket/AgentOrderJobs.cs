@@ -23,27 +23,46 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record WaitPendingV1(bool Ok, string Cmd, int Job, string Status);
 
 	/// <summary>
-	/// The open order jobs (P1.4). order with await:false issues the Move at once and keeps its await here under an id, so the
+	/// What an issued request hands to the job table (P1.4, P1.13): the ack the job reply carries, the await wait parks on, and
+	/// the reply builder that wait returns once the await settles. The builder takes the command name, so a wait replies as wait.
+	/// </summary>
+	public sealed record JobIssue(OrderV1 Ack, AgentOrderAwait Await, Func<string, object> Reply);
+
+	/// <summary>
+	/// The open order jobs (P1.4). order with await:false issues the order at once and keeps its await here under an id, so the
 	/// socket thread can collect it later with wait. A job ends when wait returns its result or its error, or when its world is
 	/// replaced: a job of a disposed world has already failed with restored, so Issue drops it. At most Cap jobs are open, so a
-	/// client that never waits cannot grow the table without limit. Issue runs on the game thread. Wait runs on the socket thread.
+	/// client that never waits cannot grow the table without limit. Start runs on the game thread. Wait runs on the socket thread.
 	/// </summary>
 	public static class AgentOrderJobs
 	{
 		/// <summary>The most jobs that may be open at once. A further await:false order is refused until a wait ends one.</summary>
 		public const int Cap = 16;
 
-		sealed record Job(AgentOrderAwait Await, OrderV1 Ack);
+		sealed record Job(AgentOrderAwait Await, Func<string, object> Reply);
 
 		static readonly Lock Gate = new();
 		static readonly Dictionary<int, Job> Open = [];
 		static int nextId = 1;
 
 		/// <summary>
-		/// Issues the Move and records it as a job. Must run on the game thread. The cap is checked before the order is issued,
+		/// Issues a Move and records it as a job. Must run on the game thread. The cap is checked before the order is issued,
 		/// so a refused request changes nothing.
 		/// </summary>
 		public static JobV1 Issue(World world, OrderRequest request, AgentSelection selection)
+		{
+			return Start(world, "order", () =>
+			{
+				var issued = AgentOrder.Issue(world, request, selection);
+				return new JobIssue(issued.Ack, issued.Await, cmd => AgentOrder.Reply(cmd, issued.Ack, issued.Await));
+			});
+		}
+
+		/// <summary>
+		/// Records whatever issue makes as a job, and replies with its id. Must run on the game thread. The cap is checked before
+		/// issue runs, so a refused request changes nothing. Any exception issue throws passes to the caller, and no job is recorded.
+		/// </summary>
+		public static JobV1 Start(World world, string cmd, Func<JobIssue> issue)
 		{
 			lock (Gate)
 			{
@@ -54,17 +73,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 					throw new InvalidOperationException($"{Cap} order jobs are open; wait on one to free a slot");
 			}
 
-			var issued = AgentOrder.Issue(world, request, selection);
+			var job = issue();
 			lock (Gate)
 			{
 				var id = nextId++;
-				Open.Add(id, new Job(issued.Await, issued.Ack));
-				return new JobV1(true, "order", id, issued.Ack.Tick, issued.Ack.MinEffectTick);
+				Open.Add(id, new Job(job.Await, job.Reply));
+				return new JobV1(true, cmd, id, job.Ack.Tick, job.Ack.MinEffectTick);
 			}
 		}
 
 		/// <summary>
-		/// Waits on the socket thread for the job, up to timeoutMs of wall-clock time. Returns the Move reply once it settles, or a
+		/// Waits on the socket thread for the job, up to timeoutMs of wall-clock time. Returns the job's reply once it settles, or a
 		/// pending reply if the timeout passes first, and the job stays open. Throws for an unknown job, and for a failed await,
 		/// which ends the job. Must not run on the game thread.
 		/// </summary>
@@ -85,7 +104,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				Open.Remove(id);
 
 			job.Await.ThrowIfFailed();
-			return AgentOrder.Reply("wait", job.Ack, job.Await);
+			return job.Reply("wait");
 		}
 
 		/// <summary>Drops every job. Test use.</summary>

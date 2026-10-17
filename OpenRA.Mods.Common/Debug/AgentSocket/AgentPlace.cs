@@ -108,8 +108,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var producer = world.Actors.First(a => a.ActorID == queue.Producers[0]);
 			var searchFrom = request.Cell ?? producer.Location;
 
-			if (FindValidCell(world, info, building, world.LocalPlayer, searchFrom) is not { } cell)
-				return Refuse(world, info, building, world.LocalPlayer, item, searchFrom);
+			var owner = world.LocalPlayer;
+			if (FindValidCell(searchFrom, MaxRadius, c => IsValid(world, info, building, owner, c, null)) is not { } cell)
+			{
+				var error = $"no valid cell for '{item}' within {MaxRadius} cells of {searchFrom.X},{searchFrom.Y}";
+				return Refuse("place", error, searchFrom, MaxRadius, c => AgentCellReason.Of(world, info, building, c, null, owner));
+			}
 
 			// ExtraData is the actor that holds the queue, as PlaceBuilding resolves it, not the producer that makes the item.
 			var actor = AgentOrder.Accept(world, queue.Actor, "PlaceBuilding");
@@ -124,10 +128,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return new PlaceV1(true, "place", item, requested, [searchFrom.X, searchFrom.Y], [cell.X, cell.Y], world.WorldTick, world.WorldTick + 1);
 		}
 
-		/// <summary>Searches outward from the start, ring by ring, and returns the closest valid cell in the first ring that has one.</summary>
-		static CPos? FindValidCell(World world, ActorInfo info, BuildingInfo building, Player owner, CPos start)
+		/// <summary>
+		/// Searches outward from start, ring by ring up to maxRadius, and returns the closest cell that isValid accepts, in the
+		/// first ring that has one. place uses MaxRadius; deploy (P1.13) uses its own radius and a pathability check too.
+		/// </summary>
+		public static CPos? FindValidCell(CPos start, int maxRadius, Func<CPos, bool> isValid)
 		{
-			for (var radius = 0; radius <= MaxRadius; radius++)
+			for (var radius = 0; radius <= maxRadius; radius++)
 			{
 				CPos? best = null;
 				var bestDistance = int.MaxValue;
@@ -139,7 +146,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 						var distance = dx * dx + dy * dy;
 						var cell = new CPos(start.X + dx, start.Y + dy);
-						if (distance < bestDistance && IsValid(world, info, building, owner, cell))
+						if (distance < bestDistance && isValid(cell))
 						{
 							best = cell;
 							bestDistance = distance;
@@ -154,18 +161,18 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Names the reason for every cell in the search square and lists the nearest MaxCandidates of them, nearest first.
-		/// Every cell in the square is checked, so CellsChecked is the square's size. Only called when no cell is valid, so each
-		/// listed cell has a reason: the mirror is null only for a cell the engine allows, and IsValid is then true too.
+		/// Names the reason for every cell in the square of the given radius around start, and lists the nearest MaxCandidates
+		/// of them, nearest first. Every cell in the square is checked, so CellsChecked is the square's size. Only called when no
+		/// cell is valid, so reasonOf must give a reason for each cell it is asked about.
 		/// </summary>
-		static PlaceRefusedV1 Refuse(World world, ActorInfo info, BuildingInfo building, Player owner, string item, CPos start)
+		public static PlaceRefusedV1 Refuse(string cmd, string error, CPos start, int radius, Func<CPos, string> reasonOf)
 		{
 			var checkedCells = new List<(CPos Cell, int Distance, string Reason)>();
-			for (var dy = -MaxRadius; dy <= MaxRadius; dy++)
-				for (var dx = -MaxRadius; dx <= MaxRadius; dx++)
+			for (var dy = -radius; dy <= radius; dy++)
+				for (var dx = -radius; dx <= radius; dx++)
 				{
 					var cell = new CPos(start.X + dx, start.Y + dy);
-					checkedCells.Add((cell, dx * dx + dy * dy, AgentCellReason.Of(world, info, building, cell, null, owner)));
+					checkedCells.Add((cell, dx * dx + dy * dy, reasonOf(cell)));
 				}
 
 			var candidates = checkedCells
@@ -174,14 +181,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 				.Select(c => new PlaceCandidateV1([c.Cell.X, c.Cell.Y], c.Reason))
 				.ToArray();
 
-			var error = $"no valid cell for '{item}' within {MaxRadius} cells of {start.X},{start.Y}";
-			return new PlaceRefusedV1(false, "place", error, AgentSocketCommands.Hint, checkedCells.Count, candidates);
+			return new PlaceRefusedV1(false, cmd, error, AgentSocketCommands.Hint, checkedCells.Count, candidates);
 		}
 
-		/// <summary>The same check PlaceBuildingOrderGenerator makes before it places a building.</summary>
-		static bool IsValid(World world, ActorInfo info, BuildingInfo building, Player owner, CPos cell)
+		/// <summary>
+		/// The same check PlaceBuildingOrderGenerator makes before it places a building. toIgnore is the actor the footprint may
+		/// stand on: null for place, and the mcv itself for deploy (P1.13), as Transforms.CanDeploy ignores it.
+		/// </summary>
+		public static bool IsValid(World world, ActorInfo info, BuildingInfo building, Player owner, CPos cell, Actor toIgnore)
 		{
-			return world.CanPlaceBuilding(cell, info, building, null) && building.IsCloseEnoughToBase(world, owner, info, cell);
+			return world.CanPlaceBuilding(cell, info, building, toIgnore) && building.IsCloseEnoughToBase(world, owner, info, cell);
 		}
 	}
 }

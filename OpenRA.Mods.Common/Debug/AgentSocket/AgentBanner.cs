@@ -75,6 +75,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " valid cell within 10 of search_from is used. Not done: ok:false, error. No valid cell: ok:false, error,"
 				+ " cells_checked, candidates (the nearest 8 cells, each with cell and reason)",
 				"{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[40,50]}"),
+			("deploy", "actor (uint, an mcv); optional at [x,y] (the top-left cell, anywhere on the map, no search); optional await (default"
+				+ " true; false returns a job id, and wait {job} returns the outcome)\n"
+				+ "                -> ok, cmd, actor, requested_cell (null if omitted), cell, moved (true when a Move took the actor there first),"
+				+ " settled, outcome (completed or canceled; null when unsettled), reason (null unless canceled), tick, min_effect_tick."
+				+ " The cell is the actor's own when its footprint is valid there, else the nearest valid, reachable cell within 20. One reply covers"
+				+ " the Move and the deploy. No valid cell: ok:false, error, cells_checked, candidates (the nearest 8 cells, each with cell and reason)."
+				+ " Auto-look is not done yet.",
+				"{\"cmd\":\"deploy\",\"actor\":123}"),
 			("screenshot", "optional actor (uint): centre the view on that live unit first\n"
 				+ "                -> ok, cmd, path (the PNG, already written), actor (null if omitted), center_px, unit_px (map pixels, not window pixels; null if"
 				+ " omitted), tick. Waits for the next rendered frame to be saved, so the file exists when the reply arrives."

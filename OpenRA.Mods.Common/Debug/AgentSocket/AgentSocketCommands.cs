@@ -45,7 +45,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static readonly string[] Names =
 		[
 			"ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "wait",
-			"production", "build", "cancel", "place", "screenshot", "subscribe", "unsubscribe", "undo",
+			"production", "build", "cancel", "place", "deploy", "screenshot", "subscribe", "unsubscribe", "undo",
 		];
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
@@ -121,6 +121,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"build" => StartBuild(cmd, root, selection),
 				"cancel" => StartCancel(cmd, root),
 				"place" => StartPlace(cmd, root, selection),
+				"deploy" => StartDeploy(cmd, root, selection),
 				"screenshot" => Screenshot(cmd, root),
 				"subscribe" => Subscribe(cmd, root, subscriber),
 				"unsubscribe" => Unsubscribe(cmd, root, subscriber),
@@ -250,6 +251,40 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return Error(cmd, error);
 
 			return Run(cmd, () => AgentPlace.Start(AgentWorldBridge.RequireWorld(), request, selection));
+		}
+
+		/// <summary>
+		/// Parses the actor and optional cell on the socket thread, then issues the Move and the queued DeployTransform on the game
+		/// thread. The reply waits for the deploy's outcome here, so the game keeps ticking. await:false takes a job instead, and wait
+		/// collects its outcome (P1.13). No valid cell within the search radius is refused with the candidate reasons.
+		/// </summary>
+		static string StartDeploy(string cmd, JsonElement root, AgentSelection selection)
+		{
+			var error = AgentDeploy.Parse(root, out var request);
+			if (error != null)
+				return Error(cmd, error);
+
+			try
+			{
+				if (!request.Await)
+					return Serialize(AgentMarshal.ExecuteOnGameThread(() => AgentOrderJobs.Start(AgentWorldBridge.RequireWorld(), cmd,
+						() => AgentDeploy.ToJob(AgentDeploy.Start(AgentWorldBridge.RequireWorld(), request, selection)))));
+
+				var issued = AgentMarshal.ExecuteOnGameThread(() => AgentDeploy.Start(AgentWorldBridge.RequireWorld(), request, selection));
+				return Serialize(AgentDeploy.Settle(issued));
+			}
+			catch (DeployRefusedException e)
+			{
+				return Serialize(e.Refusal);
+			}
+			catch (OrderRefusedException e)
+			{
+				return Serialize(new OrderRefusedV1(false, cmd, e.Message, e.Available, Hint));
+			}
+			catch (Exception e)
+			{
+				return Error(cmd, e.Message);
+			}
 		}
 
 		/// <summary>
