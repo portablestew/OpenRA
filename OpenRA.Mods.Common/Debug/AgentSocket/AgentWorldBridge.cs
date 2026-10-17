@@ -54,6 +54,7 @@ namespace OpenRA.Mods.Common
 			Enabled = Game.Settings.Debug.AgentSocket;
 			AgentEvents.Enabled = Enabled;
 			UnitOrders.OrderResolving = Enabled ? AgentWorldEventObserver.Ordered : null;
+			OpenRA.Sound.NotificationPlayed = Enabled ? AgentNotifications.Raise : null;
 			if (!Enabled)
 				return;
 

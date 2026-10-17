@@ -61,7 +61,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	{
 		/// <summary>The v1 event groups, in the canonical order that subscribe echoes.</summary>
 		public static readonly string[] Groups = ["damage", "killed", "captured", "orders", "production", "stance", "path", "activity",
-			"power", "player"];
+			"power", "player", "notification"];
 
 		static volatile bool enabled;
 		static volatile int subscriberCount;

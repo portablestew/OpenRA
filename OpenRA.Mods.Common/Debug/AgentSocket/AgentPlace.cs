@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Traits;
 
@@ -35,7 +36,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// examined. Candidates lists the nearest refused cells, nearest first, capped at AgentPlace.MaxCandidates.
 	/// </summary>
 	public sealed record PlaceRefusedV1(bool Ok, string Cmd, string Error, string Hint, int CellsChecked, PlaceCandidateV1[] Candidates,
-		LookV1 Look);
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LookV1 Look);
 
 	/// <summary>A parsed place request. Cell is null when the request omitted it.</summary>
 	public sealed record PlaceRequest(string Item, CPos? Cell);

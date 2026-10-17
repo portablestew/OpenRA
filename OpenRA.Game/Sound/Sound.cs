@@ -458,8 +458,15 @@ namespace OpenRA
 			return true;
 		}
 
+		/// <summary>
+		/// Called with the player and the notification name each time PlayNotification runs, before any of its guards, so the agent
+		/// socket sees every notification the engine plays (P2.10). Set by the socket; null when no socket is listening.
+		/// </summary>
+		public static Action<Player, string> NotificationPlayed;
+
 		public bool PlayNotification(Ruleset rules, Player player, string type, string notification, string variant)
 		{
+			NotificationPlayed?.Invoke(player, notification);
 			ArgumentNullException.ThrowIfNull(rules);
 
 			if (type == null || notification == null)

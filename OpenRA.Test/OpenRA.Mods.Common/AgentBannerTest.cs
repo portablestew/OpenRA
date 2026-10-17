@@ -103,6 +103,7 @@ namespace OpenRA.Test
 				new PowerEventV1("power_restored", 1, "P", 30, 10, 20, "Normal"),
 				new DefeatedV1("defeated", 1, "P"),
 				new GameOverV1("game_over", 1, "P"),
+				new NotificationV1("notification", 1, "BuildingCannotPlaceAudio", "P"),
 				new OverflowV1("overflow", 3),
 			};
 

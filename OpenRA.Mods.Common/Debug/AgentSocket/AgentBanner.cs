@@ -91,8 +91,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " settled, outcome (completed or canceled; null when unsettled), reason (null unless canceled), tick, min_effect_tick."
 				+ " The cell is the actor's own when its footprint is valid there, else the nearest valid, reachable cell within 20. One reply covers"
 				+ " the Move and the deploy. No valid cell: ok:false, error, cells_checked, candidates (the nearest 8 cells, each with cell and reason),"
-				+ " and look (the look reply over those cells, so the blockers show). A successful deploy has no look."
-				+ " Auto-look is not done yet.",
+				+ " and look (the look reply over those cells, so the blockers show). A successful deploy has no look.",
 				"{\"cmd\":\"deploy\",\"actor\":123}"),
 			("screenshot", "optional actor (uint): centre the view on that live unit first\n"
 				+ "                -> ok, cmd, path (the PNG, already written), actor (null if omitted), center_px, unit_px (map pixels, not window pixels; null if"
@@ -135,6 +134,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("power", "power_restored", typeof(PowerEventV1)),
 			("player", "defeated", typeof(DefeatedV1)),
 			("player", "game_over", typeof(GameOverV1)),
+			("notification", "notification", typeof(NotificationV1)),
 		];
 
 		/// <summary>The command names, in banner order.</summary>
