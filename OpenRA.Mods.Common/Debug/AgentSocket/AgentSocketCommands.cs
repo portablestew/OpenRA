@@ -24,10 +24,25 @@ namespace OpenRA.Mods.Common.AgentSocket
 		sealed record SubscriptionV1(bool Ok, string Cmd, string[] Subscribed);
 		sealed record HelpV1(bool Ok, string Cmd, string Banner);
 
+		/// <summary>
+		/// The result of a snapshot step. Tick is the game clock of the world left active, RequestedTick the game
+		/// tick the command aimed at, MovedTicks the signed change in the game clock, and Held the snapshots the
+		/// window still holds.
+		/// </summary>
+		sealed record SnapshotV1(bool Ok, string Cmd, int Tick, int RequestedTick, int MovedTicks, int Held);
+
+		/// <summary>Game ticks per second an offset is read in, the default game speed.</summary>
+		const int TicksPerSecond = 25;
+
+		/// <summary>Returned whenever the offset is missing or malformed, so a caller sees how to write it.</summary>
+		const string Usage = "usage: undo offset \"-<seconds>\" to rewind, \"+<seconds>\" to advance, " +
+			"or \"@<seconds>\" for an absolute game time, read at 25 ticks per second";
+
 		/// <summary>The command names the dispatcher answers. The banner lists the same names, and a headless test keeps them in step.</summary>
 		public static readonly string[] Names =
 		[
-			"ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "production", "build", "place", "screenshot", "subscribe", "unsubscribe",
+			"ping", "help", "state", "actors", "maps", "load_map", "order", "orders",
+			"production", "build", "place", "screenshot", "subscribe", "unsubscribe", "undo",
 		];
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
@@ -79,6 +94,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					"screenshot" => Screenshot(cmd, doc.RootElement),
 					"subscribe" => Subscribe(cmd, doc.RootElement, subscriber),
 					"unsubscribe" => Unsubscribe(cmd, doc.RootElement, subscriber),
+					"undo" => SnapshotStep(cmd, doc.RootElement),
 					_ => Error(cmd, "unknown command"),
 				};
 			}
@@ -204,6 +220,48 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return Error(cmd, "actor must be an unsigned integer");
 
 			return Run(cmd, () => AgentOrder.List(AgentWorldBridge.RequireWorld(), actor));
+		}
+
+		/// <summary>
+		/// Moves the snapshot clock in one step. The offset string names the direction by its first character:
+		/// "-s" restores the snapshot nearest s seconds before the live tick, "+s" the nearest s seconds after
+		/// it, and "@s" the nearest snapshot to the absolute game time s. A missing or unprefixed offset is
+		/// refused with the usage. The step runs on the game thread, because a restore swaps the active world;
+		/// the socket thread is blocked for its duration.
+		/// </summary>
+		static string SnapshotStep(string cmd, JsonElement root)
+		{
+			if (!root.TryGetProperty("offset", out var element) || element.ValueKind != JsonValueKind.String)
+				return Error(cmd, Usage);
+
+			var text = element.GetString();
+			if (string.IsNullOrEmpty(text) || (text[0] != '-' && text[0] != '+' && text[0] != '@') ||
+				!int.TryParse(text.AsSpan(1), out var seconds) || seconds < 0)
+				return Error(cmd, Usage);
+
+			var prefix = text[0];
+			return Run(cmd, () =>
+			{
+				var world = AgentWorldBridge.RequireWorld();
+				var liveTick = world.WorldTick;
+				var deltaTicks = (long)seconds * TicksPerSecond;
+
+				var targetTick = prefix switch
+				{
+					'@' => deltaTicks,
+					'-' => Math.Max(0, liveTick - deltaTicks),
+					_ => liveTick + deltaTicks,
+				};
+
+				var renderer = AgentWorldBridge.ActiveRenderer;
+				if (!WorldForks.RestoreNearest(world, renderer, targetTick * world.Timestep, out var failureReason))
+					throw new InvalidOperationException(failureReason);
+
+				// The bridge repoints at the restored world through IWorldAdopted, so this reads the new tick.
+				var restoredTick = AgentWorldBridge.RequireWorld().WorldTick;
+				var requestedTick = (int)Math.Clamp(targetTick, 0, int.MaxValue);
+				return new SnapshotV1(true, cmd, restoredTick, requestedTick, restoredTick - liveTick, WorldForks.Count);
+			});
 		}
 
 		/// <summary>Adds the named event groups. Runs on the connection thread: the subscription state is not game state.</summary>

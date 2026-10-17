@@ -55,6 +55,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ "                owner filters only the groups named in this request; omit it to receive every owner's events."
 				+ " A later subscribe replaces a group's filter"),
 			("unsubscribe", "events (array), or all:true -> subscribed"),
+			("undo", "offset (string): \"-<seconds>\" rewinds, \"+<seconds>\" advances, \"@<seconds>\" jumps to that"
+				+ " absolute game time, read at 25 ticks per second\n"
+				+ "                -> tick, requested_tick, moved_ticks (signed), held. The snapshot nearest the target game"
+				+ " time is restored; nothing is consumed. A missing or unprefixed offset, or no snapshot in range:"
+				+ " ok:false, error (the usage)"),
 		];
 
 		/// <summary>Each event group, the event type it carries, and the record that defines the payload.</summary>
