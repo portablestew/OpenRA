@@ -39,8 +39,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Orders = null);
 
 	/// <summary>
-	/// What Issue returns on the game thread. Move is true for a Move order. Await is the wait for a Move, and null for any other
-	/// order. Paused is true for a Move in a paused game, which never ticks, so Settle does not wait for it (Q1).
+	/// The attack reply (P1.6). Outcome is started, or no_valid_target with Reason saying why the attack did not start. Both are
+	/// null when the game was paused and the reply did not wait, so Settled is false.
+	/// </summary>
+	public sealed record AttackV1(bool Ok, string Cmd, int Tick, int MinEffectTick, bool Settled, string Outcome,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null);
+
+	/// <summary>
+	/// What Issue returns on the game thread. Move is true for a Move order. Await is the wait for a Move or an Attack, and null
+	/// for any other order. Paused is true for a Move or an Attack in a paused game, which never ticks, so Settle does not wait for it (Q1).
 	/// </summary>
 	public sealed record Issued(OrderV1 Ack, bool Move, bool Paused, AgentOrderAwait Await);
 
@@ -189,12 +196,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			var order = ToOrder(world, request);
 			var move = order.OrderString == "Move";
+			var attack = order.OrderString == "Attack";
 			var await = AgentOrderAwait.Register(order, move ? request.SettleTicks ?? AgentOrderAwait.DefaultSettleTicks : 0);
 			world.IssueOrder(order);
 
-			// A paused game never ticks, so Settle does not wait for a Move there (Q1), and drops the await it will never settle.
+			// A paused game never ticks, so Settle does not wait for a Move or an Attack there (Q1), and drops the await it will never settle.
 			var ack = new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
-			return new Issued(ack, move, world.Paused, move ? await : null);
+			return new Issued(ack, move, world.Paused, move || attack ? await : null);
 		}
 
 		/// <summary>The Move reply for an await that has finished. Cmd names the request that asked for it.</summary>
@@ -206,25 +214,30 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Builds the Move reply once the order has settled. Parks the calling socket thread in Wait, so the game thread keeps
-		/// ticking. Throws when the await fails: restored, a resolve timeout, a dead subject, or the wall-clock backstop.
-		/// Must not run on the game thread.
+		/// Builds the Move or Attack reply once the order has settled or its outcome is known. Parks the calling socket thread in
+		/// Wait, so the game thread keeps ticking. Throws when the await fails: restored, a resolve timeout, a dead subject, or the
+		/// wall-clock backstop. Must not run on the game thread.
 		/// </summary>
-		public static MoveV1 Settle(Issued issued)
+		public static object Settle(Issued issued)
 		{
 			var ack = issued.Ack;
+			var await = issued.Await;
 			if (issued.Paused)
 			{
 				// Nothing will tick the await in a paused game, so drop it here, or it stays in the registry until the world is disposed.
-				issued.Await?.Abandon();
-				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
+				await?.Abandon();
+				return await is { IsAttack: true }
+					? new AttackV1(true, "order", ack.Tick, ack.MinEffectTick, false, null)
+					: new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
 			}
 
-			if (issued.Await == null)
+			if (await == null)
 				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
 
-			issued.Await.Wait();
-			return Reply("order", ack, issued.Await);
+			await.Wait();
+			return await.IsAttack
+				? new AttackV1(true, "order", ack.Tick, ack.MinEffectTick, true, await.Outcome, await.Reason)
+				: Reply("order", ack, await);
 		}
 
 		/// <summary>
@@ -267,13 +280,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>
 		/// Finds the local-player actor and checks that it accepts the order name. A name outside the accepted set is refused
-		/// here, with no bypass, so nothing is issued for it. Must run on the game thread.
+		/// here, with no bypass, so nothing is issued for it. The one exception is Attack (P1.6): an actor with no attack trait is
+		/// still issued the order, ValidateOrder refuses it, and the attack reply says why. Must run on the game thread.
 		/// </summary>
 		public static Actor Accept(World world, uint id, string order)
 		{
 			var actor = Owned(world, id);
 			var available = AgentOrderNames.For(actor);
-			if (!available.Contains(order))
+			if (!available.Contains(order) && order != "Attack")
 				throw new OrderRefusedException(id, order, available);
 
 			return actor;

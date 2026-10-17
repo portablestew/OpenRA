@@ -14,6 +14,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using OpenRA.Mods.Common.Traits;
+using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.AgentSocket
 {
@@ -24,6 +26,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// runs out or its subject dies. The socket thread parks in Wait until then. The registry is world-scoped: a resolution only
 	/// matches an await on the same world, because Undo swaps the world and actor IDs are not unique across worlds.
 	/// The socket thread abandons its await on a wall-clock timeout, so every list access takes Gate.
+	/// An Attack await (P1.6) has no settle: a valid Attack stays Pending, and Tick finishes it with an outcome. It is started
+	/// once its attack activity is on the subject, or no_valid_target when the resolve budget runs out first.
 	/// </summary>
 	public sealed class AgentOrderAwait
 	{
@@ -36,19 +40,27 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The ticks a Move holds after it resolves, unless the request says otherwise.</summary>
 		public const int DefaultSettleTicks = 3;
 
+		/// <summary>The attack outcome when the attack activity appeared on the subject (P1.6).</summary>
+		public const string Started = "started";
+
+		/// <summary>The attack outcome when the attack never started. Reason says why (P1.6).</summary>
+		public const string NoValidTarget = "no_valid_target";
+
 		static readonly Lock Gate = new();
 		static readonly List<AgentOrderAwait> Pending = [];
 		static readonly List<AgentOrderAwait> Settling = [];
 
 		readonly Actor subject;
 		readonly string order;
+		readonly Target target;
 		readonly int registeredTick;
 		readonly TaskCompletionSource<bool> done = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-		AgentOrderAwait(Actor subject, string order, int settleTicks)
+		AgentOrderAwait(Actor subject, string order, Target target, int settleTicks)
 		{
 			this.subject = subject;
 			this.order = order;
+			this.target = target;
 			SettleTicks = settleTicks;
 			registeredTick = subject.World.WorldTick;
 		}
@@ -77,12 +89,21 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The order names the subject accepted when the validators refused the order. Null unless Valid is false.</summary>
 		public string[] Orders { get; private set; }
 
+		/// <summary>True for an Attack await. Its outcome is set by Tick or Resolve, not by settling (P1.6).</summary>
+		public bool IsAttack => order == "Attack";
+
+		/// <summary>The outcome of a finished Attack await: Started or NoValidTarget. Null for other awaits, and for an attack in a paused game.</summary>
+		public string Outcome { get; private set; }
+
+		/// <summary>Why an attack did not start. Null when it started, and for other awaits.</summary>
+		public string Reason { get; private set; }
+
 		/// <summary>
 		/// Registers an await for an order that is about to be issued on its subject's world. Must run on the game thread.
 		/// </summary>
 		public static AgentOrderAwait Register(Order order, int settleTicks)
 		{
-			var await = new AgentOrderAwait(order.Subject, order.OrderString, settleTicks);
+			var await = new AgentOrderAwait(order.Subject, order.OrderString, order.Target, settleTicks);
 			lock (Gate)
 				Pending.Add(await);
 
@@ -128,18 +149,28 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var world = order.Subject.World;
 			lock (Gate)
 			{
-				var index = Pending.FindIndex(p => p.World == world && p.subject.ActorID == order.Subject.ActorID && p.order == order.OrderString);
+				var index = Pending.FindIndex(p => p.World == world && p.subject.ActorID == order.Subject.ActorID && p.order == order.OrderString && !p.Resolved);
 				if (index < 0)
 					return;
 
 				var await = Pending[index];
-				Pending.RemoveAt(index);
 				await.Resolved = true;
 				await.Valid = valid;
+				await.ResolvedTick = world.WorldTick;
+
+				// A valid Attack stays Pending: Tick finishes it from the attack activity (P1.6). A refused one has no activity to wait for.
+				if (await.IsAttack)
+				{
+					if (!valid)
+						Finish(await, NoValidTarget, AttackRefusal(order.Subject, order.Target));
+
+					return;
+				}
+
+				Pending.RemoveAt(index);
 				if (!valid)
 					await.Orders = AgentOrderNames.For(order.Subject);
 
-				await.ResolvedTick = world.WorldTick;
 				Settling.Add(await);
 			}
 		}
@@ -178,7 +209,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 				foreach (var p in Pending.Where(p => p.World == world).ToArray())
 				{
-					if (p.subject.IsDead)
+					if (p.IsAttack && p.Resolved)
+					{
+						// The attack outcome: started once its activity is on the subject, and no_valid_target when the budget runs out first.
+						if (AttackStarted(p.subject, p.target))
+							Finish(p, Started, null);
+						else if (p.subject.IsDead)
+							Fail(p, new InvalidOperationException($"actor {p.subject.ActorID} died before the attack started"));
+						else if (world.WorldTick - p.registeredTick >= ResolveBudgetTicks)
+							Finish(p, NoValidTarget, AttackRefusal(p.subject, p.target));
+					}
+					else if (p.subject.IsDead)
 						Fail(p, new InvalidOperationException($"actor {p.subject.ActorID} died before the order resolved"));
 					else if (world.WorldTick - p.registeredTick >= ResolveBudgetTicks)
 						Fail(p, new TimeoutException($"the order did not resolve within {ResolveBudgetTicks} ticks"));
@@ -256,6 +297,72 @@ namespace OpenRA.Mods.Common.AgentSocket
 			Pending.Remove(await);
 			Settling.Remove(await);
 			await.done.TrySetException(reason);
+		}
+
+		// Called under Gate. An attack that finishes has an outcome, not an error, so its waiter gets a reply.
+		static void Finish(AgentOrderAwait await, string outcome, string reason)
+		{
+			Pending.Remove(await);
+			Settling.Remove(await);
+			await.Outcome = outcome;
+			await.Reason = reason;
+			await.Settled = true;
+			await.done.TrySetResult(true);
+		}
+
+		/// <summary>
+		/// True when the subject carries an attack activity (AttackFrontal's Attack, or AttackFollow's nested AttackActivity) and the
+		/// attack can proceed. An immobile subject out of range has an activity that waits and never closes in, so it has not started.
+		/// Must run on the game thread.
+		/// </summary>
+		static bool AttackStarted(Actor subject, Target target)
+		{
+			if (subject.CurrentActivity == null || !subject.CurrentActivity.ActivitiesImplementing<IActivityInterface>()
+				.Any(a => a is Activities.Attack || a.GetType().DeclaringType == typeof(AttackFollow)))
+				return false;
+
+			return subject.Info.HasTraitInfo<IMoveInfo>() || target.IsInRange(subject.CenterPosition, MaxRange(subject, target));
+		}
+
+		/// <summary>The longest range any enabled armament of subject has against target. Zero when none has one.</summary>
+		static WDist MaxRange(Actor subject, Target target)
+		{
+			var max = WDist.Zero;
+			foreach (var attack in subject.TraitsImplementing<AttackBase>())
+			{
+				if (attack.IsTraitDisabled)
+					continue;
+
+				var range = attack.GetMaximumRangeVersusTarget(target);
+				if (max < range)
+					max = range;
+			}
+
+			return max;
+		}
+
+		/// <summary>
+		/// Why an attack did not start, from the preconditions AttackBase checks: an armament, a valid target for its weapons, and
+		/// range (AttackBase.cs:151-158, :203, :330). Must run on the game thread.
+		/// </summary>
+		static string AttackRefusal(Actor subject, Target target)
+		{
+			var attacks = subject.TraitsImplementing<AttackBase>().Where(a => !a.IsTraitDisabled).ToArray();
+			if (attacks.Length == 0)
+				return "actor has no armament";
+
+			// IsValidFor alone accepts a friendly unit. ChooseArmamentsForTarget applies the stance, so it decides the attack too.
+			if (!target.IsValidFor(subject) || !attacks.Any(a => a.ChooseArmamentsForTarget(target, false).Any()))
+				return "target not valid for self";
+
+			var max = MaxRange(subject, target);
+			if (max == WDist.Zero)
+				return "no armament can attack the target";
+
+			if (!target.IsInRange(subject.CenterPosition, max))
+				return $"target out of range: max range {max.Length}, distance {(target.CenterPosition - subject.CenterPosition).Length} (world units)";
+
+			return "no armament can attack the target";
 		}
 	}
 }

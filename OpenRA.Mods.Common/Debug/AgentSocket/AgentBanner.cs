@@ -40,8 +40,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " await (bool, default true; false is Move only)\n"
 					+ "                -> tick, min_effect_tick, and for a Move, valid, effect_tick, settled, settled_ticks, path."
 					+ " valid:false adds reason and orders (the names the actor accepts)."
+						+ " For an Attack, outcome (started | no_valid_target) and settled; no_valid_target adds reason."
 				+ " await:false returns job (the id for wait) with tick, min_effect_tick, and does not wait."
-				+ " A name the actor does not accept is refused: ok:false, error, available (the names it accepts)"),
+				+ " A name the actor does not accept is refused: ok:false, error, available (the names it accepts)."
+				+ " The exception is Attack, which is never refused here: an attack that cannot start replies no_valid_target"),
 			("wait", "job (int); optional timeout_ms (non-negative int, default 10000)\n"
 				+ "                -> the Move reply (cmd:wait, same keys as a Move order reply) once the job settles, or"
 				+ " status:\"pending\" if it has not settled by the timeout (the job stays open). An unknown job, or a job whose"
