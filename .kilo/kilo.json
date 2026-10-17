@@ -32,6 +32,15 @@
         "fs_delete",
         "fs_str_replace"
       ]
+    },
+    "text-adventure": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--refresh",
+        "text-adventure-mcp"
+      ],
+      "autoApprove": [ "text_adventure" ]
     }
   }
 }

@@ -18,6 +18,14 @@
           "pyddock",
           "serve"
         ]
+      },
+      "text-adventure": {
+        "type": "local",
+        "command": [
+          "uvx",
+          "--refresh",
+          "text-adventure-mcp"
+        ]
       }
     }
   }

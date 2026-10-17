@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "chat-mother-forker": {
+      "command": "uvx",
+      "args": [ "--refresh", "chat-mother-forker" ]
+    },
+    "pyddock": {
+      "command": "uvx",
+      "args": [ "--refresh", "pyddock", "serve" ]
+    },
+    "text-adventure": {
+      "command": "uvx",
+      "args": [ "--refresh", "text-adventure-mcp" ]
+    }
+  }
+}
