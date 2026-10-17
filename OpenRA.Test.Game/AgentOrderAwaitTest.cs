@@ -222,6 +222,22 @@ namespace OpenRA.Test
 			Assert.That(hw.World.WorldTick, Is.EqualTo(tick), "The paused game advanced.");
 		}
 
+		[TestCase(TestName = "A Move while the game is paused leaves no await in the registry")]
+		public void PausedMoveLeavesNoPendingAwait()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+			hw.World.SetLocalPauseState(true);
+
+			// Request, not RequestWithTicks: the reply must return without the world ticking, so any await left behind is stale.
+			var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
+			using var response = AgentStateDumpTest.Request(line);
+			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True, response.RootElement.ToString());
+			Assert.That(PendingCount(hw.World), Is.EqualTo(0), "A Move in a paused game left its await in the registry.");
+		}
+
 		/// <summary>
 		/// Sends a Move on a worker thread, as the socket does, and pumps the game loop until it has registered. The world is
 		/// not ticked, so nothing settles the Move. Then runs swap and pumps until the reply returns. The caller disposes the document.

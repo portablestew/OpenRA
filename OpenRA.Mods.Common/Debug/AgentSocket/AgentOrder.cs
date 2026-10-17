@@ -185,7 +185,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var await = AgentOrderAwait.Register(order, move ? request.SettleTicks ?? AgentOrderAwait.DefaultSettleTicks : 0);
 			world.IssueOrder(order);
 
-			// A paused game never ticks, so Settle does not wait for a Move there (Q1). Its await still fails or settles on its own.
+			// A paused game never ticks, so Settle does not wait for a Move there (Q1), and drops the await it will never settle.
 			var ack = new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
 			return new Issued(ack, move, world.Paused, move ? await : null);
 		}
@@ -205,7 +205,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static MoveV1 Settle(Issued issued)
 		{
 			var ack = issued.Ack;
-			if (issued.Await == null || issued.Paused)
+			if (issued.Paused)
+			{
+				// Nothing will tick the await in a paused game, so drop it here, or it stays in the registry until the world is disposed.
+				issued.Await?.Abandon();
+				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
+			}
+
+			if (issued.Await == null)
 				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
 
 			issued.Await.Wait();

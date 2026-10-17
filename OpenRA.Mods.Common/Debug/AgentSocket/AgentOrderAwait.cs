@@ -227,8 +227,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 		}
 
-		/// <summary>Removes this await from the registry after its waiter gave up. Runs on the socket thread.</summary>
-		void Abandon()
+		/// <summary>Removes this await from the registry once no one will wait on it: its waiter gave up, or the order can never settle (a paused game). Runs on the socket thread.</summary>
+		public void Abandon()
 		{
 			lock (Gate)
 			{
