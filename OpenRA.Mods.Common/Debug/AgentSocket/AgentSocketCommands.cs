@@ -54,11 +54,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Parses one request line and returns the single response line for it. A root array is one request: its items run
-		/// in order, and the response is one JSON array with one result per item, so a failing item does not stop the rest.
-		/// Items run on the calling thread, so a slow awaited item delays the whole response until it settles or its own
-		/// wall-clock limit passes. subscriber is the calling connection's subscription state; it is null only where no
-		/// connection exists, and subscribe then returns an error.
+		/// Parses one request line and returns the single response line for it, wrapped in the turn envelope (AgentEnvelope)
+		/// except for help. A root array is one request: its items run in order, and the results are one JSON array with
+		/// one result per item, so a failing item does not stop the rest. Items run on the calling thread, so a slow awaited
+		/// item delays the whole response until it settles or its own wall-clock limit passes. subscriber is the calling
+		/// connection's subscription state; it is null only where no connection exists, and subscribe then returns an error.
 		/// </summary>
 		public static string Handle(string line, AgentEventSubscriber subscriber)
 		{
@@ -69,15 +69,25 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 			catch (JsonException)
 			{
-				return Error(null, "invalid json");
+				return AgentEnvelope.Wrap(Error(null, "invalid json"), includeState: true);
 			}
 
 			using (doc)
 			{
-				if (doc.RootElement.ValueKind == JsonValueKind.Array)
-					return "[" + string.Join(",", doc.RootElement.EnumerateArray().Select(item => HandleItem(item, subscriber))) + "]";
+				var root = doc.RootElement;
+				if (root.ValueKind == JsonValueKind.Array)
+				{
+					var items = root.EnumerateArray().ToArray();
+					var results = "[" + string.Join(",", items.Select(item => HandleItem(item, subscriber))) + "]";
+					return AgentEnvelope.Wrap(results, AgentEnvelope.WantsState(items));
+				}
 
-				return HandleItem(doc.RootElement, subscriber);
+				// help is documentation, not a turn: it answers with the banner alone.
+				if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("cmd", out var cmdElement) &&
+					cmdElement.ValueKind == JsonValueKind.String && cmdElement.GetString() == "help")
+					return HandleItem(root, subscriber);
+
+				return AgentEnvelope.Wrap(HandleItem(root, subscriber), AgentEnvelope.WantsState(root));
 			}
 		}
 

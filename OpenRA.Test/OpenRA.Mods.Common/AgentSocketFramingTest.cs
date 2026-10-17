@@ -21,6 +21,9 @@ namespace OpenRA.Test
 	[TestFixture]
 	sealed class AgentSocketFramingTest
 	{
+		/// <summary>The keys of the turn envelope (P1.16), in the order the server writes them.</summary>
+		static readonly string[] EnvelopeKeys = ["results", "events", "state", "tick", "map_state_png", "map_state_tick"];
+
 		static string[] Run(string input)
 		{
 			using var reader = new StringReader(input);
@@ -39,6 +42,14 @@ namespace OpenRA.Test
 				.ToArray();
 		}
 
+		/// <summary>The results raw text of one envelope line. With no world loaded, tick and state are null.</summary>
+		static string ResultsOf(string envelope)
+		{
+			using var doc = JsonDocument.Parse(envelope);
+			Assert.That(doc.RootElement.EnumerateObject().Select(p => p.Name), Is.EqualTo(EnvelopeKeys));
+			return doc.RootElement.GetProperty("results").GetRawText();
+		}
+
 		[TestCase(TestName = "The banner is sent first, then the prompt, and the banner ends with a blank line")]
 		public void BannerIsSentFirst()
 		{
@@ -50,7 +61,7 @@ namespace OpenRA.Test
 			Assert.That(AgentSocketServer.Banner.EndsWith("\n\n", StringComparison.Ordinal), Is.True);
 		}
 
-		[TestCase(TestName = "Every response line is followed by a lone > prompt line")]
+		[TestCase(TestName = "Every response line is a turn envelope, followed by a lone > prompt line")]
 		public void PromptAfterEachResponse()
 		{
 			using var reader = new StringReader("{\"cmd\":\"nope\"}\n{\"x\":1}\n");
@@ -58,14 +69,13 @@ namespace OpenRA.Test
 			AgentSocketServer.Serve(reader, writer);
 
 			var tail = writer.ToString()[AgentSocketServer.Banner.Length..];
-			Assert.That(tail.Split('\n', StringSplitOptions.RemoveEmptyEntries), Is.EqualTo(new[]
-			{
-				AgentSocketServer.Prompt,
-				"{\"ok\":false,\"cmd\":\"nope\",\"error\":\"unknown command\"}",
-				AgentSocketServer.Prompt,
-				"{\"ok\":false,\"cmd\":null,\"error\":\"missing cmd\"}",
-				AgentSocketServer.Prompt,
-			}));
+			var lines = tail.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+			Assert.That(lines.Length, Is.EqualTo(5));
+			Assert.That(lines[0], Is.EqualTo(AgentSocketServer.Prompt));
+			Assert.That(ResultsOf(lines[1]), Is.EqualTo("{\"ok\":false,\"cmd\":\"nope\",\"error\":\"unknown command\"}"));
+			Assert.That(lines[2], Is.EqualTo(AgentSocketServer.Prompt));
+			Assert.That(ResultsOf(lines[3]), Is.EqualTo("{\"ok\":false,\"cmd\":null,\"error\":\"missing cmd\"}"));
+			Assert.That(lines[4], Is.EqualTo(AgentSocketServer.Prompt));
 		}
 
 		[TestCase(TestName = "Each non-blank line gets exactly one response; blank lines get none; CRLF is accepted")]
@@ -73,31 +83,29 @@ namespace OpenRA.Test
 		{
 			var lines = Run("{bad\n\n   \n{\"cmd\":\"nope\"}\r\n[1]\n{\"x\":1}\n");
 
-			Assert.That(lines, Is.EqualTo(new[]
-			{
-				"{\"ok\":false,\"cmd\":null,\"error\":\"invalid json\"}",
-				"{\"ok\":false,\"cmd\":\"nope\",\"error\":\"unknown command\"}",
-				"[{\"ok\":false,\"cmd\":null,\"error\":\"expected a JSON object\"}]",
-				"{\"ok\":false,\"cmd\":null,\"error\":\"missing cmd\"}",
-			}));
+			Assert.That(lines.Length, Is.EqualTo(4));
+			Assert.That(ResultsOf(lines[0]), Is.EqualTo("{\"ok\":false,\"cmd\":null,\"error\":\"invalid json\"}"));
+			Assert.That(ResultsOf(lines[1]), Is.EqualTo("{\"ok\":false,\"cmd\":\"nope\",\"error\":\"unknown command\"}"));
+			Assert.That(ResultsOf(lines[2]), Is.EqualTo("[{\"ok\":false,\"cmd\":null,\"error\":\"expected a JSON object\"}]"));
+			Assert.That(ResultsOf(lines[3]), Is.EqualTo("{\"ok\":false,\"cmd\":null,\"error\":\"missing cmd\"}"));
 		}
 
-		[TestCase(TestName = "A root array is one request: one line holds a result per item, and a failing item does not stop the rest")]
+		[TestCase(TestName = "A root array is one request: one envelope holds a result per item, and a failing item does not stop the rest")]
 		public void ArrayIsOneRequest()
 		{
 			using var reader = new StringReader("[{\"cmd\":\"ping\"},{\"cmd\":\"bogus\"},{\"cmd\":\"ping\"}]\n");
 			using var writer = new StringWriter { NewLine = "\n" };
 			AgentSocketServer.Serve(reader, writer);
 
+			// The banner's prompt, then the one envelope line, then the prompt for the next command.
 			var tail = writer.ToString()[AgentSocketServer.Banner.Length..];
-			// The banner's prompt, then the one response line, then the prompt for the next command.
-			var response = tail.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-			Assert.That(response, Has.Length.EqualTo(3));
-			Assert.That(response[0], Is.EqualTo(AgentSocketServer.Prompt));
-			Assert.That(response[2], Is.EqualTo(AgentSocketServer.Prompt));
+			var lines = tail.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+			Assert.That(lines, Has.Length.EqualTo(3));
+			Assert.That(lines[0], Is.EqualTo(AgentSocketServer.Prompt));
+			Assert.That(lines[2], Is.EqualTo(AgentSocketServer.Prompt));
 
-			using var doc = JsonDocument.Parse(response[1]);
-			var results = doc.RootElement.EnumerateArray().ToArray();
+			using var doc = JsonDocument.Parse(lines[1]);
+			var results = doc.RootElement.GetProperty("results").EnumerateArray().ToArray();
 			Assert.That(results.Length, Is.EqualTo(3));
 			Assert.That(results[0].GetProperty("cmd").GetString(), Is.EqualTo("ping"));
 			Assert.That(results[1].GetProperty("ok").GetBoolean(), Is.False);
@@ -110,7 +118,7 @@ namespace OpenRA.Test
 		{
 			var lines = Run("{\"cmd\":\"nope\"}").Last();
 
-			Assert.That(lines, Is.EqualTo("{\"ok\":false,\"cmd\":\"nope\",\"error\":\"unknown command\"}"));
+			Assert.That(ResultsOf(lines), Is.EqualTo("{\"ok\":false,\"cmd\":\"nope\",\"error\":\"unknown command\"}"));
 		}
 	}
 }

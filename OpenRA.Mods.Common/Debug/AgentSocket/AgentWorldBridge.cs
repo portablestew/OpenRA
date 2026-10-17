@@ -10,6 +10,7 @@
 #endregion
 
 using System;
+using System.Threading;
 using OpenRA.Graphics;
 using OpenRA.Mods.Common.AgentSocket;
 using OpenRA.Network;
@@ -33,6 +34,9 @@ namespace OpenRA.Mods.Common
 
 		/// <summary>The live world, or null when none is loaded or it is being torn down. Read on the game thread only.</summary>
 		public static World Active => active is { Disposing: false } ? active : null;
+
+		/// <summary>True when a world is loaded. Safe to read from any thread; the world itself is read on the game thread only.</summary>
+		public static bool Loaded => Volatile.Read(ref active) != null;
 
 		/// <summary>The renderer for <see cref="Active"/>, or null when there is none (headless, or no world). Read on the game thread only.</summary>
 		public static WorldRenderer ActiveRenderer => Active == null ? null : activeRenderer;

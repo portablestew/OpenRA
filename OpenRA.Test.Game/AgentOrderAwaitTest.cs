@@ -316,7 +316,8 @@ namespace OpenRA.Test
 			}
 
 			Assert.That(reply.IsCompleted, Is.True, "The request never returned.");
-			return JsonDocument.Parse(reply.Result);
+			using var envelope = JsonDocument.Parse(reply.Result);
+			return AgentStateDumpTest.Results(envelope);
 		}
 
 		[TestCase(TestName = "A world swap fails a Move in flight with the restored error")]

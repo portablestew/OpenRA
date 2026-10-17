@@ -99,7 +99,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			var text = new StringBuilder();
 			text.Append("OpenRA agent debug socket, schema v1. Send one JSON object per line, or one JSON array of objects per line; one response line per request.\n");
-			text.Append("Responses echo cmd and carry ok. Errors carry ok:false and error.\n");
+			text.Append("Every response but help is an envelope: results, events, state, tick, map_state_png, map_state_tick.\n");
+			text.Append("Inside results, responses echo cmd and carry ok. Errors carry ok:false and error.\n");
 			text.Append("Commands (request keys, then response keys):\n");
 			foreach (var (name, summary) in Commands)
 				Row(text, name, 11, summary);
@@ -126,7 +127,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("Notes:\n");
 			text.Append("  After the banner, and after every response, the server sends a lone > line as a prompt: it is your turn.\n");
 			text.Append("  A > line is not a response and not an event; skip lines that are just >.\n");
-			text.Append("  An array is one request: the items run in order and the response is one JSON array, one result per item.\n");
+			text.Append("  An array is one request: the items run in order and results is one JSON array, one result per item.\n");
+			text.Append("  The envelope: results (the request's result, or the array), events (since the last response; empty until P3),\n");
+			text.Append("    state (the state digest, as the state command returns it), tick (the game clock after the request), map_state_png\n");
+			text.Append("    and map_state_tick (null until P2). With no world loaded, tick and state are null.\n");
+			text.Append("  Add \"digest\":false to an object request to drop state. An array drops it only when every item sets digest:false.\n");
 			text.Append("  A failing item does not stop the rest. A slow awaited item delays the response until it settles or times out.\n");
 			text.Append("  order min_effect_tick is a lower bound (tick + 1). The order applies on or after it; network frame delay can make it later.\n");
 			text.Append("  Example: {\"cmd\":\"order\",\"actor\":12,\"order\":\"Move\",\"cell\":[40,50],\"await\":false}\n")

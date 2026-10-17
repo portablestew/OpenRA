@@ -1,0 +1,135 @@
+#region Copyright & License Information
+/*
+ * Copyright (c) The OpenRA Developers and Contributors
+ * This file is part of OpenRA, which is free software. It is made
+ * available to you under the terms of the GNU General Public License
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
+ */
+#endregion
+
+using System.Linq;
+using System.Text.Json;
+using NUnit.Framework;
+
+namespace OpenRA.Test
+{
+	/// <summary>
+	/// The turn envelope (P1.16), checked through the whole socket path: an object request, an array request, digest:false,
+	/// help (which has none), and a request with no world loaded.
+	/// </summary>
+	[TestFixture]
+	sealed class AgentEnvelopeTest
+	{
+		static readonly string[] EnvelopeKeys = ["results", "events", "state", "tick", "map_state_png", "map_state_tick"];
+		static readonly string[] PingKeys = ["ok", "cmd", "tick"];
+		static readonly string[] HelpKeys = ["ok", "cmd", "banner"];
+		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "paused", "game_over", "local_player", "players", "units"];
+
+		bool savedAgentSocket;
+
+		[OneTimeSetUp]
+		public void InitializeMod()
+		{
+			HeadlessMod.Require();
+		}
+
+		[SetUp]
+		public void EnableAgentSocket()
+		{
+			savedAgentSocket = Game.Settings.Debug.AgentSocket;
+			Game.Settings.Debug.AgentSocket = true;
+		}
+
+		[TearDown]
+		public void RestoreAgentSocket()
+		{
+			Game.Settings.Debug.AgentSocket = savedAgentSocket;
+		}
+
+		static string[] Keys(JsonElement element)
+		{
+			return element.EnumerateObject().Select(p => p.Name).ToArray();
+		}
+
+		[TestCase(TestName = "An object request answers one envelope: its result, no events yet, the state digest, the tick, and null map state")]
+		public void ObjectRequestHasTheEnvelope()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			using var response = AgentStateDumpTest.RawRequest("{\"cmd\":\"ping\"}");
+			var root = response.RootElement;
+
+			Assert.That(Keys(root), Is.EqualTo(EnvelopeKeys));
+			Assert.That(Keys(root.GetProperty("results")), Is.EquivalentTo(PingKeys));
+			Assert.That(root.GetProperty("events").GetArrayLength(), Is.Zero);
+			Assert.That(Keys(root.GetProperty("state")), Is.EquivalentTo(StateKeys));
+			Assert.That(root.GetProperty("tick").GetInt32(), Is.EqualTo(hw.World.WorldTick));
+			Assert.That(root.GetProperty("map_state_png").ValueKind, Is.EqualTo(JsonValueKind.Null));
+			Assert.That(root.GetProperty("map_state_tick").ValueKind, Is.EqualTo(JsonValueKind.Null));
+		}
+
+		[TestCase(TestName = "An array request answers one envelope whose results is the array of per-item results")]
+		public void ArrayRequestHasOneEnvelope()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			using var response = AgentStateDumpTest.RawRequest("[{\"cmd\":\"ping\"},{\"cmd\":\"state\"}]");
+			var root = response.RootElement;
+
+			Assert.That(Keys(root), Is.EqualTo(EnvelopeKeys));
+			var results = root.GetProperty("results").EnumerateArray().ToArray();
+			Assert.That(results.Length, Is.EqualTo(2));
+			Assert.That(Keys(results[0]), Is.EquivalentTo(PingKeys));
+			Assert.That(Keys(results[1]), Is.EquivalentTo(StateKeys));
+			Assert.That(Keys(root.GetProperty("state")), Is.EquivalentTo(StateKeys));
+		}
+
+		[TestCase(TestName = "digest:false drops state from an object request, and from an array only when every item sets it")]
+		public void DigestFalseOmitsState()
+		{
+			using var hw = HeadlessWorld.Create(1);
+
+			using (var off = AgentStateDumpTest.RawRequest("{\"cmd\":\"ping\",\"digest\":false}"))
+			{
+				Assert.That(Keys(off.RootElement), Is.EqualTo(EnvelopeKeys.Where(k => k != "state").ToArray()));
+				Assert.That(off.RootElement.GetProperty("tick").GetInt32(), Is.EqualTo(hw.World.WorldTick));
+			}
+
+			using (var allOff = AgentStateDumpTest.RawRequest("[{\"cmd\":\"ping\",\"digest\":false},{\"cmd\":\"ping\",\"digest\":false}]"))
+				Assert.That(Keys(allOff.RootElement), Does.Not.Contain("state"));
+
+			using (var mixed = AgentStateDumpTest.RawRequest("[{\"cmd\":\"ping\",\"digest\":false},{\"cmd\":\"ping\"}]"))
+				Assert.That(Keys(mixed.RootElement), Does.Contain("state"));
+		}
+
+		[TestCase(TestName = "help answers the banner with no envelope; state answers the envelope with its digest as state")]
+		public void HelpHasNoEnvelopeAndStateHasTheSameShape()
+		{
+			using var hw = HeadlessWorld.Create(1);
+
+			using (var help = AgentStateDumpTest.RawRequest("{\"cmd\":\"help\"}"))
+				Assert.That(Keys(help.RootElement), Is.EquivalentTo(HelpKeys));
+
+			using var state = AgentStateDumpTest.RawRequest("{\"cmd\":\"state\"}");
+			Assert.That(Keys(state.RootElement), Is.EqualTo(EnvelopeKeys));
+			Assert.That(Keys(state.RootElement.GetProperty("results")), Is.EquivalentTo(StateKeys));
+			Assert.That(Keys(state.RootElement.GetProperty("state")), Is.EquivalentTo(StateKeys));
+		}
+
+		[TestCase(TestName = "With no world loaded the envelope carries a null tick and state, and its results still answer")]
+		public void NoWorldEnvelope()
+		{
+			var hw = HeadlessWorld.Create(1);
+			hw.World.Dispose();
+			hw.Dispose();
+
+			using var response = AgentStateDumpTest.RawRequest("{\"cmd\":\"state\"}");
+			var root = response.RootElement;
+
+			Assert.That(Keys(root), Is.EqualTo(EnvelopeKeys));
+			Assert.That(root.GetProperty("tick").ValueKind, Is.EqualTo(JsonValueKind.Null));
+			Assert.That(root.GetProperty("state").ValueKind, Is.EqualTo(JsonValueKind.Null));
+			Assert.That(root.GetProperty("results").GetProperty("ok").GetBoolean(), Is.False);
+		}
+	}
+}

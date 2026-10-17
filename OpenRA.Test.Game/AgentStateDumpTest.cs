@@ -63,8 +63,19 @@ namespace OpenRA.Test
 			.FindType("AgentSocket.AgentSocketCommands")
 			.GetMethod("Handle", BindingFlags.Public | BindingFlags.Static));
 
-		/// <summary>Runs one request line on a worker thread while this thread pumps the game loop, and returns the response line.</summary>
+		/// <summary>
+		/// Runs one request line on a worker thread while this thread pumps the game loop, and returns the result: the
+		/// envelope's results for an object request, which is the shape these tests check. Use <see cref="RawRequest"/>
+		/// for the whole envelope.
+		/// </summary>
 		internal static JsonDocument Request(string line)
+		{
+			using var envelope = RawRequest(line);
+			return Results(envelope);
+		}
+
+		/// <summary>Runs one request line like <see cref="Request"/>, and returns the whole response: the turn envelope, or help's banner.</summary>
+		internal static JsonDocument RawRequest(string line)
 		{
 			var request = Task.Run(() => (string)Handle.Value.Invoke(null, [line, null]));
 
@@ -76,6 +87,14 @@ namespace OpenRA.Test
 			}
 
 			return JsonDocument.Parse(request.GetAwaiter().GetResult());
+		}
+
+		/// <summary>The results of an envelope, or the response itself when it has none (help). The caller disposes the result.</summary>
+		internal static JsonDocument Results(JsonDocument response)
+		{
+			return JsonDocument.Parse(response.RootElement.TryGetProperty("results", out var results)
+				? results.GetRawText()
+				: response.RootElement.GetRawText());
 		}
 
 		/// <summary>
@@ -95,7 +114,8 @@ namespace OpenRA.Test
 				Thread.Sleep(1);
 			}
 
-			return JsonDocument.Parse(request.GetAwaiter().GetResult());
+			using var envelope = JsonDocument.Parse(request.GetAwaiter().GetResult());
+			return Results(envelope);
 		}
 
 		static IEnumerable<string> Keys(JsonElement element)

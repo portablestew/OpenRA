@@ -156,16 +156,23 @@ namespace OpenRA.Test
 				"Unsubscribing a group removes its filter.");
 		}
 
+		/// <summary>The results of a handled request: the envelope's results, which for an object request is its one result.</summary>
+		static string Result(string response)
+		{
+			using var doc = JsonDocument.Parse(response);
+			return doc.RootElement.GetProperty("results").GetRawText();
+		}
+
 		[TestCase(TestName = "Subscribe and unsubscribe reply with the active groups in canonical order")]
 		public void SubscribeRepliesWithActiveGroups()
 		{
 			var subscriber = NewSubscriber();
 
-			Assert.That(AgentSocketCommands.Handle("{\"cmd\":\"subscribe\",\"events\":[\"path\",\"damage\"]}", subscriber),
+			Assert.That(Result(AgentSocketCommands.Handle("{\"cmd\":\"subscribe\",\"events\":[\"path\",\"damage\"]}", subscriber)),
 				Is.EqualTo("{\"ok\":true,\"cmd\":\"subscribe\",\"subscribed\":[\"damage\",\"path\"]}"));
-			Assert.That(AgentSocketCommands.Handle("{\"cmd\":\"unsubscribe\",\"events\":[\"damage\"]}", subscriber),
+			Assert.That(Result(AgentSocketCommands.Handle("{\"cmd\":\"unsubscribe\",\"events\":[\"damage\"]}", subscriber)),
 				Is.EqualTo("{\"ok\":true,\"cmd\":\"unsubscribe\",\"subscribed\":[\"path\"]}"));
-			Assert.That(AgentSocketCommands.Handle("{\"cmd\":\"unsubscribe\",\"all\":true}", subscriber),
+			Assert.That(Result(AgentSocketCommands.Handle("{\"cmd\":\"unsubscribe\",\"all\":true}", subscriber)),
 				Is.EqualTo("{\"ok\":true,\"cmd\":\"unsubscribe\",\"subscribed\":[]}"));
 			Assert.That(AgentEvents.SubscriberCount, Is.Zero);
 		}
@@ -175,7 +182,7 @@ namespace OpenRA.Test
 		{
 			var subscriber = NewSubscriber();
 
-			using var response = JsonDocument.Parse(AgentSocketCommands.Handle("{\"cmd\":\"subscribe\",\"events\":[\"damage\",\"nope\"]}", subscriber));
+			using var response = JsonDocument.Parse(Result(AgentSocketCommands.Handle("{\"cmd\":\"subscribe\",\"events\":[\"damage\",\"nope\"]}", subscriber)));
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.False);
 			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo("unknown event group 'nope'"));
 			Assert.That(subscriber.Active(), Is.Empty);
@@ -185,7 +192,7 @@ namespace OpenRA.Test
 		[TestCase(TestName = "Subscribe without a connection returns an error")]
 		public void SubscribeWithoutConnectionIsAnError()
 		{
-			Assert.That(AgentSocketCommands.Handle("{\"cmd\":\"subscribe\",\"events\":[\"damage\"]}", null),
+			Assert.That(Result(AgentSocketCommands.Handle("{\"cmd\":\"subscribe\",\"events\":[\"damage\"]}", null)),
 				Is.EqualTo("{\"ok\":false,\"cmd\":\"subscribe\",\"error\":\"events need a connection\"}"));
 		}
 
