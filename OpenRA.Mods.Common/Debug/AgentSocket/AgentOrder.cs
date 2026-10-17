@@ -141,7 +141,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>Validates the request and issues it. Must run on the game thread: it reads live world state.</summary>
 		public static OrderV1 Issue(World world, OrderRequest request)
 		{
-			world.IssueOrder(ToOrder(world, request));
+			var order = ToOrder(world, request);
+			AgentOrderAwait.Register(order);
+			world.IssueOrder(order);
 
 			return new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
 		}

@@ -47,6 +47,9 @@ namespace OpenRA.Mods.Common
 		/// </summary>
 		public static void Ordered(Order order, int clientId, bool valid)
 		{
+			// Resolves the socket's pending await. It runs without a subscriber, so an await never waits on an event.
+			AgentOrderAwait.Resolve(order, valid);
+
 			if (!AgentEvents.HasSubscribers)
 				return;
 
