@@ -43,7 +43,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// Issues the Move and records it as a job. Must run on the game thread. The cap is checked before the order is issued,
 		/// so a refused request changes nothing.
 		/// </summary>
-		public static JobV1 Issue(World world, OrderRequest request)
+		public static JobV1 Issue(World world, OrderRequest request, AgentSelection selection)
 		{
 			lock (Gate)
 			{
@@ -54,7 +54,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					throw new InvalidOperationException($"{Cap} order jobs are open; wait on one to free a slot");
 			}
 
-			var issued = AgentOrder.Issue(world, request);
+			var issued = AgentOrder.Issue(world, request, selection);
 			lock (Gate)
 			{
 				var id = nextId++;

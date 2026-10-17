@@ -74,25 +74,27 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			using (doc)
 			{
+				// The request's orders share one selection, so an array ends with the union of the actors it ordered (P1.15).
+				var selection = new AgentSelection();
 				var root = doc.RootElement;
 				if (root.ValueKind == JsonValueKind.Array)
 				{
 					var items = root.EnumerateArray().ToArray();
-					var results = "[" + string.Join(",", items.Select(item => HandleItem(item, subscriber))) + "]";
+					var results = "[" + string.Join(",", items.Select(item => HandleItem(item, subscriber, selection))) + "]";
 					return AgentEnvelope.Wrap(results, AgentEnvelope.WantsState(items));
 				}
 
 				// help is documentation, not a turn: it answers with the banner alone.
 				if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("cmd", out var cmdElement) &&
 					cmdElement.ValueKind == JsonValueKind.String && cmdElement.GetString() == "help")
-					return HandleItem(root, subscriber);
+					return HandleItem(root, subscriber, selection);
 
-				return AgentEnvelope.Wrap(HandleItem(root, subscriber), AgentEnvelope.WantsState(root));
+				return AgentEnvelope.Wrap(HandleItem(root, subscriber, selection), AgentEnvelope.WantsState(root));
 			}
 		}
 
 		/// <summary>Answers one request object. A value that is not an object is an error for that item alone.</summary>
-		static string HandleItem(JsonElement root, AgentEventSubscriber subscriber)
+		static string HandleItem(JsonElement root, AgentEventSubscriber subscriber, AgentSelection selection)
 		{
 			if (root.ValueKind != JsonValueKind.Object)
 				return Error(null, "expected a JSON object");
@@ -109,12 +111,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"actors" => Actors(cmd, root),
 				"maps" => Run(cmd, AgentMaps.List),
 				"load_map" => LoadMap(cmd, root),
-				"order" => IssueOrder(cmd, root),
+				"order" => IssueOrder(cmd, root, selection),
 				"orders" => Orders(cmd, root),
 				"wait" => Wait(cmd, root),
 				"production" => Run(cmd, () => AgentProduction.List(AgentWorldBridge.RequireWorld())),
-				"build" => StartBuild(cmd, root),
-				"place" => StartPlace(cmd, root),
+				"build" => StartBuild(cmd, root, selection),
+				"place" => StartPlace(cmd, root, selection),
 				"screenshot" => Screenshot(cmd, root),
 				"subscribe" => Subscribe(cmd, root, subscriber),
 				"unsubscribe" => Unsubscribe(cmd, root, subscriber),
@@ -154,7 +156,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>Parses the order on the socket thread, then validates and issues it on the game thread.</summary>
-		static string IssueOrder(string cmd, JsonElement root)
+		static string IssueOrder(string cmd, JsonElement root, AgentSelection selection)
 		{
 			var error = AgentOrder.Parse(root, out var request);
 			if (error != null)
@@ -164,10 +166,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			{
 				// await:false takes a job instead: the game thread issues the Move and records it, and the reply is the job id.
 				if (!request.Await)
-					return Serialize(AgentMarshal.ExecuteOnGameThread(() => AgentOrderJobs.Issue(AgentWorldBridge.RequireWorld(), request)));
+					return Serialize(AgentMarshal.ExecuteOnGameThread(() => AgentOrderJobs.Issue(AgentWorldBridge.RequireWorld(), request, selection)));
 
 				// The game thread issues the order. The socket thread then parks until a Move settles or an Attack has its outcome, so the game keeps ticking.
-				var issued = AgentMarshal.ExecuteOnGameThread(() => AgentOrder.Issue(AgentWorldBridge.RequireWorld(), request));
+				var issued = AgentMarshal.ExecuteOnGameThread(() => AgentOrder.Issue(AgentWorldBridge.RequireWorld(), request, selection));
 				if (issued.Await == null)
 					return Serialize(issued.Ack);
 
@@ -184,7 +186,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>Parses the item and count on the socket thread, then validates and issues the build on the game thread.</summary>
-		static string StartBuild(string cmd, JsonElement root)
+		static string StartBuild(string cmd, JsonElement root, AgentSelection selection)
 		{
 			var error = AgentBuild.Parse(root, out var request);
 			if (error != null)
@@ -192,7 +194,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			try
 			{
-				return Serialize(AgentMarshal.ExecuteOnGameThread(() => AgentBuild.Start(AgentWorldBridge.RequireWorld(), request)));
+				return Serialize(AgentMarshal.ExecuteOnGameThread(() => AgentBuild.Start(AgentWorldBridge.RequireWorld(), request, selection)));
 			}
 			catch (BuildRefusedException e)
 			{
@@ -209,13 +211,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>Parses the item and optional cell on the socket thread, then finds the cell and issues the placement on the game thread.</summary>
-		static string StartPlace(string cmd, JsonElement root)
+		static string StartPlace(string cmd, JsonElement root, AgentSelection selection)
 		{
 			var error = AgentPlace.Parse(root, out var request);
 			if (error != null)
 				return Error(cmd, error);
 
-			return Run(cmd, () => AgentPlace.Start(AgentWorldBridge.RequireWorld(), request));
+			return Run(cmd, () => AgentPlace.Start(AgentWorldBridge.RequireWorld(), request, selection));
 		}
 
 		/// <summary>

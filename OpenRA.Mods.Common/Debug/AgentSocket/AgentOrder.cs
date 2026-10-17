@@ -199,8 +199,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return null;
 		}
 
-		/// <summary>Validates the request and issues it. Must run on the game thread: it reads live world state.</summary>
-		public static Issued Issue(World world, OrderRequest request)
+		/// <summary>
+		/// Validates the request and issues it, then selects the ordered actor for the request (P1.15). Must run on the game thread:
+		/// it reads live world state.
+		/// </summary>
+		public static Issued Issue(World world, OrderRequest request, AgentSelection selection)
 		{
 			var order = ToOrder(world, request);
 			var move = order.OrderString == "Move";
@@ -208,6 +211,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var deploy = order.OrderString == "DeployTransform";
 			var await = AgentOrderAwait.Register(order, move ? request.SettleTicks ?? AgentOrderAwait.DefaultSettleTicks : 0);
 			world.IssueOrder(order);
+			selection.Ordered(world, order.Subject);
 
 			// A paused game never ticks, so Settle does not wait for a Move, an Attack or a DeployTransform there (Q1), and drops the await it will never settle.
 			var ack = new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);

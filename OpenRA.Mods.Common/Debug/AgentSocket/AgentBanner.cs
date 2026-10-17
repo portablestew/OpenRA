@@ -132,6 +132,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    state (the state digest, as the state command returns it), tick (the game clock after the request), map_state_png\n");
 			text.Append("    and map_state_tick (null until P2). With no world loaded, tick and state are null.\n");
 			text.Append("  Add \"digest\":false to an object request to drop state. An array drops it only when every item sets digest:false.\n");
+			text.Append("  Selection: an issued order selects its actor, so world.Selection is the actors a request ordered (an array: their union).\n");
+			text.Append("    A request with no order leaves the selection alone.\n");
 			text.Append("  A failing item does not stop the rest. A slow awaited item delays the response until it settles or times out.\n");
 			text.Append("  order min_effect_tick is a lower bound (tick + 1). The order applies on or after it; network frame delay can make it later.\n");
 			text.Append("  Example: {\"cmd\":\"order\",\"actor\":12,\"order\":\"Move\",\"cell\":[40,50],\"await\":false}\n")

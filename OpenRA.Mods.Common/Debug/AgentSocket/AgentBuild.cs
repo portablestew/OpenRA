@@ -63,7 +63,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>Validates the request against the production list, then issues it. Must run on the game thread.</summary>
-		public static BuildV1 Start(World world, BuildRequest request)
+		public static BuildV1 Start(World world, BuildRequest request, AgentSelection selection)
 		{
 			var production = AgentProduction.List(world);
 			var item = request.Item;
@@ -96,6 +96,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			// The same order-accept check as the order command, so a queue that does not take StartProduction is refused too.
 			var actor = AgentOrder.Accept(world, queue.Actor, "StartProduction");
 			world.IssueOrder(Order.StartProduction(actor, item, request.Count));
+			selection.Ordered(world, actor);
 
 			return new BuildV1(true, "build", actor.ActorID, queue.QueueType, item, request.Count, world.WorldTick, world.WorldTick + 1);
 		}

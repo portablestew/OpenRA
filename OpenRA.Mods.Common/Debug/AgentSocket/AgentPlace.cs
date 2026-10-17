@@ -61,7 +61,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>Finds the finished item, picks the cell, and issues PlaceBuilding. Must run on the game thread.</summary>
-		public static PlaceV1 Start(World world, PlaceRequest request)
+		public static PlaceV1 Start(World world, PlaceRequest request, AgentSelection selection)
 		{
 			var item = request.Item;
 			if (!world.Map.Rules.Actors.TryGetValue(item, out var info))
@@ -101,6 +101,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				TargetString = item,
 				ExtraData = queue.Actor,
 			});
+			selection.Ordered(world, actor);
 
 			var requested = request.Cell is { } given ? new[] { given.X, given.Y } : null;
 			return new PlaceV1(true, "place", item, requested, [searchFrom.X, searchFrom.Y], [cell.X, cell.Y], world.WorldTick, world.WorldTick + 1);
