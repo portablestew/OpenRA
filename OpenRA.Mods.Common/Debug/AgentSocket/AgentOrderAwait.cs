@@ -92,12 +92,27 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		public void Wait(int timeoutMs = WallClockMs)
 		{
-			if (Task.WaitAny([done.Task], timeoutMs) == -1)
+			if (!TryWait(timeoutMs))
 			{
 				Abandon();
 				throw new TimeoutException($"the order did not settle within {timeoutMs} ms of wall-clock time");
 			}
 
+			ThrowIfFailed();
+		}
+
+		/// <summary>
+		/// Parks the calling thread until the await settles or fails, or until timeoutMs passes. Returns false on timeout and
+		/// leaves the await registered, so an order job can wait again. Must not run on the game thread.
+		/// </summary>
+		public bool TryWait(int timeoutMs)
+		{
+			return Task.WaitAny([done.Task], timeoutMs) != -1;
+		}
+
+		/// <summary>Throws the failure reason of an await that has finished. Call it only after TryWait returned true, or it blocks.</summary>
+		public void ThrowIfFailed()
+		{
 			done.Task.GetAwaiter().GetResult();
 		}
 

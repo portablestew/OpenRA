@@ -36,9 +36,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("maps", "-> maps"),
 			("load_map", "map (string, uid or title) -> the state shape, once the new world is ready"),
 			("order", "actor (uint); order (string); at most one of cell [x,y], pos [x,y,z], target_actor (uint);"
-				+ " optional queued (bool), item (string), extra_data (uint), extra_location [x,y]\n"
-					+ "                -> tick, min_effect_tick. A name the actor does not accept is refused:"
-				+ " ok:false, error, available (the names it accepts)"),
+				+ " optional queued (bool), item (string), extra_data (uint), extra_location [x,y], settle_ticks (Move only),"
+				+ " await (bool, default true; false is Move only)\n"
+					+ "                -> tick, min_effect_tick, and for a Move, valid, effect_tick, settled, settled_ticks, path."
+				+ " await:false returns job (the id for wait) with tick, min_effect_tick, and does not wait."
+				+ " A name the actor does not accept is refused: ok:false, error, available (the names it accepts)"),
+			("wait", "job (int); optional timeout_ms (non-negative int, default 10000)\n"
+				+ "                -> the Move reply (cmd:wait, same keys as a Move order reply) once the job settles, or"
+				+ " status:\"pending\" if it has not settled by the timeout (the job stays open). An unknown job, or a job whose"
+				+ " world load_map or undo replaced: ok:false, error"),
 			("orders", "actor (uint) -> type, orders (the order names the actor accepts)"),
 			("production", "-> player, cash, resources, power, queues (the local player's queues; see Production keys)"),
 			("build", "item (string); optional count (positive int, default 1)\n"
@@ -115,6 +121,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("  After the banner, and after every response, the server sends a lone > line as a prompt: it is your turn.\n");
 			text.Append("  A > line is not a response and not an event; skip lines that are just >.\n");
 			text.Append("  order min_effect_tick is a lower bound (tick + 1). The order applies on or after it; network frame delay can make it later.\n");
+			text.Append("  Example: {\"cmd\":\"order\",\"actor\":12,\"order\":\"Move\",\"cell\":[40,50],\"await\":false}\n")
+				.Append("    -> {\"ok\":true,\"cmd\":\"order\",\"job\":1,...}\n");
+			text.Append("  then {\"cmd\":\"wait\",\"job\":1,\"timeout_ms\":5000} -> the Move reply, or {\"status\":\"pending\"} after 5 s.\n");
 			text.Append("  An overflow event is sent before the events that follow it. dropped counts the events a full queue discarded.\n");
 			text.Append('\n');
 			return text.ToString();

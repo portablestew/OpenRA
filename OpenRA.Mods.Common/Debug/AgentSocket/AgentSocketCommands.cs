@@ -41,7 +41,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The command names the dispatcher answers. The banner lists the same names, and a headless test keeps them in step.</summary>
 		public static readonly string[] Names =
 		[
-			"ping", "help", "state", "actors", "maps", "load_map", "order", "orders",
+			"ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "wait",
 			"production", "build", "place", "screenshot", "subscribe", "unsubscribe", "undo",
 		];
 
@@ -88,6 +88,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					"load_map" => LoadMap(cmd, doc.RootElement),
 					"order" => IssueOrder(cmd, doc.RootElement),
 					"orders" => Orders(cmd, doc.RootElement),
+					"wait" => Wait(cmd, doc.RootElement),
 					"production" => Run(cmd, () => AgentProduction.List(AgentWorldBridge.RequireWorld())),
 					"build" => StartBuild(cmd, doc.RootElement),
 					"place" => StartPlace(cmd, doc.RootElement),
@@ -139,6 +140,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			try
 			{
+				// await:false takes a job instead: the game thread issues the Move and records it, and the reply is the job id.
+				if (!request.Await)
+					return Serialize(AgentMarshal.ExecuteOnGameThread(() => AgentOrderJobs.Issue(AgentWorldBridge.RequireWorld(), request)));
+
 				// The game thread issues the order. The socket thread then parks until a Move settles, so the game keeps ticking.
 				var issued = AgentMarshal.ExecuteOnGameThread(() => AgentOrder.Issue(AgentWorldBridge.RequireWorld(), request));
 				if (!issued.Move)
@@ -214,6 +219,30 @@ namespace OpenRA.Mods.Common.AgentSocket
 			catch (Exception e)
 			{
 				abandon.Cancel();
+				return Error(cmd, e.Message);
+			}
+		}
+
+		/// <summary>
+		/// Reads the job id and optional timeout on the socket thread, then waits for the job there, so the game keeps ticking.
+		/// A timeout is a pending reply, not an error: the job stays open for another wait.
+		/// </summary>
+		static string Wait(string cmd, JsonElement root)
+		{
+			if (!root.TryGetProperty("job", out var jobElement) || !jobElement.TryGetInt32(out var job))
+				return Error(cmd, "job must be an integer");
+
+			var timeoutMs = AgentOrderAwait.WallClockMs;
+			if (root.TryGetProperty("timeout_ms", out var timeoutElement) && timeoutElement.ValueKind != JsonValueKind.Null &&
+				(!timeoutElement.TryGetInt32(out timeoutMs) || timeoutMs < 0))
+				return Error(cmd, "timeout_ms must be a non-negative integer");
+
+			try
+			{
+				return Serialize(AgentOrderJobs.Wait(job, timeoutMs));
+			}
+			catch (Exception e)
+			{
 				return Error(cmd, e.Message);
 			}
 		}

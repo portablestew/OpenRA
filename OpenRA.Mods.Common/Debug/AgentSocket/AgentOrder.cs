@@ -25,7 +25,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// Item, ExtraData and ExtraLocation become the order's TargetString, ExtraData and ExtraLocation. Null means absent.
 	/// </summary>
 	public sealed record OrderRequest(string Order, uint Actor, CPos? Cell, WPos? Pos, uint? TargetActor, bool Queued,
-		string Item, uint? ExtraData, CPos? ExtraLocation, int? SettleTicks);
+		string Item, uint? ExtraData, CPos? ExtraLocation, int? SettleTicks, bool Await);
 
 	/// <summary>
 	/// The Move reply (P1.3). Valid and EffectTick are null, and Settled is false, when the game was paused and the reply did not
@@ -35,10 +35,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 		int SettledTicks, int[][] Path);
 
 	/// <summary>
-	/// What Issue returns on the game thread. Move is true for a Move order. Await is the wait the socket thread parks on in Settle,
-	/// or null when there is nothing to wait for: a non-Move order, or a Move in a paused game (Q1).
+	/// What Issue returns on the game thread. Move is true for a Move order. Await is the wait for a Move, and null for any other
+	/// order. Paused is true for a Move in a paused game, which never ticks, so Settle does not wait for it (Q1).
 	/// </summary>
-	public sealed record Issued(OrderV1 Ack, bool Move, AgentOrderAwait Await);
+	public sealed record Issued(OrderV1 Ack, bool Move, bool Paused, AgentOrderAwait Await);
 
 	/// <summary>The orders command: the order names an actor accepts. Schema v1, additive.</summary>
 	public sealed record OrdersV1(bool Ok, string Cmd, uint Actor, string Type, string[] Orders);
@@ -159,7 +159,21 @@ namespace OpenRA.Mods.Common.AgentSocket
 				settleTicks = (int)settle;
 			}
 
-			request = new OrderRequest(orderElement.GetString(), actor, cell, pos, targetActor, queued, item, extraData, extraLocation, settleTicks);
+			// await:false returns a job id at once instead of waiting for the Move to settle (P1.4).
+			var awaits = true;
+			if (IsPresent(root, "await"))
+			{
+				var awaitElement = root.GetProperty("await");
+				if (awaitElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+					return "await must be a boolean";
+
+				if (orderElement.GetString() != "Move" && awaitElement.ValueKind == JsonValueKind.False)
+					return "await:false applies only to Move";
+
+				awaits = awaitElement.ValueKind == JsonValueKind.True;
+			}
+
+			request = new OrderRequest(orderElement.GetString(), actor, cell, pos, targetActor, queued, item, extraData, extraLocation, settleTicks, awaits);
 			return null;
 		}
 
@@ -171,9 +185,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var await = AgentOrderAwait.Register(order, move ? request.SettleTicks ?? AgentOrderAwait.DefaultSettleTicks : 0);
 			world.IssueOrder(order);
 
-			// A paused game never ticks, so a Move there has nothing to wait for (Q1). Its await still fails or settles on its own.
+			// A paused game never ticks, so Settle does not wait for a Move there (Q1). Its await still fails or settles on its own.
 			var ack = new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
-			return new Issued(ack, move, move && !world.Paused ? await : null);
+			return new Issued(ack, move, world.Paused, move ? await : null);
+		}
+
+		/// <summary>The Move reply for an await that has finished. Cmd names the request that asked for it.</summary>
+		public static MoveV1 Reply(string cmd, OrderV1 ack, AgentOrderAwait await)
+		{
+			return new MoveV1(true, cmd, ack.Tick, ack.MinEffectTick, await.Valid, await.ResolvedTick, true, await.SettleTicks,
+				await.Path ?? []);
 		}
 
 		/// <summary>
@@ -184,13 +205,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static MoveV1 Settle(Issued issued)
 		{
 			var ack = issued.Ack;
-			if (issued.Await == null)
+			if (issued.Await == null || issued.Paused)
 				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
 
-			var await = issued.Await;
-			await.Wait();
-			return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, await.Valid, await.ResolvedTick, true, await.SettleTicks,
-				await.Path ?? []);
+			issued.Await.Wait();
+			return Reply("order", ack, issued.Await);
 		}
 
 		/// <summary>
