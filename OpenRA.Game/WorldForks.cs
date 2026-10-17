@@ -666,7 +666,9 @@ namespace OpenRA
 			// Sprite/terrain/renderer asset content, including the WorldRenderer itself: the fork keeps
 			// rendering through the same renderer instance, which is what lets AdoptWorld re-bind rather
 			// than rebuild, and what leaves traits that cached a WorldRenderer pointing at the live one.
-			if ((type.Namespace ?? "").StartsWith("OpenRA.Graphics", System.StringComparison.Ordinal))
+			// A compiler-generated closure takes its containing type's namespace, so one declared inside OpenRA.Graphics
+			// (an Animation's tick closure, for one) must not be shared: it would keep the outgoing object as its target.
+			if ((type.Namespace ?? "").StartsWith("OpenRA.Graphics", System.StringComparison.Ordinal) && !IsCapturingClosure(type))
 				return true;
 
 			// The widget tree is process-level UI. World events reach it (widgets subscribe to world
@@ -679,6 +681,15 @@ namespace OpenRA
 				return true;
 
 			return false;
+		}
+
+		/// <summary>
+		/// Whether a type is a compiler-generated closure that captures state (a display class). The static-lambda
+		/// holder (<c>&lt;&gt;c</c>) captures nothing, so it is not one.
+		/// </summary>
+		static bool IsCapturingClosure(System.Type type)
+		{
+			return type.Name.StartsWith("<>", System.StringComparison.Ordinal) && type.Name != "<>c";
 		}
 
 		/// <summary>
