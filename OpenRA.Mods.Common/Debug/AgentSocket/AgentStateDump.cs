@@ -20,7 +20,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	// Schema v1. Wire keys are snake_case (AgentSocketCommands.Json). The envelope fields ok and cmd are part of the
 	// state and actors lines, so every key a client sees is declared here.
 	public sealed record StateV1(bool Ok, string Cmd, int Tick, int NetFrame, StateMapV1 Map, bool Paused, bool GameOver,
-		string LocalPlayer, PlayerV1[] Players, object[] Units);
+		string LocalPlayer, PlayerV1[] Players, object[] Units, ThreatV1[] Threats);
 
 	public sealed record ActorsV1(bool Ok, string Cmd, UnitV1[] Units);
 
@@ -69,7 +69,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			return new StateV1(true, "state", world.WorldTick, world.NetFrameNumber,
 				StateMap(world), world.Paused, world.IsGameOver,
-				world.LocalPlayer?.PlayerName, world.Players.Select(p => PlayerState(p, world.LocalPlayer)).ToArray(), StateUnits(world));
+				world.LocalPlayer?.PlayerName, world.Players.Select(p => PlayerState(p, world.LocalPlayer)).ToArray(),
+				StateUnits(world), AgentThreats.Build(world, world.LocalPlayer));
 		}
 
 		/// <summary>The state's map: uid, title, Map.Bounds, and each player's home cell (P2.6).</summary>
@@ -107,7 +108,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// Scenery is what the world owns (the neutral player that OwnsWorld, which map trees and buildings belong to), or an mpspawn
 		/// marker. Creeps are not scenery: they are NonCombatant but they fight, so they stay in the digest.
 		/// </summary>
-		static bool IsScenery(Actor a)
+		internal static bool IsScenery(Actor a)
 		{
 			return a.Owner?.PlayerReference?.OwnsWorld == true || a.Info.Name == "mpspawn";
 		}

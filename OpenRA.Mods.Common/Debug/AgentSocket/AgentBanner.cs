@@ -35,7 +35,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ "                -> map is uid, title, bounds ([x, y, width, height], Map.Bounds in cells) and spawns (one per player with a home"
 				+ " cell: player, cell [x, y]). Your own structures in units are id, type, cell and hp only."
 				+ " players[].known_counts is the count by type of the actors you know: all of your own, and another player's only"
-				+ " where you see them, know them from a snapshot, or a satellite shows them.",
+				+ " where you see them, know them from a snapshot, or a satellite shows them."
+				+ " threats: the top 15 known enemies by standoff (at most 3 per type; a recent attacker first), each with id, type, cell,"
+				+ " hp, attack_target (a friendly id, or null), heading (the way it faces), bearing (from its closest friendly toward it),"
+				+ " friendly_id and distance (world units, 1024 per cell) of that friendly.",
 				"{\"cmd\":\"state\"}"),
 			("actors", "owner, type (optional filters) -> units", "{\"cmd\":\"actors\",\"type\":\"e1\"}"),
 			("maps", "-> maps", "{\"cmd\":\"maps\"}"),

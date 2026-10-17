@@ -31,6 +31,15 @@ namespace OpenRA.Mods.Common
 
 		void INotifyDamage.Damaged(Actor self, AttackInfo e)
 		{
+			// The threat list reads recent hits from the state, so a hit is recorded whether or not anyone subscribes (P2.7).
+			if (e.Attacker != null)
+				AgentRecentDamage.Record(self, e.Attacker);
+
+			DamagedEvent(self, e);
+		}
+
+		static void DamagedEvent(Actor self, AttackInfo e)
+		{
 			if (!AgentEvents.HasSubscribers)
 				return;
 
