@@ -108,7 +108,7 @@ namespace OpenRA.Mods.Common.Traits
 			if (buildingInfo == null)
 				return null;
 
-			return AgentCellReason.Of(self.World, actorInfo, buildingInfo, self.Location + Info.Offset, self);
+			return AgentCellReason.Of(self.World, actorInfo, buildingInfo, self.Location + Info.Offset, self, self.Owner);
 		}
 
 		IEnumerable<Order> ClearBlockersOrders(CPos topLeft)
