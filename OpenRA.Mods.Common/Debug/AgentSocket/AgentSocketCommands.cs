@@ -139,7 +139,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			try
 			{
-				return Serialize(AgentMarshal.ExecuteOnGameThread(() => AgentOrder.Issue(AgentWorldBridge.RequireWorld(), request)));
+				// The game thread issues the order. The socket thread then parks until a Move settles, so the game keeps ticking.
+				var issued = AgentMarshal.ExecuteOnGameThread(() => AgentOrder.Issue(AgentWorldBridge.RequireWorld(), request));
+				if (!issued.Move)
+					return Serialize(issued.Ack);
+
+				return Serialize(AgentOrder.Settle(issued));
 			}
 			catch (OrderRefusedException e)
 			{

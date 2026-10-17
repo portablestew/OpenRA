@@ -147,7 +147,7 @@ namespace OpenRA.Mods.Common.Activities
 			}
 
 			moveTarget = path.Count > 0 ? path[0] : destination ?? mobile.ToCell;
-			if (AgentEvents.HasSubscribers)
+			if (AgentMoveEvents.Wanted(self))
 				AgentMoveEvents.Path(self, mobile.Locomotor, mobile.ToCell, moveTarget, pathCheck, false, alreadyAtDestination, path);
 		}
 
@@ -282,7 +282,7 @@ namespace OpenRA.Mods.Common.Activities
 			if (!Util.AreAdjacentCells(mobile.ToCell, nextCell))
 			{
 				(alreadyAtDestination, path) = EvalPath(BlockedByActor.Immovable);
-				if (AgentEvents.HasSubscribers)
+				if (AgentMoveEvents.Wanted(self))
 					AgentMoveEvents.Path(self, mobile.Locomotor, mobile.ToCell, destination ?? mobile.ToCell, BlockedByActor.Immovable, true, alreadyAtDestination, path);
 
 				return (null, false);
@@ -326,7 +326,7 @@ namespace OpenRA.Mods.Common.Activities
 				if (!mobile.CanEnterCell(nextCell, ignoreActor, BlockedByActor.Immovable))
 				{
 					(alreadyAtDestination, path) = EvalPath(BlockedByActor.Immovable);
-					if (AgentEvents.HasSubscribers)
+					if (AgentMoveEvents.Wanted(self))
 						AgentMoveEvents.Path(self, mobile.Locomotor, mobile.ToCell, destination ?? mobile.ToCell, BlockedByActor.Immovable, true, alreadyAtDestination, path);
 
 					return (null, false);
@@ -357,7 +357,7 @@ namespace OpenRA.Mods.Common.Activities
 				var (newAtDestination, newPath) = EvalPath(BlockedByActor.All);
 				mobile.AddInfluence();
 
-				if (AgentEvents.HasSubscribers)
+				if (AgentMoveEvents.Wanted(self))
 					AgentMoveEvents.Path(self, mobile.Locomotor, mobile.ToCell, destination ?? mobile.ToCell, BlockedByActor.All, true, newAtDestination, newPath);
 
 				if (newPath.Count != 0)

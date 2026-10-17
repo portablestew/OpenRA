@@ -57,14 +57,18 @@ namespace OpenRA.Test
 			var tick = hw.World.WorldTick;
 
 			var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
-			using var response = AgentStateDumpTest.Request(line);
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, line);
 			var root = response.RootElement;
 
-			Assert.That(Keys(root), Is.EquivalentTo(["ok", "cmd", "tick", "min_effect_tick"]));
+			Assert.That(Keys(root), Is.EquivalentTo(["ok", "cmd", "tick", "min_effect_tick", "valid", "effect_tick", "settled", "settled_ticks", "path"]));
+			Assert.That(root.GetProperty("settled").GetBoolean(), Is.True, root.ToString());
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True);
 			Assert.That(root.GetProperty("cmd").GetString(), Is.EqualTo("order"));
-			Assert.That(root.GetProperty("tick").GetInt32(), Is.EqualTo(tick));
-			Assert.That(root.GetProperty("min_effect_tick").GetInt32(), Is.EqualTo(tick + 1));
+
+			// The pump ticks before a request is handled, so the issue tick is at or after the tick before the request.
+			var issueTick = root.GetProperty("tick").GetInt32();
+			Assert.That(issueTick, Is.GreaterThan(tick));
+			Assert.That(root.GetProperty("min_effect_tick").GetInt32(), Is.EqualTo(issueTick + 1));
 
 			Assert.That(hw.TickUntil(() => unit.Location == destination, 500), Is.Not.Null, "The unit never reached the destination.");
 		}
@@ -78,9 +82,13 @@ namespace OpenRA.Test
 			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
 			var pos = new WPos(destination.X * 1024 + 512, destination.Y * 1024 + 512, 0);
 
-			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"pos\":[{pos.X},{pos.Y},{pos.Z}]}}");
+			var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"pos\":[{pos.X},{pos.Y},{pos.Z}]}}";
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, line);
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
-			Assert.That(response.RootElement.GetProperty("min_effect_tick").GetInt32(), Is.EqualTo(hw.World.WorldTick + 1));
+
+			// The pump ticks before a request is handled, so the min_effect_tick follows the reply's tick, not the one before.
+			var issueTick = response.RootElement.GetProperty("tick").GetInt32();
+			Assert.That(response.RootElement.GetProperty("min_effect_tick").GetInt32(), Is.EqualTo(issueTick + 1));
 
 			Assert.That(hw.TickUntil(() => unit.Location == destination, 500), Is.Not.Null, "The unit never reached the destination.");
 		}
@@ -93,7 +101,8 @@ namespace OpenRA.Test
 			var friend = hw.CreateActor("e1", hw.FindClearArea(new CPos(60, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
-			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"target_actor\":{friend.ActorID}}}");
+			var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"target_actor\":{friend.ActorID}}}";
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, line);
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
 			Assert.That(response.RootElement.GetProperty("cmd").GetString(), Is.EqualTo("order"));
 		}

@@ -25,7 +25,20 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// Item, ExtraData and ExtraLocation become the order's TargetString, ExtraData and ExtraLocation. Null means absent.
 	/// </summary>
 	public sealed record OrderRequest(string Order, uint Actor, CPos? Cell, WPos? Pos, uint? TargetActor, bool Queued,
-		string Item, uint? ExtraData, CPos? ExtraLocation);
+		string Item, uint? ExtraData, CPos? ExtraLocation, int? SettleTicks);
+
+	/// <summary>
+	/// The Move reply (P1.3). Valid and EffectTick are null, and Settled is false, when the game was paused and the reply did not
+	/// wait. Path is the cells the Move planned, source cell first.
+	/// </summary>
+	public sealed record MoveV1(bool Ok, string Cmd, int Tick, int MinEffectTick, bool? Valid, int? EffectTick, bool Settled,
+		int SettledTicks, int[][] Path);
+
+	/// <summary>
+	/// What Issue returns on the game thread. Move is true for a Move order. Await is the wait the socket thread parks on in Settle,
+	/// or null when there is nothing to wait for: a non-Move order, or a Move in a paused game (Q1).
+	/// </summary>
+	public sealed record Issued(OrderV1 Ack, bool Move, AgentOrderAwait Await);
 
 	/// <summary>The orders command: the order names an actor accepts. Schema v1, additive.</summary>
 	public sealed record OrdersV1(bool Ok, string Cmd, uint Actor, string Type, string[] Orders);
@@ -134,18 +147,50 @@ namespace OpenRA.Mods.Common.AgentSocket
 				extraLocation = new CPos(l[0], l[1]);
 			}
 
-			request = new OrderRequest(orderElement.GetString(), actor, cell, pos, targetActor, queued, item, extraData, extraLocation);
+			int? settleTicks = null;
+			if (IsPresent(root, "settle_ticks"))
+			{
+				if (!TryGetUInt(root.GetProperty("settle_ticks"), out var settle) || settle > int.MaxValue)
+					return "settle_ticks must be an unsigned integer";
+
+				if (orderElement.GetString() != "Move")
+					return "settle_ticks applies only to Move";
+
+				settleTicks = (int)settle;
+			}
+
+			request = new OrderRequest(orderElement.GetString(), actor, cell, pos, targetActor, queued, item, extraData, extraLocation, settleTicks);
 			return null;
 		}
 
 		/// <summary>Validates the request and issues it. Must run on the game thread: it reads live world state.</summary>
-		public static OrderV1 Issue(World world, OrderRequest request)
+		public static Issued Issue(World world, OrderRequest request)
 		{
 			var order = ToOrder(world, request);
-			AgentOrderAwait.Register(order);
+			var move = order.OrderString == "Move";
+			var await = AgentOrderAwait.Register(order, move ? request.SettleTicks ?? AgentOrderAwait.DefaultSettleTicks : 0);
 			world.IssueOrder(order);
 
-			return new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
+			// A paused game never ticks, so a Move there has nothing to wait for (Q1). Its await still fails or settles on its own.
+			var ack = new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
+			return new Issued(ack, move, move && !world.Paused ? await : null);
+		}
+
+		/// <summary>
+		/// Builds the Move reply once the order has settled. Parks the calling socket thread in Wait, so the game thread keeps
+		/// ticking. Throws when the await fails: restored, a resolve timeout, a dead subject, or the wall-clock backstop.
+		/// Must not run on the game thread.
+		/// </summary>
+		public static MoveV1 Settle(Issued issued)
+		{
+			var ack = issued.Ack;
+			if (issued.Await == null)
+				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
+
+			var await = issued.Await;
+			await.Wait();
+			return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, await.Valid, await.ResolvedTick, true, await.SettleTicks,
+				await.Path ?? []);
 		}
 
 		/// <summary>

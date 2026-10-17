@@ -10,6 +10,13 @@
 #endregion
 
 using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using OpenRA.Traits;
 
@@ -75,7 +82,7 @@ namespace OpenRA.Test
 			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
 
 			var order = new Order("Move", unit, Target.FromCell(hw.World, destination), false);
-			var await = Call("Register", order);
+			var await = Call("Register", order, 3);
 			Assert.That(PendingCount(hw.World), Is.EqualTo(1), "The issued order was not registered.");
 
 			var issuedAt = hw.World.WorldTick;
@@ -96,14 +103,17 @@ namespace OpenRA.Test
 			first.Tick(1);
 			var firstDestination = first.FindClearArea(firstUnit.Location, 1, 1, 6);
 			var firstOrder = new Order("Move", firstUnit, Target.FromCell(first.World, firstDestination), false);
-			var firstAwait = Call("Register", firstOrder);
+			var firstAwait = Call("Register", firstOrder, 3);
 
 			using var second = HeadlessWorld.Create(2);
 			var secondUnit = second.CreateActor("e1", second.FindClearArea(new CPos(50, 50), 1, 1), second.LocalPlayer);
 			second.Tick(1);
+
+			// The world filter is only exercised when both worlds hand out the same actor ID.
+			Assert.That(secondUnit.ActorID, Is.EqualTo(firstUnit.ActorID), "The two worlds do not share an actor ID, so the world filter is untested.");
 			var secondDestination = second.FindClearArea(secondUnit.Location, 1, 1, 6);
 			var secondOrder = new Order("Move", secondUnit, Target.FromCell(second.World, secondDestination), false);
-			var secondAwait = Call("Register", secondOrder);
+			var secondAwait = Call("Register", secondOrder, 3);
 
 			second.World.IssueOrder(secondOrder);
 			Assert.That(second.TickUntil(() => Field<bool>(secondAwait, "Resolved"), 5), Is.Not.Null, "The second world's order never resolved.");
@@ -125,6 +135,150 @@ namespace OpenRA.Test
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.False);
 			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo($"Actor {unit.ActorID} is dead"));
 			Assert.That(PendingCount(hw.World), Is.EqualTo(0), "A rejected order left an await pending.");
+		}
+
+		static Type ModType(string name)
+		{
+			return HeadlessMod.ModData.ObjectCreator.FindType(name);
+		}
+
+		static object Invoke(object target, string method, params object[] args)
+		{
+			return target.GetType().GetMethod(method).Invoke(target, args);
+		}
+
+		/// <summary>Takes every queued event from the subscriber. Fails rather than blocking when nothing was delivered.</summary>
+		static List<object> Take(object subscriber)
+		{
+			var pending = (int)subscriber.GetType().GetProperty("Pending").GetValue(subscriber);
+			Assert.That(pending, Is.GreaterThan(0), "No events reached the subscriber.");
+			return ((IList)Invoke(subscriber, "Take")).Cast<object>().ToList();
+		}
+
+		[TestCase(TestName = "A Move reply waits for the order to settle, then reports its effect tick, path and settle count")]
+		public void MoveReplyWaitsForSettleAndReportsIt()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+			var start = unit.Location;
+
+			var subscriber = Activator.CreateInstance(ModType("AgentSocket.AgentEventSubscriber"));
+			try
+			{
+				Invoke(subscriber, "Subscribe", new[] { "orders" }, null);
+
+				var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
+				using var response = AgentStateDumpTest.RequestWithTicks(hw, line);
+				var root = response.RootElement;
+
+				Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+
+				// The pump ticks before a request is handled, so the issue tick is the reply's tick, not the one before the request.
+				var issueTick = root.GetProperty("tick").GetInt32();
+				Assert.That(root.GetProperty("min_effect_tick").GetInt32(), Is.EqualTo(issueTick + 1));
+				Assert.That(root.GetProperty("valid").GetBoolean(), Is.True);
+				Assert.That(root.GetProperty("settled").GetBoolean(), Is.True);
+				Assert.That(root.GetProperty("settled_ticks").GetInt32(), Is.EqualTo(3));
+
+				var effectTick = root.GetProperty("effect_tick").GetInt32();
+				Assert.That(effectTick, Is.GreaterThanOrEqualTo(issueTick + 1), "The order took effect before the tick after issue.");
+
+				var orders = Take(subscriber).Where(e => e.GetType().Name == "OrderEventV1").ToList();
+				Assert.That(orders, Has.Count.EqualTo(1), "Expected exactly one order event.");
+				Assert.That(Field<int>(orders[0], "EffectTick"), Is.EqualTo(effectTick), "The reply's effect_tick is not the order event's.");
+
+				var path = root.GetProperty("path");
+				Assert.That(path.GetArrayLength(), Is.GreaterThan(0), "The path is empty.");
+				Assert.That(new[] { path[0][0].GetInt32(), path[0][1].GetInt32() }, Is.EqualTo(new[] { start.X, start.Y }), "The path does not start at the actor's cell.");
+			}
+			finally
+			{
+				Invoke(subscriber, "Close");
+			}
+		}
+
+		[TestCase(TestName = "A Move while the game is paused returns at once, unsettled, and the tick does not move")]
+		public void PausedMoveReturnsAtOnce()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+			hw.World.SetLocalPauseState(true);
+			var tick = hw.World.WorldTick;
+
+			// Request, not RequestWithTicks: a paused game never ticks, so a reply that waited would hang.
+			var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
+			using var response = AgentStateDumpTest.Request(line);
+			var root = response.RootElement;
+
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+			Assert.That(root.GetProperty("settled").GetBoolean(), Is.False);
+			Assert.That(root.GetProperty("valid").ValueKind, Is.EqualTo(JsonValueKind.Null));
+			Assert.That(root.GetProperty("effect_tick").ValueKind, Is.EqualTo(JsonValueKind.Null));
+			Assert.That(root.GetProperty("tick").GetInt32(), Is.EqualTo(tick));
+			Assert.That(hw.World.WorldTick, Is.EqualTo(tick), "The paused game advanced.");
+		}
+
+		[TestCase(TestName = "A world swap fails a Move in flight with the restored error")]
+		public void WorldSwapFailsMoveInFlightWithRestored()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+
+			// The request runs on a worker thread, as the socket does. This thread pumps the game loop until the Move has
+			// registered, then swaps the world. The world is not ticked, so nothing settles the Move before the swap.
+			var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
+			var handle = ModType("AgentSocket.AgentSocketCommands").GetMethod("Handle", BindingFlags.Public | BindingFlags.Static);
+			var reply = Task.Run(() => (string)handle.Invoke(null, [line, null]));
+
+			var deadline = DateTime.UtcNow.AddSeconds(10);
+			while (PendingCount(hw.World) == 0 && DateTime.UtcNow < deadline)
+			{
+				Game.PerformDelayedActions();
+				Thread.Sleep(1);
+			}
+
+			Assert.That(PendingCount(hw.World), Is.EqualTo(1), "The Move never registered.");
+
+			var bridgeType = ModType("AgentWorldBridge");
+			bridgeType.GetMethod("WorldAdopted").Invoke(Activator.CreateInstance(bridgeType), [hw.World, null]);
+
+			while (!reply.IsCompleted && DateTime.UtcNow < deadline)
+			{
+				Game.PerformDelayedActions();
+				Thread.Sleep(1);
+			}
+
+			Assert.That(reply.IsCompleted, Is.True, "The request never returned.");
+			using var response = JsonDocument.Parse(reply.Result);
+			var root = response.RootElement;
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False);
+			Assert.That(root.GetProperty("cmd").GetString(), Is.EqualTo("order"));
+			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo("restored"));
+			Assert.That(PendingCount(hw.World), Is.EqualTo(0), "The failed Move left an await pending.");
+		}
+
+		[TestCase(TestName = "An order that never resolves is failed by the resolve budget and leaves nothing pending")]
+		public void UnresolvedOrderIsFailedByBudget()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+
+			// Registered but never issued to the world, so it can never resolve.
+			Call("Register", new Order("Move", unit, Target.FromCell(hw.World, destination), false), 3);
+			Assert.That(PendingCount(hw.World), Is.EqualTo(1));
+
+			var budget = (int)AwaitType().GetField("ResolveBudgetTicks").GetValue(null);
+			hw.Tick(budget + 1);
+
+			Assert.That(PendingCount(hw.World), Is.EqualTo(0), "The unresolved await was not failed by the resolve budget.");
 		}
 	}
 }

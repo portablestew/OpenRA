@@ -128,8 +128,9 @@ namespace OpenRA.Test
 			hw.Tick(1);
 			var destination = hw.FindClearArea(mcv.Location, 1, 1, 6);
 
-			using var move = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{mcv.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}");
-			Assert.That(Keys(move.RootElement), Is.EquivalentTo(["ok", "cmd", "tick", "min_effect_tick"]));
+			var line = $"{{\"cmd\":\"order\",\"actor\":{mcv.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
+			using var move = AgentStateDumpTest.RequestWithTicks(hw, line);
+			Assert.That(Keys(move.RootElement), Is.EquivalentTo(["ok", "cmd", "tick", "min_effect_tick", "valid", "effect_tick", "settled", "settled_ticks", "path"]));
 			Assert.That(move.RootElement.GetProperty("ok").GetBoolean(), Is.True);
 
 			using var deploy = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{mcv.ActorID},\"order\":\"DeployTransform\"}}");

@@ -23,7 +23,7 @@ namespace OpenRA.Mods.Common
 	/// Tracks the world the agent socket talks to. Registered in the World: block only (D2). Does nothing unless
 	/// Debug.AgentSocket is set (D12). Starts the listener on the first non-headless world load.
 	/// </summary>
-	public sealed class AgentWorldBridge : IWorldLoaded, IWorldAdopted
+	public sealed class AgentWorldBridge : IWorldLoaded, IWorldAdopted, ITick
 	{
 		static World active;
 		static WorldRenderer activeRenderer;
@@ -61,8 +61,17 @@ namespace OpenRA.Mods.Common
 				AgentSocketServer.Start(Game.Settings.Debug.AgentSocketPort);
 		}
 
+		// The settle clock for the socket's awaits on this world (P1.3). It runs on the world actor each tick.
+		void ITick.Tick(Actor self)
+		{
+			AgentOrderAwait.Tick(self.World);
+		}
+
 		public void WorldAdopted(World w, WorldRenderer wr)
 		{
+			// An undo swaps the world, so no pending order resolves on the old one. Their waiters get the restored error.
+			AgentOrderAwait.FailAllRestored();
+
 			if (Enabled)
 			{
 				active = w;
