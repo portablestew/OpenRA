@@ -104,12 +104,19 @@ namespace OpenRA.Test
 		/// </summary>
 		internal static JsonDocument RequestWithTicks(HeadlessWorld hw, string line)
 		{
+			return RequestWithTicks(hw, line, null);
+		}
+
+		/// <summary>Like <see cref="RequestWithTicks(HeadlessWorld, string)"/>, and onTick runs on the test thread after each tick while the request waits.</summary>
+		internal static JsonDocument RequestWithTicks(HeadlessWorld hw, string line, Action onTick)
+		{
 			var request = Task.Run(() => (string)Handle.Value.Invoke(null, [line, null]));
 
 			var deadline = DateTime.UtcNow.AddSeconds(10);
 			while (!request.IsCompleted && DateTime.UtcNow < deadline)
 			{
 				hw.TickOnce();
+				onTick?.Invoke();
 				Game.PerformDelayedActions();
 				Thread.Sleep(1);
 			}

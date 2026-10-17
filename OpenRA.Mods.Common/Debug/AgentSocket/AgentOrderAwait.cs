@@ -105,6 +105,18 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>True for a DeployTransform await. Its outcome is set by the transform activity's end, or by a refusal (P1.8).</summary>
 		public bool IsDeploy => order == "DeployTransform";
 
+		/// <summary>
+		/// The cell a deploy must end on (P1.14), the top-left cell the request resolved to. Null for other awaits, and for a deploy
+		/// that was not checked. Set by AgentDeploy before the transform can start.
+		/// </summary>
+		public CPos? ExpectedCell { get; set; }
+
+		/// <summary>
+		/// The top-left cell the transform ended on (P1.14), where the actor deployed or stopped. Null until the transform ends. The
+		/// deploy reply reports it as the cell, so a move that ends elsewhere is not reported at the chosen cell.
+		/// </summary>
+		public CPos? DeployedCell { get; private set; }
+
 		/// <summary>The outcome of a finished Attack await: Started or NoValidTarget. Null for other awaits, and for an attack in a paused game.</summary>
 		public string Outcome { get; private set; }
 
@@ -286,10 +298,22 @@ namespace OpenRA.Mods.Common.AgentSocket
 				if (await == null)
 					return;
 
+				// The transform ends on the cell the actor stands on. When that is not the chosen cell, the Move did not reach it (P1.14),
+				// and the reply says where the actor ended up, whatever the transform's own outcome.
+				var transforms = self.TraitOrDefault<Transforms>();
+				var ended = transforms == null ? self.Location : self.Location + transforms.Info.Offset;
+				await.DeployedCell = ended;
+				if (await.ExpectedCell is { } expected && expected != ended)
+				{
+					var verb = state == "completed" ? "deployed" : "stopped";
+					Finish(await, Canceled, $"the actor {verb} at {ended.X},{ended.Y}, not the chosen cell {expected.X},{expected.Y}: the move did not reach it");
+					return;
+				}
+
 				if (state == "completed")
 					Finish(await, Completed, null);
 				else
-					Finish(await, Canceled, reason == "cannot_deploy" ? self.TraitOrDefault<Transforms>()?.DeployRefusalReason() ?? reason : reason);
+					Finish(await, Canceled, reason == "cannot_deploy" ? transforms?.DeployRefusalReason() ?? reason : reason);
 			}
 		}
 

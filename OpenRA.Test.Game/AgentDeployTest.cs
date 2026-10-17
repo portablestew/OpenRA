@@ -174,6 +174,42 @@ namespace OpenRA.Test
 			Assert.That(mcv.IsDead, Is.True, "The mcv should have been replaced.");
 		}
 
+		[TestCase(TestName = "A move that falls short of the chosen cell replies canceled with the cell it stopped on, not completed")]
+		public void MoveShortOfChosenCellRepliesCanceled()
+		{
+			using var hw = HeadlessWorld.Create(0xDEB1D);
+			hw.Tick(SettleTicks);
+			var mcv = CreateMcv(hw);
+			var start = Footprint(mcv);
+
+			// As in the five-cell test, the chosen cell is five below start. Its Move ends at the mcv's cell, which is that cell
+			// less the transform offset: start + (1, 6). A blocker placed there once the Move is queued makes the Move fall short.
+			BlockSquare(hw, start, 4);
+			hw.Tick(1);
+			var chosen = new CPos(start.X, start.Y + 5);
+			var moveDestination = start + new CVec(1, 6);
+			var placed = false;
+
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, DeployLine(mcv), () =>
+			{
+				if (!placed && mcv.CurrentActivity != null)
+				{
+					hw.CreateActor(Blocker, moveDestination);
+					placed = true;
+				}
+			});
+			var root = response.RootElement;
+
+			Assert.That(placed, Is.True, "The mcv never got an activity, so the Move was never blocked.");
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False, root.ToString());
+			Assert.That(root.GetProperty("moved").GetBoolean(), Is.True);
+			Assert.That(root.GetProperty("outcome").GetString(), Is.EqualTo("canceled"));
+			Assert.That(root.GetProperty("reason").GetString(), Does.Contain("not the chosen cell"));
+
+			var cell = root.GetProperty("cell").EnumerateArray().Select(e => e.GetInt32()).ToArray();
+			Assert.That(cell, Is.Not.EqualTo(new[] { chosen.X, chosen.Y }), "The reply should name where the mcv stopped, not the chosen cell.");
+		}
+
 		[TestCase(TestName = "await:false returns a job id, and wait on that job returns the deploy outcome")]
 		public void AwaitFalseReturnsJobThatWaitCollects()
 		{

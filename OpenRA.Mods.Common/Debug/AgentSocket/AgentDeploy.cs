@@ -26,9 +26,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	/// <summary>
 	/// The deploy command's reply (P1.13). RequestedCell is the at the request gave, or null when it was omitted. Cell is the
-	/// top-left cell the transform deploys on, which is the resolved cell when the request gave none. Moved is true when a Move
+	/// top-left cell the transform ended on (P1.14): the resolved cell when the actor got there, else where it stopped. Moved is true when a Move
 	/// took the actor there first. Settled, Outcome and Reason are the DeployTransform outcome (P1.8): completed, or canceled with
-	/// the cell reason. Outcome and Reason are null when the reply came before the deploy settled, as in a paused game.
+	/// the cell reason, or the misplaced reason when the Move fell short of the chosen cell. Outcome and Reason are null when the reply came before the deploy settled, as in a paused game.
 	/// </summary>
 	public sealed record DeployedV1(bool Ok, string Cmd, uint Actor, int[] RequestedCell, int[] Cell, bool Moved, bool Settled,
 		string Outcome, string Reason, int Tick, int MinEffectTick);
@@ -48,7 +48,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>
 	/// What Start issued on the game thread (P1.13). Await is the one wait for the whole sequence: when the actor must move, the
 	/// DeployTransform is queued after the Move, so the await settles when the transform ends. Paused is true when the game is
-	/// paused, so nothing will tick the await.
+	/// paused, so nothing will tick the await. The transform's end is checked against Cell (P1.14): a Move that falls short replies canceled.
 	/// </summary>
 	public sealed record DeployIssued(OrderV1 Ack, AgentOrderAwait Await, uint Actor, int[] RequestedCell, CPos Cell, bool Moved, bool Paused);
 
@@ -145,6 +145,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			// Queued after the Move when the actor moves, so the transform starts when the Move ends. Unqueued when it stays put.
 			var deploy = new Order("DeployTransform", actor, moved);
 			var await = AgentOrderAwait.Register(deploy, 0);
+			await.ExpectedCell = cell;
 			world.IssueOrder(deploy);
 			selection.Ordered(world, actor);
 
@@ -160,7 +161,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var settled = await.Settled;
 			var outcome = settled ? await.Outcome : null;
 			var reason = settled ? await.Reason : null;
-			var cell = new[] { issued.Cell.X, issued.Cell.Y };
+
+			// The cell the actor deployed or stopped on, which is the chosen cell unless the Move fell short (P1.14).
+			var at = settled && await.DeployedCell is { } ended ? ended : issued.Cell;
+			var cell = new[] { at.X, at.Y };
 			return new DeployedV1(outcome != AgentOrderAwait.Canceled, cmd, issued.Actor, issued.RequestedCell, cell, issued.Moved,
 				settled, outcome, reason, issued.Ack.Tick, issued.Ack.MinEffectTick);
 		}
