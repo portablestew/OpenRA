@@ -27,14 +27,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 		const string OverflowEvent = "overflow";
 
 		/// <summary>The commands the dispatcher answers, with their request keys and response keys.</summary>
-		static readonly (string Name, string Summary)[] Commands =
+		static readonly (string Name, string Summary, string Example)[] Commands =
 		[
-			("ping", "-> tick"),
-			("help", "-> banner (this text, as one string)"),
-			("state", "-> tick, net_frame, map, paused, game_over, local_player, players, units"),
-			("actors", "owner, type (optional filters) -> units"),
-			("maps", "-> maps"),
-			("load_map", "map (string, uid or title) -> the state shape, once the new world is ready"),
+			("ping", "-> tick", "{\"cmd\":\"ping\"}"),
+			("help", "-> banner (this text, as one string)", "{\"cmd\":\"help\"}"),
+			("state", "-> tick, net_frame, map, paused, game_over, local_player, players, units", "{\"cmd\":\"state\"}"),
+			("actors", "owner, type (optional filters) -> units", "{\"cmd\":\"actors\",\"type\":\"e1\"}"),
+			("maps", "-> maps", "{\"cmd\":\"maps\"}"),
+			("load_map", "map (string, uid or title) -> the state shape, once the new world is ready",
+				"{\"cmd\":\"load_map\",\"map\":\"<a uid from maps>\"}"),
 			("order", "actor (uint); order (string); at most one of cell [x,y], pos [x,y,z], target_actor (uint);"
 				+ " optional queued (bool), item (string), extra_data (uint), extra_location [x,y], settle_ticks (Move only),"
 				+ " await (bool, default true; false is Move only)\n"
@@ -43,32 +44,39 @@ namespace OpenRA.Mods.Common.AgentSocket
 						+ " For an Attack, outcome (started | no_valid_target) and settled; no_valid_target adds reason."
 				+ " await:false returns job (the id for wait) with tick, min_effect_tick, and does not wait."
 				+ " A name the actor does not accept is refused: ok:false, error, available (the names it accepts)."
-				+ " The exception is Attack, which is never refused here: an attack that cannot start replies no_valid_target"),
+				+ " The exception is Attack, which is never refused here: an attack that cannot start replies no_valid_target",
+				"{\"cmd\":\"order\",\"actor\":12,\"order\":\"Move\",\"cell\":[40,50],\"await\":false}"),
 			("wait", "job (int); optional timeout_ms (non-negative int, default 10000)\n"
 				+ "                -> the Move reply (cmd:wait, same keys as a Move order reply) once the job settles, or"
 				+ " status:\"pending\" if it has not settled by the timeout (the job stays open). An unknown job, or a job whose"
-				+ " world load_map or undo replaced: ok:false, error"),
-			("orders", "actor (uint) -> type, orders (the order names the actor accepts)"),
-			("production", "-> player, cash, resources, power, queues (the local player's queues; see Production keys)"),
+				+ " world load_map or undo replaced: ok:false, error",
+				"{\"cmd\":\"wait\",\"job\":1,\"timeout_ms\":5000}"),
+			("orders", "actor (uint) -> type, orders (the order names the actor accepts)", "{\"cmd\":\"orders\",\"actor\":12}"),
+			("production", "-> player, cash, resources, power, queues (the local player's queues; see Production keys)", "{\"cmd\":\"production\"}"),
 			("build", "item (string); optional count (positive int, default 1)\n"
 				+ "                -> ok, actor, queue_type, item, count, tick, min_effect_tick. Not buildable now: ok:false, error,"
-				+ " available (the items build accepts now: buildable and affordable)"),
+				+ " available (the items build accepts now: buildable and affordable)",
+				"{\"cmd\":\"build\",\"item\":\"e1\",\"count\":2}"),
 			("place", "item (string); optional cell [x,y] (default: the producer's location)\n"
 				+ "                -> ok, item, requested_cell (null if omitted), search_from, cell, tick, min_effect_tick. The nearest"
-				+ " valid cell within 10 of search_from is used. Not done or no valid cell: ok:false, error"),
+				+ " valid cell within 10 of search_from is used. Not done or no valid cell: ok:false, error",
+				"{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[40,50]}"),
 			("screenshot", "optional actor (uint): centre the view on that live unit first\n"
 				+ "                -> ok, cmd, path (the PNG, already written), actor (null if omitted), center_px, unit_px (map pixels, not window pixels; null if"
 				+ " omitted), tick. Waits for the next rendered frame to be saved, so the file exists when the reply arrives."
-				+ " No window (headless), no world view, the shellmap, an unknown or dead actor, or a failed write: ok:false, error"),
+				+ " No window (headless), no world view, the shellmap, an unknown or dead actor, or a failed write: ok:false, error",
+				"{\"cmd\":\"screenshot\",\"actor\":12}"),
 			("subscribe", "events (non-empty array of group names); optional owner (player name) -> subscribed\n"
 				+ "                owner filters only the groups named in this request; omit it to receive every owner's events."
-				+ " A later subscribe replaces a group's filter"),
-			("unsubscribe", "events (array), or all:true -> subscribed"),
+				+ " A later subscribe replaces a group's filter",
+				"{\"cmd\":\"subscribe\",\"events\":[\"damage\",\"killed\"],\"owner\":\"Multi0\"}"),
+			("unsubscribe", "events (array), or all:true -> subscribed", "{\"cmd\":\"unsubscribe\",\"events\":[\"damage\"]}"),
 			("undo", "offset (string): \"-<seconds>\" rewinds, \"+<seconds>\" advances, \"@<seconds>\" jumps to that"
 				+ " absolute game time, read at 25 ticks per second\n"
 				+ "                -> tick, requested_tick, moved_ticks (signed), held. The snapshot nearest the target game"
 				+ " time is restored; nothing is consumed. A missing or unprefixed offset, or no snapshot in range:"
-				+ " ok:false, error (the usage)"),
+				+ " ok:false, error (the usage)",
+				"{\"cmd\":\"undo\",\"offset\":\"-10\"}"),
 		];
 
 		/// <summary>Each event group, the event type it carries, and the record that defines the payload.</summary>
@@ -102,8 +110,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("Every response but help is an envelope: results, events, state, tick, map_state_png, map_state_tick.\n");
 			text.Append("Inside results, responses echo cmd and carry ok. Errors carry ok:false and error.\n");
 			text.Append("Commands (request keys, then response keys):\n");
-			foreach (var (name, summary) in Commands)
+			foreach (var (name, summary, example) in Commands)
+			{
 				Row(text, name, 11, summary);
+				Row(text, "", 11, $"example: {example}");
+			}
 
 			text.Append("Event groups, for subscribe. Each event is one line; its event key names its type:\n");
 			foreach (var (group, type, payload) in Events)
@@ -125,6 +136,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			Row(text, "item", 12, Fields(typeof(ProductionItemV1)));
 
 			text.Append("Notes:\n");
+			text.Append("  Bearings: 8-way N/NE/E/SE/S/SW/W/NW on map axes (+X East, +Y South), from a friendly actor toward the target.\n");
 			text.Append("  After the banner, and after every response, the server sends a lone > line as a prompt: it is your turn.\n");
 			text.Append("  A > line is not a response and not an event; skip lines that are just >.\n");
 			text.Append("  An array is one request: the items run in order and results is one JSON array, one result per item.\n");

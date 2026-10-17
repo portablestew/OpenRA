@@ -49,6 +49,26 @@ namespace OpenRA.Test
 			Assert.That(listed, Is.EquivalentTo(AgentSocketCommands.Names));
 		}
 
+		[TestCase(TestName = "Every command has exactly one example line in the banner, and each example is a request for that command")]
+		public void EveryCommandHasAnExample()
+		{
+			const string Prefix = "example: ";
+
+			// Each command's example sits on the line under its row, indented past the command column.
+			var examples = BannerLines.Where(l => l.TrimStart().StartsWith(Prefix, StringComparison.Ordinal))
+				.Select(l => l.TrimStart()[Prefix.Length..])
+				.ToArray();
+
+			var cmds = examples.Select(e =>
+			{
+				using var doc = JsonDocument.Parse(e);
+				return doc.RootElement.GetProperty("cmd").GetString();
+			}).ToArray();
+
+			Assert.That(cmds, Is.Unique);
+			Assert.That(cmds, Is.EquivalentTo(AgentSocketCommands.Names));
+		}
+
 		[TestCase(TestName = "An unknown command is answered with the unknown command error")]
 		public void UnknownCommandIsAnError()
 		{
