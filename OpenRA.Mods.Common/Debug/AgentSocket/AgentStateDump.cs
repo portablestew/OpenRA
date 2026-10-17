@@ -47,22 +47,36 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			return new StateV1(true, "state", world.WorldTick, world.NetFrameNumber,
 				new MapV1(world.Map.Uid, world.Map.Title), world.Paused, world.IsGameOver,
-				world.LocalPlayer?.PlayerName, world.Players.Select(PlayerState).ToArray(), Units(world, null, null));
+				world.LocalPlayer?.PlayerName, world.Players.Select(PlayerState).ToArray(), Units(world, null, null, includeScenery: false));
 		}
 
 		public static ActorsV1 Actors(World world, string owner, string type)
 		{
-			return new ActorsV1(true, "actors", Units(world, owner, type));
+			return new ActorsV1(true, "actors", Units(world, owner, type, includeScenery: true));
 		}
 
-		/// <summary>Live, non-disposed world actors that occupy space, in ActorID order. Null filters match everything.</summary>
-		static UnitV1[] Units(World world, string owner, string type)
+		/// <summary>
+		/// Live, non-disposed world actors that occupy space, in ActorID order. Null filters match everything. The state digest
+		/// leaves out scenery (P2.4): the world's own actors and spawn markers. The actors command keeps them, since it filters by
+		/// owner and type, so a request for the neutral owner still finds its actors.
+		/// </summary>
+		static UnitV1[] Units(World world, string owner, string type, bool includeScenery)
 		{
 			return world.Actors
-				.Where(a => a.OccupiesSpace != null && !a.IsDead && (owner == null || a.Owner?.PlayerName == owner) && (type == null || a.Info.Name == type))
+				.Where(a => a.OccupiesSpace != null && !a.IsDead && (owner == null || a.Owner?.PlayerName == owner)
+					&& (type == null || a.Info.Name == type) && (includeScenery || !IsScenery(a)))
 				.OrderBy(a => a.ActorID)
 				.Select(UnitState)
 				.ToArray();
+		}
+
+		/// <summary>
+		/// Scenery is what the world owns (the neutral player that OwnsWorld, which map trees and buildings belong to), or an mpspawn
+		/// marker. Creeps are not scenery: they are NonCombatant but they fight, so they stay in the digest.
+		/// </summary>
+		static bool IsScenery(Actor a)
+		{
+			return a.Owner?.PlayerReference?.OwnsWorld == true || a.Info.Name == "mpspawn";
 		}
 
 		static UnitV1 UnitState(Actor a)
