@@ -9,6 +9,8 @@
  */
 #endregion
 
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Traits;
@@ -18,7 +20,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	// Schema v1. Wire keys are snake_case (AgentSocketCommands.Json). The envelope fields ok and cmd are part of the
 	// state and actors lines, so every key a client sees is declared here.
 	public sealed record StateV1(bool Ok, string Cmd, int Tick, int NetFrame, StateMapV1 Map, bool Paused, bool GameOver,
-		string LocalPlayer, PlayerV1[] Players, UnitV1[] Units);
+		string LocalPlayer, PlayerV1[] Players, object[] Units);
 
 	public sealed record ActorsV1(bool Ok, string Cmd, UnitV1[] Units);
 
@@ -33,8 +35,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>A player's home cell (P2.6): Cell is the top-left cell of Player's HomeLocation.</summary>
 	public sealed record SpawnV1(string Player, int[] Cell);
 
-	/// <summary>Resources are 0 for a player without a PlayerResources trait. Dead means WinState.Lost. Power is null without a PowerManager trait.</summary>
-	public sealed record PlayerV1(string Name, string Faction, int Cash, int Resources, int ResourceCapacity, bool Dead, PowerV1 Power);
+	/// <summary>
+	/// Resources are 0 for a player without a PlayerResources trait. Dead means WinState.Lost. Power is null without a PowerManager
+	/// trait. KnownCounts is the number of each type the local player knows of this player's units (P2.5): all of them for the local
+	/// player, and for another player only those AgentFog says are known. Null when there is no local player.
+	/// </summary>
+	public sealed record PlayerV1(string Name, string Faction, int Cash, int Resources, int ResourceCapacity, bool Dead, PowerV1 Power,
+		Dictionary<string, int> KnownCounts);
 
 	/// <summary>
 	/// Provided and Drained are the PowerManager totals. Excess is Provided - Drained. State is the PowerState name:
@@ -49,6 +56,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record UnitV1(uint Id, string Type, string Owner, int[] Cell, int[] Pos, int? Facing, int? Hp, int? MaxHp,
 		string Damage, bool Idle, string Activity);
 
+	/// <summary>
+	/// An own structure in the state units (P2.5): only the keys the agent needs to address it and see its health. Cell is the
+	/// top-left cell. Hp is null for a structure without IHealth. The full UnitV1 entry is kept for every other unit.
+	/// </summary>
+	public sealed record StructureV1(uint Id, string Type, int[] Cell, int? Hp);
+
 	/// <summary>Builds the schema v1 snapshot. Must run on the game thread: it reads live world state.</summary>
 	public static class AgentStateDump
 	{
@@ -56,7 +69,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			return new StateV1(true, "state", world.WorldTick, world.NetFrameNumber,
 				StateMap(world), world.Paused, world.IsGameOver,
-				world.LocalPlayer?.PlayerName, world.Players.Select(PlayerState).ToArray(), Units(world, null, null, includeScenery: false));
+				world.LocalPlayer?.PlayerName, world.Players.Select(p => PlayerState(p, world.LocalPlayer)).ToArray(), StateUnits(world));
 		}
 
 		/// <summary>The state's map: uid, title, Map.Bounds, and each player's home cell (P2.6).</summary>
@@ -99,6 +112,48 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return a.Owner?.PlayerReference?.OwnsWorld == true || a.Info.Name == "mpspawn";
 		}
 
+		/// <summary>
+		/// The state's units (P2.5): the scenery-free occupying actors in ActorID order. The local player's structures are slim
+		/// (StructureV1); every other unit keeps the full UnitV1 entry.
+		/// </summary>
+		static object[] StateUnits(World world)
+		{
+			var observer = world.LocalPlayer;
+			return world.Actors
+				.Where(a => a.OccupiesSpace != null && !a.IsDead && !IsScenery(a))
+				.OrderBy(a => a.ActorID)
+				.Select(a => IsOwnStructure(a, observer) ? (object)StructureState(a) : UnitState(a))
+				.ToArray();
+		}
+
+		static bool IsOwnStructure(Actor a, Player observer)
+		{
+			return observer != null && a.Owner == observer && a.Info.HasTraitInfo<BuildingInfo>();
+		}
+
+		static StructureV1 StructureState(Actor a)
+		{
+			return new StructureV1(a.ActorID, a.Info.Name, [a.Location.X, a.Location.Y], a.TraitOrDefault<IHealth>()?.HP);
+		}
+
+		/// <summary>
+		/// The number of each type the observer knows of a player's units (P2.5), by type. The observer's own units all count. Another
+		/// player's count only when AgentFog says the observer knows the unit: visible, a valid last-known snapshot, or a GPS dot.
+		/// Scenery is left out, as in the units list. Null without an observer.
+		/// </summary>
+		static Dictionary<string, int> KnownCounts(Player player, Player observer)
+		{
+			if (observer == null)
+				return null;
+
+			return player.World.Actors
+				.Where(a => a.Owner == player && a.OccupiesSpace != null && !a.IsDead && !IsScenery(a)
+					&& (player == observer || AgentFog.Known(a, observer)))
+				.GroupBy(a => a.Info.Name)
+				.OrderBy(g => g.Key, StringComparer.Ordinal)
+				.ToDictionary(g => g.Key, g => g.Count());
+		}
+
 		static UnitV1 UnitState(Actor a)
 		{
 			var health = a.TraitOrDefault<IHealth>();
@@ -111,7 +166,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				a.IsIdle, a.CurrentActivity?.GetType().Name);
 		}
 
-		static PlayerV1 PlayerState(Player p)
+		static PlayerV1 PlayerState(Player p, Player observer)
 		{
 			var resources = p.PlayerActor.TraitOrDefault<PlayerResources>();
 			var power = p.PlayerActor.TraitOrDefault<PowerManager>();
@@ -119,7 +174,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return new PlayerV1(p.PlayerName, p.Faction?.InternalName,
 				resources?.Cash ?? 0, resources?.Resources ?? 0, resources?.ResourceCapacity ?? 0,
 				p.WinState == WinState.Lost,
-				Power(power));
+				Power(power), KnownCounts(p, observer));
 		}
 
 		/// <summary>The PowerManager totals and state, or null for a player without a PowerManager.</summary>
