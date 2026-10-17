@@ -78,6 +78,26 @@ namespace OpenRA.Test
 			return JsonDocument.Parse(request.GetAwaiter().GetResult());
 		}
 
+		/// <summary>
+		/// Like <see cref="Request"/>, but the test thread also advances the world each loop, so a request that waits
+		/// for world ticks (every await) can complete. Each loop ticks before it performs delayed actions, so a request
+		/// handled on the game thread always sees at least one tick since it was issued.
+		/// </summary>
+		internal static JsonDocument RequestWithTicks(HeadlessWorld hw, string line)
+		{
+			var request = Task.Run(() => (string)Handle.Value.Invoke(null, [line, null]));
+
+			var deadline = DateTime.UtcNow.AddSeconds(10);
+			while (!request.IsCompleted && DateTime.UtcNow < deadline)
+			{
+				hw.TickOnce();
+				Game.PerformDelayedActions();
+				Thread.Sleep(1);
+			}
+
+			return JsonDocument.Parse(request.GetAwaiter().GetResult());
+		}
+
 		static IEnumerable<string> Keys(JsonElement element)
 		{
 			return element.EnumerateObject().Select(p => p.Name);
@@ -164,6 +184,22 @@ namespace OpenRA.Test
 			var owned = byOwner.RootElement.GetProperty("units").EnumerateArray().ToList();
 			Assert.That(owned, Is.Not.Empty);
 			Assert.That(owned.All(u => u.GetProperty("owner").GetString() == owner), Is.True);
+		}
+
+		[TestCase(TestName = "A Move request through the ticking pump is handled after the world has advanced past its issue tick")]
+		public void TickingPumpAdvancesWorldWhileRequestPending()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+			var issueTick = hw.World.WorldTick;
+
+			var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
+			using var response = RequestWithTicks(hw, line);
+
+			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
+			Assert.That(response.RootElement.GetProperty("tick").GetInt32(), Is.GreaterThan(issueTick));
 		}
 
 		[TestCase(TestName = "The maps line lists lobby-available maps as uid and title pairs")]
