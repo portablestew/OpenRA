@@ -208,7 +208,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 			catch (BuildRefusedException e)
 			{
-				return Serialize(new BuildRefusedV1(false, cmd, e.Message, e.Available, Hint));
+				return Serialize(new BuildRefusedV1(false, cmd, e.Message, e.Available, e.MissingPrerequisites, e.Ready, e.EtaTicks, Hint));
 			}
 			catch (OrderRefusedException e)
 			{

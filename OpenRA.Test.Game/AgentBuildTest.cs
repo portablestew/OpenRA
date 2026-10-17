@@ -24,8 +24,8 @@ namespace OpenRA.Test
 	[TestFixture]
 	sealed class AgentBuildTest
 	{
-		static readonly string[] SuccessKeys = ["ok", "cmd", "actor", "queue_type", "item", "count", "tick", "min_effect_tick"];
-		static readonly string[] RefusedKeys = ["ok", "cmd", "error", "available", "hint"];
+		static readonly string[] SuccessKeys = ["ok", "cmd", "actor", "queue_type", "item", "count", "tick", "min_effect_tick", "ready", "eta_ticks"];
+		static readonly string[] RefusedKeys = ["ok", "cmd", "error", "available", "missing_prerequisites", "ready", "eta_ticks", "hint"];
 
 		bool savedAgentSocket;
 
@@ -117,11 +117,62 @@ namespace OpenRA.Test
 			using var response = AgentStateDumpTest.Request("{\"cmd\":\"build\",\"item\":\"proc\"}");
 			var root = response.RootElement;
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False);
-			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo("'proc' is not buildable now: its prerequisites are not met"));
+			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo("'proc' is not buildable now: missing prerequisites: anypower"));
+			Assert.That(Missing(root), Is.EqualTo(new[] { "anypower" }));
 
 			var available = Available(root);
 			Assert.That(available, Does.Contain("powr"));
 			Assert.That(available, Does.Not.Contain("proc"));
+		}
+
+		[TestCase(TestName = "A tech item with two missing prerequisites is refused, and the refusal names both")]
+		public void TwoMissingPrerequisitesAreBothNamed()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			// ATEK needs a War Factory (weap) and a Radar Dome (dome). Its faction and tech-level terms are also listed, as the engine reports them.
+			using var response = AgentStateDumpTest.Request("{\"cmd\":\"build\",\"item\":\"atek\"}");
+			var root = response.RootElement;
+			Assert.That(AgentProductionTest.Keys(root), Is.EquivalentTo(RefusedKeys));
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False);
+			Assert.That(root.GetProperty("error").GetString(), Does.Contain("weap").And.Contains("dome"));
+			Assert.That(Missing(root), Has.Member("weap").And.Member("dome"));
+			Assert.That(root.GetProperty("ready").ValueKind, Is.EqualTo(JsonValueKind.Null), "No ATEK is queued, so there is no ready state");
+		}
+
+		[TestCase(TestName = "A build for an item in progress reports ready:false with an ETA, and for a finished item reports ready:true")]
+		public void ReadyAndEtaFollowTheQueuedCopy()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			// No copy is queued yet, so there is no ready state to report.
+			using (var first = AgentStateDumpTest.Request("{\"cmd\":\"build\",\"item\":\"powr\"}"))
+			{
+				Assert.That(first.RootElement.GetProperty("ok").GetBoolean(), Is.True);
+				Assert.That(first.RootElement.GetProperty("ready").ValueKind, Is.EqualTo(JsonValueKind.Null));
+				Assert.That(first.RootElement.GetProperty("eta_ticks").ValueKind, Is.EqualTo(JsonValueKind.Null));
+			}
+
+			Assert.That(hw.TickUntil(PowrBuilding, 100), Is.Not.Null, "The POWR never started building.");
+
+			// The first copy is in progress, so a second build reports it: not ready, with the ticks it still needs.
+			using (var second = AgentStateDumpTest.Request("{\"cmd\":\"build\",\"item\":\"powr\"}"))
+			{
+				var root = second.RootElement;
+				Assert.That(root.GetProperty("ready").GetBoolean(), Is.False);
+				Assert.That(root.GetProperty("eta_ticks").GetInt32(), Is.GreaterThan(0), "An in-progress item needs a positive ETA");
+			}
+
+			Assert.That(hw.TickUntil(PowrFinished, 3000), Is.Not.Null, "The POWR never finished building.");
+
+			// The first copy is done and waits for placement, so a build now reports it ready.
+			using var finished = AgentStateDumpTest.Request("{\"cmd\":\"build\",\"item\":\"powr\"}");
+			Assert.That(finished.RootElement.GetProperty("ready").GetBoolean(), Is.True, "A finished item is ready");
+			Assert.That(finished.RootElement.GetProperty("eta_ticks").GetInt32(), Is.EqualTo(0));
 		}
 
 		[TestCase(TestName = "An item with no queue that builds it is refused, and the available items are listed")]
@@ -163,6 +214,25 @@ namespace OpenRA.Test
 		static string[] Available(JsonElement root)
 		{
 			return root.GetProperty("available").EnumerateArray().Select(a => a.GetString()).ToArray();
+		}
+
+		static string[] Missing(JsonElement root)
+		{
+			return root.GetProperty("missing_prerequisites").EnumerateArray().Select(a => a.GetString()).ToArray();
+		}
+
+		/// <summary>True when a POWR in the building queue is the head of the queue and in progress, read through the production command.</summary>
+		static bool PowrBuilding()
+		{
+			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
+			return PowrItems(production.RootElement).Any(i => i.GetProperty("state").GetString() == "building");
+		}
+
+		/// <summary>True when a POWR in the building queue is finished and waits for placement, read through the production command.</summary>
+		static bool PowrFinished()
+		{
+			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
+			return PowrItems(production.RootElement).Any(i => i.GetProperty("state").GetString() == "done");
 		}
 
 		static JsonElement[] PowrItems(JsonElement root)

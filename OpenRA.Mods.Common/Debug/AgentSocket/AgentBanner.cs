@@ -58,8 +58,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("orders", "actor (uint) -> type, orders (the order names the actor accepts)", "{\"cmd\":\"orders\",\"actor\":12}"),
 			("production", "-> player, cash, resources, power, queues (the local player's queues; see Production keys)", "{\"cmd\":\"production\"}"),
 			("build", "item (string); optional count (positive int, default 1)\n"
-				+ "                -> ok, actor, queue_type, item, count, tick, min_effect_tick. Not buildable now: ok:false, error,"
-				+ " available (the items build accepts now: buildable and affordable)",
+				+ "                -> ok, actor, queue_type, item, count, tick, min_effect_tick, ready, eta_ticks. Not buildable now: ok:false, error,"
+				+ " available (the items build accepts now: buildable and affordable), missing_prerequisites (every unmet prerequisite;"
+				+ " null if the refusal is not about prerequisites), ready, eta_ticks. ready and eta_ticks describe a copy of the item already"
+				+ " queued: ready:true when it is done, else ready:false with eta_ticks, the ticks until it is done (null when none is queued)",
 				"{\"cmd\":\"build\",\"item\":\"e1\",\"count\":2}"),
 			("place", "item (string); optional cell [x,y] (default: the producer's location)\n"
 				+ "                -> ok, item, requested_cell (null if omitted), search_from, cell, tick, min_effect_tick. The nearest"
