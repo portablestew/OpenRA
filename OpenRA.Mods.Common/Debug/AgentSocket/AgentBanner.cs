@@ -63,7 +63,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"{\"cmd\":\"build\",\"item\":\"e1\",\"count\":2}"),
 			("place", "item (string); optional cell [x,y] (default: the producer's location)\n"
 				+ "                -> ok, item, requested_cell (null if omitted), search_from, cell, tick, min_effect_tick. The nearest"
-				+ " valid cell within 10 of search_from is used. Not done or no valid cell: ok:false, error",
+				+ " valid cell within 10 of search_from is used. Not done: ok:false, error. No valid cell: ok:false, error,"
+				+ " cells_checked, candidates (the nearest 8 cells, each with cell and reason)",
 				"{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[40,50]}"),
 			("screenshot", "optional actor (uint): centre the view on that live unit first\n"
 				+ "                -> ok, cmd, path (the PNG, already written), actor (null if omitted), center_px, unit_px (map pixels, not window pixels; null if"

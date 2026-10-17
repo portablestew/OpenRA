@@ -25,7 +25,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		sealed record HelpV1(bool Ok, string Cmd, string Banner);
 
 		/// <summary>Every error envelope and refusal carries this hint, so an agent that gets an error finds the command list on its own (P1.18).</summary>
-		const string Hint = "see {\"cmd\":\"help\"}";
+		public const string Hint = "see {\"cmd\":\"help\"}";
 
 		/// <summary>
 		/// The result of a snapshot step. Tick is the game clock of the world left active, RequestedTick the game

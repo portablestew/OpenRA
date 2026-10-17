@@ -24,8 +24,11 @@ namespace OpenRA.Test
 	[TestFixture]
 	sealed class AgentPlaceTest
 	{
-		// The search radius of AgentPlace. The test project compiles against OpenRA.Game only, so it cannot name that constant.
+		// The search radius and candidate cap of AgentPlace. The test project compiles against OpenRA.Game only, so it cannot name these constants.
 		const int MaxRadius = 10;
+		const int MaxCandidates = 8;
+
+		static readonly string[] RefusalKeys = ["ok", "cmd", "error", "hint", "cells_checked", "candidates"];
 
 		static readonly string[] SuccessKeys = ["ok", "cmd", "item", "requested_cell", "search_from", "cell", "tick", "min_effect_tick"];
 
@@ -130,6 +133,72 @@ namespace OpenRA.Test
 			Assert.That(root.GetProperty("cmd").GetString(), Is.EqualTo("place"));
 			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo("no valid cell for 'powr' within 10 cells of -100,-100"));
 			Assert.That(PowrDone(), Is.True, "A refused placement must leave the finished item in the queue");
+		}
+
+		[TestCase(TestName = "A place on an occupied cell with no valid cell in range is refused, and lists the reasons of the nearest cells")]
+		public void OccupiedCellRefusedWithCandidates()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var fact = hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+			QueueAndFinishPowr(hw);
+
+			// Fill the whole search square with infantry, so every candidate's footprint holds an actor. Cells that already hold
+			// an actor (the fact) are left as they are. A 2x2 footprint whose top-left is in the square reaches one column and row past it.
+			var from = fact.Location;
+			for (var dy = -MaxRadius; dy <= MaxRadius + 1; dy++)
+				for (var dx = -MaxRadius; dx <= MaxRadius + 1; dx++)
+				{
+					var cell = new CPos(from.X + dx, from.Y + dy);
+					if (!hw.World.ActorMap.GetActorsAt(cell).Any())
+						hw.CreateActor("e1", cell);
+				}
+
+			hw.Tick(1);
+
+			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[{from.X},{from.Y}]}}");
+			var root = response.RootElement;
+			Assert.That(AgentProductionTest.Keys(root), Is.EquivalentTo(RefusalKeys));
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False);
+			Assert.That(root.GetProperty("cmd").GetString(), Is.EqualTo("place"));
+			Assert.That(root.GetProperty("cells_checked").GetInt32(), Is.EqualTo((2 * MaxRadius + 1) * (2 * MaxRadius + 1)));
+
+			var candidates = root.GetProperty("candidates").EnumerateArray().ToArray();
+			Assert.That(candidates, Has.Length.EqualTo(MaxCandidates));
+			Assert.That(candidates.Select(c => c.GetProperty("reason").GetString()), Has.All.Not.Null.And.Not.Empty,
+				"Every candidate must carry a non-null reason");
+			Assert.That(candidates.Select(c => c.GetProperty("reason").GetString()), Has.All.EqualTo("occupied"),
+				"Every cell in the square holds an actor, so every reason is occupied");
+
+			// Nearest first: the squared distance from the requested cell never decreases down the list.
+			var distances = candidates.Select(c =>
+			{
+				var cell = c.GetProperty("cell").EnumerateArray().Select(v => v.GetInt32()).ToArray();
+				var dx = cell[0] - from.X;
+				var dy = cell[1] - from.Y;
+				return dx * dx + dy * dy;
+			}).ToArray();
+			Assert.That(distances, Is.Ordered.Ascending);
+
+			Assert.That(PowrAt(hw, from), Is.Null, "A POWR was placed on the occupied requested cell");
+			Assert.That(hw.World.Actors.Any(a => a.Info.Name == "powr" && a.Owner == hw.LocalPlayer && !a.IsDead), Is.False,
+				"A POWR was placed although the place was refused");
+		}
+
+		[TestCase(TestName = "A place that succeeds has the same keys as before, and no candidates or cells_checked")]
+		public void SuccessfulPlaceHasNoCandidates()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var fact = hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+			QueueAndFinishPowr(hw);
+
+			using var response = AgentStateDumpTest.Request("{\"cmd\":\"place\",\"item\":\"powr\"}");
+			var root = response.RootElement;
+			Assert.That(AgentProductionTest.Keys(root), Is.EquivalentTo(SuccessKeys));
+			Assert.That(root.TryGetProperty("candidates", out _), Is.False);
+			Assert.That(root.TryGetProperty("cells_checked", out _), Is.False);
+			Assert.That(root.GetProperty("search_from").EnumerateArray().Select(c => c.GetInt32()), Is.EqualTo(new[] { fact.Location.X, fact.Location.Y }));
 		}
 
 		[TestCase(TestName = "A place for an item still in production is refused, and nothing is placed")]
