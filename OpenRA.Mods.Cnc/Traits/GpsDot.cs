@@ -10,6 +10,7 @@
 #endregion
 
 using OpenRA.Mods.Cnc.Effects;
+using OpenRA.Mods.Common.AgentSocket;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Cnc.Traits
@@ -30,7 +31,7 @@ namespace OpenRA.Mods.Cnc.Traits
 		public override object Create(ActorInitializer init) { return new GpsDot(this); }
 	}
 
-	sealed class GpsDot : INotifyCreated, INotifyAddedToWorld, INotifyRemovedFromWorld
+	sealed class GpsDot : INotifyCreated, INotifyAddedToWorld, INotifyRemovedFromWorld, IAgentGpsDot
 	{
 		readonly GpsDotInfo info;
 		GpsDotEffect effect;

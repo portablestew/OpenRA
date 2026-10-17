@@ -11,6 +11,7 @@
 
 using System.Collections.Generic;
 using System.Linq;
+using OpenRA.Mods.Common.AgentSocket;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Traits;
 
@@ -23,9 +24,9 @@ namespace OpenRA.Mods.Cnc.Traits
 		public override object Create(ActorInitializer init) { return new GpsWatcher(init.Self.Owner); }
 	}
 
-	interface IOnGpsRefreshed { void OnGpsRefresh(Actor self, Player player); }
+	public interface IOnGpsRefreshed { void OnGpsRefresh(Actor self, Player player); }
 
-	sealed class GpsWatcher : ISync, IPreventsShroudReset
+	public sealed class GpsWatcher : ISync, IPreventsShroudReset, IAgentGpsGrant
 	{
 		[VerifySync]
 		public bool Launched { get; private set; }
@@ -100,6 +101,8 @@ namespace OpenRA.Mods.Cnc.Traits
 		{
 			return Granted || GrantedAllies;
 		}
+
+		bool IAgentGpsGrant.GrantsRadarDots => Granted || GrantedAllies;
 
 		public void RegisterForOnGpsRefreshed(Actor actor, IOnGpsRefreshed toBeNotified)
 		{
