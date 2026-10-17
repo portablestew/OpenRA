@@ -12,6 +12,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using NUnit.Framework;
 using OpenRA.Mods.Common.AgentSocket;
 
@@ -76,9 +77,32 @@ namespace OpenRA.Test
 			{
 				"{\"ok\":false,\"cmd\":null,\"error\":\"invalid json\"}",
 				"{\"ok\":false,\"cmd\":\"nope\",\"error\":\"unknown command\"}",
-				"{\"ok\":false,\"cmd\":null,\"error\":\"expected a JSON object\"}",
+				"[{\"ok\":false,\"cmd\":null,\"error\":\"expected a JSON object\"}]",
 				"{\"ok\":false,\"cmd\":null,\"error\":\"missing cmd\"}",
 			}));
+		}
+
+		[TestCase(TestName = "A root array is one request: one line holds a result per item, and a failing item does not stop the rest")]
+		public void ArrayIsOneRequest()
+		{
+			using var reader = new StringReader("[{\"cmd\":\"ping\"},{\"cmd\":\"bogus\"},{\"cmd\":\"ping\"}]\n");
+			using var writer = new StringWriter { NewLine = "\n" };
+			AgentSocketServer.Serve(reader, writer);
+
+			var tail = writer.ToString()[AgentSocketServer.Banner.Length..];
+			// The banner's prompt, then the one response line, then the prompt for the next command.
+			var response = tail.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+			Assert.That(response, Has.Length.EqualTo(3));
+			Assert.That(response[0], Is.EqualTo(AgentSocketServer.Prompt));
+			Assert.That(response[2], Is.EqualTo(AgentSocketServer.Prompt));
+
+			using var doc = JsonDocument.Parse(response[1]);
+			var results = doc.RootElement.EnumerateArray().ToArray();
+			Assert.That(results.Length, Is.EqualTo(3));
+			Assert.That(results[0].GetProperty("cmd").GetString(), Is.EqualTo("ping"));
+			Assert.That(results[1].GetProperty("ok").GetBoolean(), Is.False);
+			Assert.That(results[1].GetProperty("error").GetString(), Is.EqualTo("unknown command"));
+			Assert.That(results[2].GetProperty("cmd").GetString(), Is.EqualTo("ping"));
 		}
 
 		[TestCase(TestName = "A final line without a terminating newline is still answered")]

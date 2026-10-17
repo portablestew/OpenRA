@@ -98,7 +98,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static string Build()
 		{
 			var text = new StringBuilder();
-			text.Append("OpenRA agent debug socket, schema v1. Send one JSON object per line; one response line per command.\n");
+			text.Append("OpenRA agent debug socket, schema v1. Send one JSON object per line, or one JSON array of objects per line; one response line per request.\n");
 			text.Append("Responses echo cmd and carry ok. Errors carry ok:false and error.\n");
 			text.Append("Commands (request keys, then response keys):\n");
 			foreach (var (name, summary) in Commands)
@@ -126,6 +126,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("Notes:\n");
 			text.Append("  After the banner, and after every response, the server sends a lone > line as a prompt: it is your turn.\n");
 			text.Append("  A > line is not a response and not an event; skip lines that are just >.\n");
+			text.Append("  An array is one request: the items run in order and the response is one JSON array, one result per item.\n");
+			text.Append("  A failing item does not stop the rest. A slow awaited item delays the response until it settles or times out.\n");
 			text.Append("  order min_effect_tick is a lower bound (tick + 1). The order applies on or after it; network frame delay can make it later.\n");
 			text.Append("  Example: {\"cmd\":\"order\",\"actor\":12,\"order\":\"Move\",\"cell\":[40,50],\"await\":false}\n")
 				.Append("    -> {\"ok\":true,\"cmd\":\"order\",\"job\":1,...}\n");

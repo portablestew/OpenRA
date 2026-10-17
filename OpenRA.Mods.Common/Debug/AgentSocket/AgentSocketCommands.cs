@@ -54,8 +54,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Parses one request line and returns the single response line for it. subscriber is the calling connection's
-		/// subscription state; it is null only where no connection exists, and subscribe then returns an error.
+		/// Parses one request line and returns the single response line for it. A root array is one request: its items run
+		/// in order, and the response is one JSON array with one result per item, so a failing item does not stop the rest.
+		/// Items run on the calling thread, so a slow awaited item delays the whole response until it settles or its own
+		/// wall-clock limit passes. subscriber is the calling connection's subscription state; it is null only where no
+		/// connection exists, and subscribe then returns an error.
 		/// </summary>
 		public static string Handle(string line, AgentEventSubscriber subscriber)
 		{
@@ -71,34 +74,43 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			using (doc)
 			{
-				if (doc.RootElement.ValueKind != JsonValueKind.Object)
-					return Error(null, "expected a JSON object");
+				if (doc.RootElement.ValueKind == JsonValueKind.Array)
+					return "[" + string.Join(",", doc.RootElement.EnumerateArray().Select(item => HandleItem(item, subscriber))) + "]";
 
-				if (!doc.RootElement.TryGetProperty("cmd", out var cmdElement) || cmdElement.ValueKind != JsonValueKind.String)
-					return Error(null, "missing cmd");
-
-				var cmd = cmdElement.GetString();
-				return cmd switch
-				{
-					"ping" => Ping(cmd),
-					"help" => Serialize(new HelpV1(true, cmd, AgentSocketServer.Banner)),
-					"state" => Run(cmd, () => AgentStateDump.Snapshot(AgentWorldBridge.RequireWorld())),
-					"actors" => Actors(cmd, doc.RootElement),
-					"maps" => Run(cmd, AgentMaps.List),
-					"load_map" => LoadMap(cmd, doc.RootElement),
-					"order" => IssueOrder(cmd, doc.RootElement),
-					"orders" => Orders(cmd, doc.RootElement),
-					"wait" => Wait(cmd, doc.RootElement),
-					"production" => Run(cmd, () => AgentProduction.List(AgentWorldBridge.RequireWorld())),
-					"build" => StartBuild(cmd, doc.RootElement),
-					"place" => StartPlace(cmd, doc.RootElement),
-					"screenshot" => Screenshot(cmd, doc.RootElement),
-					"subscribe" => Subscribe(cmd, doc.RootElement, subscriber),
-					"unsubscribe" => Unsubscribe(cmd, doc.RootElement, subscriber),
-					"undo" => SnapshotStep(cmd, doc.RootElement),
-					_ => Error(cmd, "unknown command"),
-				};
+				return HandleItem(doc.RootElement, subscriber);
 			}
+		}
+
+		/// <summary>Answers one request object. A value that is not an object is an error for that item alone.</summary>
+		static string HandleItem(JsonElement root, AgentEventSubscriber subscriber)
+		{
+			if (root.ValueKind != JsonValueKind.Object)
+				return Error(null, "expected a JSON object");
+
+			if (!root.TryGetProperty("cmd", out var cmdElement) || cmdElement.ValueKind != JsonValueKind.String)
+				return Error(null, "missing cmd");
+
+			var cmd = cmdElement.GetString();
+			return cmd switch
+			{
+				"ping" => Ping(cmd),
+				"help" => Serialize(new HelpV1(true, cmd, AgentSocketServer.Banner)),
+				"state" => Run(cmd, () => AgentStateDump.Snapshot(AgentWorldBridge.RequireWorld())),
+				"actors" => Actors(cmd, root),
+				"maps" => Run(cmd, AgentMaps.List),
+				"load_map" => LoadMap(cmd, root),
+				"order" => IssueOrder(cmd, root),
+				"orders" => Orders(cmd, root),
+				"wait" => Wait(cmd, root),
+				"production" => Run(cmd, () => AgentProduction.List(AgentWorldBridge.RequireWorld())),
+				"build" => StartBuild(cmd, root),
+				"place" => StartPlace(cmd, root),
+				"screenshot" => Screenshot(cmd, root),
+				"subscribe" => Subscribe(cmd, root, subscriber),
+				"unsubscribe" => Unsubscribe(cmd, root, subscriber),
+				"undo" => SnapshotStep(cmd, root),
+				_ => Error(cmd, "unknown command"),
+			};
 		}
 
 		static string Ping(string cmd)
