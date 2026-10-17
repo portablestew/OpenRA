@@ -47,7 +47,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	/// <summary>
 	/// What Start issued on the game thread (P1.13). Await is the one wait for the whole sequence: when the actor must move, the
-	/// DeployTransform is queued after the Move, so the await settles when the transform ends. Paused is true when the game is
+	/// DeployTransform is held until the Move ends on Cell (P1.14c), so the await settles when the transform ends, or when the Move falls short.
+	/// Paused is true when the game is
 	/// paused, so nothing will tick the await. The transform's end is checked against Cell (P1.14): a Move that falls short replies canceled.
 	/// </summary>
 	public sealed record DeployIssued(OrderV1 Ack, AgentOrderAwait Await, uint Actor, int[] RequestedCell, CPos Cell, bool Moved, bool Paused);
@@ -139,14 +140,20 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 
 			var moved = cell != here;
-			if (moved)
-				world.IssueOrder(new Order("Move", actor, Target.FromCell(world, cell - offset), false));
 
-			// Queued after the Move when the actor moves, so the transform starts when the Move ends. Unqueued when it stays put.
-			var deploy = new Order("DeployTransform", actor, moved);
+			// When the actor must move, the deploy is held until the Move ends on the chosen cell, so a Move that falls short queues
+			// no transform (P1.14c). Without a Move, the deploy is issued at once.
+			var deploy = new Order("DeployTransform", actor, false);
 			var await = AgentOrderAwait.Register(deploy, 0);
 			await.ExpectedCell = cell;
-			world.IssueOrder(deploy);
+			if (moved)
+			{
+				await.HoldUntilMoved(deploy);
+				world.IssueOrder(new Order("Move", actor, Target.FromCell(world, cell - offset), false));
+			}
+			else
+				world.IssueOrder(deploy);
+
 			selection.Ordered(world, actor);
 
 			var requested = request.At is { } given ? new[] { given.X, given.Y } : null;

@@ -10,6 +10,8 @@
 #endregion
 
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using NUnit.Framework;
@@ -28,6 +30,9 @@ namespace OpenRA.Test
 		const string DeployableUnit = "mcv";
 		const string Blocker = "e1";
 
+		/// <summary>The building the mcv deploys into (vehicles.yaml: Transforms IntoActor).</summary>
+		const string Building = "fact";
+
 		/// <summary>Ticks to let the map's starting units settle before placing the mcv.</summary>
 		const int SettleTicks = 5;
 
@@ -41,6 +46,7 @@ namespace OpenRA.Test
 		static readonly CVec TransformOffset = new(-1, -1);
 
 		bool savedAgentSocket;
+		object subscriber;
 
 		[OneTimeSetUp]
 		public void InitializeMod()
@@ -58,6 +64,10 @@ namespace OpenRA.Test
 		[TearDown]
 		public void RestoreAgentSocket()
 		{
+			if (subscriber != null)
+				subscriber.GetType().GetMethod("Close").Invoke(subscriber, null);
+
+			subscriber = null;
 			Game.Settings.Debug.AgentSocket = savedAgentSocket;
 		}
 
@@ -71,6 +81,21 @@ namespace OpenRA.Test
 		{
 			var area = hw.FindClearArea(hw.LocalPlayer.HomeLocation, Clearing, Clearing);
 			return hw.CreateActor(DeployableUnit, area + new CVec(2, 2));
+		}
+
+		/// <summary>Takes the activity events queued on the subscriber so far. Empty when none reached it.</summary>
+		static List<object> TakeActivityEvents(object subscriber)
+		{
+			var pending = (int)subscriber.GetType().GetProperty("Pending").GetValue(subscriber);
+			if (pending == 0)
+				return [];
+
+			return ((IList)subscriber.GetType().GetMethod("Take").Invoke(subscriber, null)).Cast<object>().ToList();
+		}
+
+		static int CountActors(HeadlessWorld hw, string name)
+		{
+			return hw.World.Actors.Count(a => !a.IsDead && a.Info.Name == name);
 		}
 
 		/// <summary>The top-left cell the transform checks: the mcv's cell plus its transform offset.</summary>
@@ -183,17 +208,28 @@ namespace OpenRA.Test
 			var start = Footprint(mcv);
 
 			// As in the five-cell test, the chosen cell is five below start. Its Move ends at the mcv's cell, which is that cell
-			// less the transform offset: start + (1, 6). A blocker placed there once the Move is queued makes the Move fall short.
+			// less the transform offset: start + (1, 6). Once the Move is queued, the lattice is removed and a blocker placed on
+			// that destination. The Move falls short on a clear footprint, so a transform queued anyway would deploy there.
+			var existing = hw.World.Actors.ToArray();
 			BlockSquare(hw, start, 4);
 			hw.Tick(1);
+			var lattice = hw.World.Actors.Except(existing).ToArray();
 			var chosen = new CPos(start.X, start.Y + 5);
 			var moveDestination = start + new CVec(1, 6);
 			var placed = false;
+			var buildingsBefore = CountActors(hw, Building);
+
+			// Subscribed before the request, so the transform's start is seen even if the deploy is refused at once.
+			subscriber = Activator.CreateInstance(HeadlessMod.ModData.ObjectCreator.FindType("AgentSocket.AgentEventSubscriber"));
+			subscriber.GetType().GetMethod("Subscribe").Invoke(subscriber, [new[] { "activity" }, null]);
 
 			using var response = AgentStateDumpTest.RequestWithTicks(hw, DeployLine(mcv), () =>
 			{
 				if (!placed && mcv.CurrentActivity != null)
 				{
+					foreach (var b in lattice)
+						b.Dispose();
+
 					hw.CreateActor(Blocker, moveDestination);
 					placed = true;
 				}
@@ -208,6 +244,47 @@ namespace OpenRA.Test
 
 			var cell = root.GetProperty("cell").EnumerateArray().Select(e => e.GetInt32()).ToArray();
 			Assert.That(cell, Is.Not.EqualTo(new[] { chosen.X, chosen.Y }), "The reply should name where the mcv stopped, not the chosen cell.");
+
+			// No DeployTransform ran: the mcv is still an mcv, no building was placed, and no transform is in its activities.
+			Assert.That(mcv.IsDead, Is.False, "The mcv should not have been replaced.");
+			Assert.That(mcv.Info.Name, Is.EqualTo(DeployableUnit));
+			Assert.That(CountActors(hw, Building), Is.EqualTo(buildingsBefore), "No building should have been placed.");
+			var labels = mcv.CurrentActivity?.DebugLabelComponents().ToArray() ?? [];
+			Assert.That(labels, Does.Not.Contain("Transform"), "No transform should be queued on the mcv.");
+
+			// A transform that started, even one refused at once, would report a started transform event.
+			var started = TakeActivityEvents(subscriber)
+				.Where(e => e.GetType().GetProperty("Kind").GetValue(e) as string == "transform"
+					&& e.GetType().GetProperty("State").GetValue(e) as string == "started")
+				.ToArray();
+			Assert.That(started, Is.Empty, "A transform started, so a deploy was queued after the Move fell short.");
+		}
+
+		[TestCase(TestName = "A deploy that needs a Move, with await:false, returns a job id, and wait on that job returns the completed outcome")]
+		public void MovedDeployJobWaitCollectsCompleted()
+		{
+			using var hw = HeadlessWorld.Create(0xDEB1D);
+			hw.Tick(SettleTicks);
+			var mcv = CreateMcv(hw);
+			var start = Footprint(mcv);
+			BlockSquare(hw, start, 4);
+			hw.Tick(1);
+
+			using var issued = AgentStateDumpTest.RequestWithTicks(hw, DeployLine(mcv, ",\"await\":false"));
+			var root = issued.RootElement;
+
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+			var job = root.GetProperty("job").GetInt32();
+			Assert.That(job, Is.GreaterThan(0), "await:false should return a job id.");
+
+			using var waited = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"wait\",\"job\":{job}}}");
+			var outcome = waited.RootElement;
+
+			Assert.That(outcome.GetProperty("ok").GetBoolean(), Is.True, outcome.ToString());
+			Assert.That(outcome.GetProperty("cmd").GetString(), Is.EqualTo("wait"));
+			Assert.That(outcome.GetProperty("outcome").GetString(), Is.EqualTo("completed"));
+			Assert.That(outcome.GetProperty("moved").GetBoolean(), Is.True);
+			Assert.That(mcv.IsDead, Is.True, "The mcv should have been replaced.");
 		}
 
 		[TestCase(TestName = "await:false returns a job id, and wait on that job returns the deploy outcome")]

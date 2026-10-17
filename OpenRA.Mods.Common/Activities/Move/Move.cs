@@ -155,8 +155,7 @@ namespace OpenRA.Mods.Common.Activities
 			if (IsCanceling && mobile.CanStayInCell(mobile.ToCell))
 			{
 				path?.Clear();
-				if (AgentEvents.HasSubscribers)
-					AgentActivityEvents.Raise(self, "move", "canceled", "interrupted");
+				AgentActivityEvents.Raise(self, "move", "canceled", "interrupted");
 
 				mobile.MoveResult = MoveResult.CompleteCanceled;
 				return true;
@@ -387,8 +386,7 @@ namespace OpenRA.Mods.Common.Activities
 
 		void ReportCompleted(Actor self)
 		{
-			if (AgentEvents.HasSubscribers)
-				AgentActivityEvents.Raise(self, "move", "completed", mobile.MoveResult == MoveResult.CompleteDestinationBlocked ? "blocked" : "reached");
+			AgentActivityEvents.Raise(self, "move", "completed", mobile.MoveResult == MoveResult.CompleteDestinationBlocked ? "blocked" : "reached");
 		}
 
 		protected override void OnLastRun(Actor self)

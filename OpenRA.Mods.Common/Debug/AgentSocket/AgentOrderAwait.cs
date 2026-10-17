@@ -59,12 +59,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 		readonly Actor subject;
 		readonly string order;
 		readonly Target target;
-		readonly int registeredTick;
+		int registeredTick;
 		readonly TaskCompletionSource<bool> done = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
 		// A resolved deploy's stall clock (P1.13): the cell the subject last stood on, and the tick it last changed.
 		CPos lastCell;
 		int lastCellTick;
+
+		// A deploy held for its Move (P1.14c): the order to issue once the Move ends on the chosen cell, and whether the Move has ended.
+		Order heldOrder;
+		bool moveEnded;
 
 		AgentOrderAwait(Actor subject, string order, Target target, int settleTicks)
 		{
@@ -116,6 +120,24 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// deploy reply reports it as the cell, so a move that ends elsewhere is not reported at the chosen cell.
 		/// </summary>
 		public CPos? DeployedCell { get; private set; }
+
+		/// <summary>
+		/// True while a deploy waits for its Move to end (P1.14c). The transform is not queued until then, so a Move that falls
+		/// short never starts one. Read and written on the game thread.
+		/// </summary>
+		public bool AwaitingMove { get; private set; }
+
+		/// <summary>
+		/// Holds deploy until its Move ends (P1.14c). Tick issues it once the Move has ended on ExpectedCell, and never when it has
+		/// not. Must run on the game thread, before the Move is issued, so the Move's end finds this await.
+		/// </summary>
+		public void HoldUntilMoved(Order deploy)
+		{
+			heldOrder = deploy;
+			AwaitingMove = true;
+			lastCell = subject.Location;
+			lastCellTick = subject.World.WorldTick;
+		}
 
 		/// <summary>The outcome of a finished Attack await: Started or NoValidTarget. Null for other awaits, and for an attack in a paused game.</summary>
 		public string Outcome { get; private set; }
@@ -239,6 +261,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		public static void Tick(World world)
 		{
+			List<Order> toIssue = null;
 			lock (Gate)
 			{
 				if (Pending.Count == 0 && Settling.Count == 0)
@@ -246,7 +269,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 				foreach (var p in Pending.Where(p => p.World == world).ToArray())
 				{
-					if (p.IsDeploy && p.Resolved)
+					if (p.AwaitingMove)
+					{
+						if (TickHeldDeploy(p) is { } held)
+							(toIssue ??= []).Add(held);
+					}
+					else if (p.IsDeploy && p.Resolved)
 					{
 						// The transform activity ends the deploy. A dead subject can end no activity, so it fails here. A subject that has
 						// not changed cell for the resolve budget has stalled, and its Move or transform will not end (Q13, in game ticks).
@@ -280,6 +308,55 @@ namespace OpenRA.Mods.Common.AgentSocket
 					if (world.WorldTick - p.ResolvedTick >= p.SettleTicks)
 						Complete(p);
 			}
+
+			// Issued off the lock: an order may resolve on this thread, and Resolve takes the lock.
+			if (toIssue != null)
+				foreach (var order in toIssue)
+					world.IssueOrder(order);
+		}
+
+		/// <summary>
+		/// Ticks a deploy held for its Move (P1.14c). While the Move runs, the stall clock watches the actor's cell. When the Move
+		/// has ended, the transform is queued only if the actor stands on the chosen cell. Otherwise the await finishes canceled, and
+		/// no transform is queued. Returns the order to issue, or null. Called under Gate.
+		/// </summary>
+		static Order TickHeldDeploy(AgentOrderAwait p)
+		{
+			if (p.subject.IsDead)
+			{
+				Fail(p, new InvalidOperationException($"actor {p.subject.ActorID} died before its move ended"));
+				return null;
+			}
+
+			var world = p.World;
+			if (!p.moveEnded)
+			{
+				if (p.subject.Location != p.lastCell)
+				{
+					p.lastCell = p.subject.Location;
+					p.lastCellTick = world.WorldTick;
+				}
+				else if (world.WorldTick - p.lastCellTick >= ResolveBudgetTicks)
+					Fail(p, new TimeoutException($"the deploy stalled: the actor did not move for {ResolveBudgetTicks} ticks"));
+
+				return null;
+			}
+
+			p.AwaitingMove = false;
+			var transforms = p.subject.TraitOrDefault<Transforms>();
+			var ended = transforms == null ? p.subject.Location : p.subject.Location + transforms.Info.Offset;
+			p.DeployedCell = ended;
+			if (p.ExpectedCell is { } expected && expected != ended)
+			{
+				Finish(p, Canceled, $"the actor stopped at {ended.X},{ended.Y}, not the chosen cell {expected.X},{expected.Y}: the move did not reach it");
+				return null;
+			}
+
+			// The deploy's own budget starts now, so the transform gets ResolveBudgetTicks from its issue, as a queued deploy did.
+			p.registeredTick = world.WorldTick;
+			var order = p.heldOrder;
+			p.heldOrder = null;
+			return order;
 		}
 
 		/// <summary>
@@ -289,6 +366,22 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		public static void Activity(Actor self, string kind, string state, string reason)
 		{
+			// A held deploy waits for its Move to end, and Tick reads where the actor stands then (P1.14c).
+			if (kind == "move")
+			{
+				if (state != "started")
+				{
+					lock (Gate)
+					{
+						var held = Pending.Find(a => a.AwaitingMove && ReferenceEquals(a.subject, self));
+						if (held != null)
+							held.moveEnded = true;
+					}
+				}
+
+				return;
+			}
+
 			if (kind != "transform" || state == "started")
 				return;
 
