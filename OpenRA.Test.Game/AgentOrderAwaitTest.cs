@@ -222,16 +222,12 @@ namespace OpenRA.Test
 			Assert.That(hw.World.WorldTick, Is.EqualTo(tick), "The paused game advanced.");
 		}
 
-		[TestCase(TestName = "A world swap fails a Move in flight with the restored error")]
-		public void WorldSwapFailsMoveInFlightWithRestored()
+		/// <summary>
+		/// Sends a Move on a worker thread, as the socket does, and pumps the game loop until it has registered. The world is
+		/// not ticked, so nothing settles the Move. Then runs swap and pumps until the reply returns. The caller disposes the document.
+		/// </summary>
+		static JsonDocument MoveInFlightAcross(HeadlessWorld hw, Actor unit, CPos destination, Action swap)
 		{
-			using var hw = HeadlessWorld.Create(1);
-			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
-			hw.Tick(1);
-			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
-
-			// The request runs on a worker thread, as the socket does. This thread pumps the game loop until the Move has
-			// registered, then swaps the world. The world is not ticked, so nothing settles the Move before the swap.
 			var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
 			var handle = ModType("AgentSocket.AgentSocketCommands").GetMethod("Handle", BindingFlags.Public | BindingFlags.Static);
 			var reply = Task.Run(() => (string)handle.Invoke(null, [line, null]));
@@ -245,8 +241,7 @@ namespace OpenRA.Test
 
 			Assert.That(PendingCount(hw.World), Is.EqualTo(1), "The Move never registered.");
 
-			var bridgeType = ModType("AgentWorldBridge");
-			bridgeType.GetMethod("WorldAdopted").Invoke(Activator.CreateInstance(bridgeType), [hw.World, null]);
+			swap();
 
 			while (!reply.IsCompleted && DateTime.UtcNow < deadline)
 			{
@@ -255,12 +250,46 @@ namespace OpenRA.Test
 			}
 
 			Assert.That(reply.IsCompleted, Is.True, "The request never returned.");
-			using var response = JsonDocument.Parse(reply.Result);
+			return JsonDocument.Parse(reply.Result);
+		}
+
+		[TestCase(TestName = "A world swap fails a Move in flight with the restored error")]
+		public void WorldSwapFailsMoveInFlightWithRestored()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+
+			var bridgeType = ModType("AgentWorldBridge");
+			using var response = MoveInFlightAcross(hw, unit, destination,
+				() => bridgeType.GetMethod("WorldAdopted").Invoke(Activator.CreateInstance(bridgeType), [hw.World, null]));
 			var root = response.RootElement;
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False);
 			Assert.That(root.GetProperty("cmd").GetString(), Is.EqualTo("order"));
 			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo("restored"));
 			Assert.That(PendingCount(hw.World), Is.EqualTo(0), "The failed Move left an await pending.");
+		}
+
+		[TestCase(TestName = "A load_map that replaces the world fails a Move in flight with restored, not the wall-clock timeout")]
+		public void WorldLoadFailsMoveInFlightWithRestored()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+			var replaced = hw.World;
+
+			// The replaced world is disposed, then the new one loads through LoadComplete, as a load_map does.
+			using var response = MoveInFlightAcross(hw, unit, destination, () =>
+			{
+				replaced.Dispose();
+				using var next = HeadlessWorld.Create(2);
+			});
+			var root = response.RootElement;
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False);
+			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo("restored"));
+			Assert.That(PendingCount(replaced), Is.EqualTo(0), "The failed Move left an await pending.");
 		}
 
 		[TestCase(TestName = "An order that never resolves is failed by the resolve budget and leaves nothing pending")]

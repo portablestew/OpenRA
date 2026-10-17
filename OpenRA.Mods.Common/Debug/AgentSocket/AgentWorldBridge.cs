@@ -44,6 +44,9 @@ namespace OpenRA.Mods.Common
 
 		public void WorldLoaded(World w, WorldRenderer wr)
 		{
+			// A load_map disposes the world it replaces. Its pending awaits get the restored error, as in WorldAdopted.
+			AgentOrderAwait.FailDisposedRestored();
+
 			Enabled = Game.Settings.Debug.AgentSocket;
 			AgentEvents.Enabled = Enabled;
 			UnitOrders.OrderResolving = Enabled ? AgentWorldEventObserver.Ordered : null;
