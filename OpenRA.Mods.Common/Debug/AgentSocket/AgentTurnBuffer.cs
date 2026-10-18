@@ -95,6 +95,19 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 		}
 
+		/// <summary>
+		/// Drops every event waiting for the next flush, and the overflow count. A world change runs it, so the events of the world
+		/// that is gone never reach a turn of the new one (8.8).
+		/// </summary>
+		public void Discard()
+		{
+			lock (gate)
+			{
+				events.Clear();
+				dropped = 0;
+			}
+		}
+
 		/// <summary>The events waiting for the next flush. Test use.</summary>
 		public int Pending
 		{

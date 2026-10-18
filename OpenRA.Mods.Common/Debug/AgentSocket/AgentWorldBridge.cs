@@ -51,6 +51,9 @@ namespace OpenRA.Mods.Common
 			// A load_map disposes the world it replaces. Its pending awaits get the restored error, as in WorldAdopted.
 			AgentOrderAwait.FailDisposedRestored();
 
+			// The events waiting for a turn belong to the world this replaces (8.8). The new world's own events come after this.
+			AgentEvents.DiscardWaiting();
+
 			Enabled = Game.Settings.Debug.AgentSocket;
 			AgentEvents.Enabled = Enabled;
 			UnitOrders.OrderResolving = Enabled ? AgentWorldEventObserver.Ordered : null;
@@ -79,6 +82,9 @@ namespace OpenRA.Mods.Common
 		{
 			// An undo swaps the world, so no pending order resolves on the old one. Their waiters get the restored error.
 			AgentOrderAwait.FailAllRestored();
+
+			// An undo's events of the timeline it rewinds are not part of the restored world (8.8).
+			AgentEvents.DiscardWaiting();
 
 			if (Enabled)
 			{

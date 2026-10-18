@@ -93,6 +93,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 				connection.Receive(dto);
 		}
 
+		/// <summary>
+		/// Drops every open connection's waiting events. A world change runs it: the events belong to the world that is gone, so
+		/// no turn of the new world reports them (8.8). Connections and their initial flag are left as they are.
+		/// </summary>
+		internal static void DiscardWaiting()
+		{
+			foreach (var connection in Volatile.Read(ref connections))
+				connection.Discard();
+		}
+
 		/// <summary>Adds a connection to the hub. Called once, when the connection is created.</summary>
 		internal static void Register(AgentConnection connection)
 		{
@@ -123,6 +133,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public AgentConnection()
 		{
 			AgentEvents.Register(this);
+		}
+
+		/// <summary>Drops the events waiting for this connection's next turn (a world change, 8.8).</summary>
+		internal void Discard()
+		{
+			Turn.Discard();
 		}
 
 		internal void Receive(object dto)
