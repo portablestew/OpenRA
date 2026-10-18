@@ -32,7 +32,7 @@ namespace OpenRA.Test
 	[TestFixture]
 	sealed class AgentStateDumpTest
 	{
-		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "paused", "game_over", "local_player", "players", "units", "threats"];
+		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "paused", "game_over", "local_player", "players", "units", "threats", "selection"];
 		static readonly string[] UnitKeys = ["id", "type", "owner", "cell", "pos", "facing", "hp", "max_hp", "damage", "idle", "activity"];
 		static readonly string[] PowerKeys = ["provided", "drained", "excess", "state"];
 

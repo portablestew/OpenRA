@@ -78,6 +78,31 @@ namespace OpenRA.Test
 			Assert.That(hw.World.Selection.Actors, Is.EquivalentTo([a, b]));
 		}
 
+		[TestCase(TestName = "The state's selection is the ordered actors, and a request with no order leaves it unchanged")]
+		public void SelectionIsTheOrderedActors()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var a = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			var b = hw.CreateActor("e1", hw.FindClearArea(new CPos(60, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using (var before = AgentStateDumpTest.Request("{\"cmd\":\"state\"}"))
+				Assert.That(Selection(before.RootElement), Is.Empty, "Nothing is selected before any order");
+
+			var destination = hw.FindClearArea(new CPos(50, 56), 1, 1, 4);
+			var line = $"{{\"cmd\":\"order\",\"type\":\"e1\",\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
+			using var envelope = AgentStateDumpTest.RawRequestWithTicks(hw, line);
+			var ordered = OrderedIds(envelope.RootElement.GetProperty("results")).Order().ToArray();
+			Assert.That(ordered, Is.EqualTo(new[] { a.ActorID, b.ActorID }.Order().ToArray()), "Premise: both e1 were ordered.");
+			Assert.That(Selection(envelope.RootElement.GetProperty("state")), Is.EqualTo(ordered), "The envelope's selection is the ordered ids.");
+
+			using (var ping = AgentStateDumpTest.RawRequest("{\"cmd\":\"ping\"}"))
+				Assert.That(Selection(ping.RootElement.GetProperty("state")), Is.EqualTo(ordered), "A request with no order changed the selection.");
+
+			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			Assert.That(Selection(state.RootElement), Is.EqualTo(ordered), "The state command's selection is the ordered ids.");
+		}
+
 		[TestCase(TestName = "A type pattern of e. orders every infantry actor and no vehicle")]
 		public void InfantryPatternOrdersAllInfantry()
 		{
@@ -190,6 +215,11 @@ namespace OpenRA.Test
 		static uint[] OrderedIds(JsonElement root)
 		{
 			return root.GetProperty("ordered").EnumerateArray().Select(e => e.GetUInt32()).ToArray();
+		}
+
+		static uint[] Selection(JsonElement state)
+		{
+			return state.GetProperty("selection").EnumerateArray().Select(e => e.GetUInt32()).ToArray();
 		}
 	}
 }

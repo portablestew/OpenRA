@@ -31,9 +31,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 		[
 			("ping", "-> tick", "{\"cmd\":\"ping\"}"),
 			("help", "-> banner (this text, as one string)", "{\"cmd\":\"help\"}"),
-			("state", "-> tick, net_frame, map, paused, game_over, local_player, players, units\n"
+			("state", "-> tick, net_frame, map, paused, game_over, local_player, players, units, selection\n"
 				+ "                -> map is uid, title, bounds ([x, y, width, height], Map.Bounds in cells) and spawns (one per player with a home"
 				+ " cell: player, cell [x, y]). Your own structures in units are id, type, cell and hp only."
+				+ " selection is the sorted ids of the actors your orders selected, empty when none."
 				+ " players[].known_counts is the count by type of the actors you know: all of your own, and another player's only where known."
 				+ " threats: the top 15 known enemies by standoff (at most 3 per type; a recent attacker first), each with id, type, cell,"
 				+ " hp, attack_target (the friendly it hit recently, or null: only a recent attacker has one), heading (its facing, not a bearing),"

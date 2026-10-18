@@ -25,7 +25,7 @@ namespace OpenRA.Test
 	{
 		static readonly string[] PingKeys = ["ok", "cmd", "tick"];
 		static readonly string[] HelpKeys = ["ok", "cmd", "banner"];
-		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "paused", "game_over", "local_player", "players", "units", "threats"];
+		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "paused", "game_over", "local_player", "players", "units", "threats", "selection"];
 		static readonly string[] ActorsKeys = ["ok", "cmd", "units"];
 		static readonly string[] MapsKeys = ["ok", "cmd", "maps"];
 		static readonly string[] LookKeys = ["ok", "cmd", "cells", "actors"];
