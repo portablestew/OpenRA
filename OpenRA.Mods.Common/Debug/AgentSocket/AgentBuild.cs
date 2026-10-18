@@ -20,18 +20,19 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	/// <summary>
 	/// The build command's success: the StartProduction order was issued to the queue, which then holds the count. Ready and
-	/// EtaTicks describe a copy of the item already queued when the request arrived (P1.11): Ready is true when that copy is done
-	/// and waits for placement, and otherwise false with EtaTicks, the ticks until it is done. Both are null when no copy was queued.
-	/// BlockedBy names the finished item at the head of the queue the item joins, which holds the new item until it is placed
-	/// (P1.12); null when that head is not finished.
+	/// EtaTicks describe the copy this request queued, the first of Count: it is queued behind every copy already in its queue, so
+	/// Ready is false (a copy queued now is not done), and EtaTicks is the ticks until it is done, counting the items ahead of it
+	/// at the power now. EtaTicks is null when a finished item at the head of that queue holds it until it is placed (BlockedBy
+	/// names that item). BlockedBy names the finished item at the head of the queue the item joins, which holds the new item until
+	/// it is placed (P1.12); null when that head is not finished.
 	/// </summary>
 	public sealed record BuildV1(bool Ok, string Cmd, uint Actor, string QueueType, string Item, int Count, int Tick, int MinEffectTick,
 		bool? Ready, int? EtaTicks, string BlockedBy);
 
 	/// <summary>
 	/// The refusal for a build the queue cannot start. Available lists the items build would accept now. MissingPrerequisites
-	/// names every prerequisite the player does not meet, and is null when the refusal is not about prerequisites. Ready, BlockedBy and
-	/// EtaTicks are as in BuildV1.
+	/// names every prerequisite the player does not meet, and is null when the refusal is not about prerequisites. Ready and
+	/// EtaTicks are always null here, since a refused build queues nothing. BlockedBy is as in BuildV1.
 	/// </summary>
 	public sealed record BuildRefusedV1(bool Ok, string Cmd, string Error, string[] Available, string[] MissingPrerequisites,
 		bool? Ready, int? EtaTicks, string BlockedBy, string Hint);
@@ -42,20 +43,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>Thrown on the game thread when a build cannot start. Carries the items build would accept now, and the answers BuildRefusedV1 reports.</summary>
 	public sealed class BuildRefusedException : Exception
 	{
-		public BuildRefusedException(string error, string[] available, string[] missingPrerequisites, bool? ready, int? etaTicks, string blockedBy)
+		public BuildRefusedException(string error, string[] available, string[] missingPrerequisites, string blockedBy)
 			: base(error)
 		{
 			Available = available;
 			MissingPrerequisites = missingPrerequisites;
-			Ready = ready;
-			EtaTicks = etaTicks;
 			BlockedBy = blockedBy;
 		}
 
 		public string[] Available { get; }
 		public string[] MissingPrerequisites { get; }
-		public bool? Ready { get; }
-		public int? EtaTicks { get; }
 		public string BlockedBy { get; }
 	}
 
@@ -119,16 +116,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (!QueueTrait(world, queue).CanQueue(info, out _, out _))
 				throw Refused(world, item, $"'{item}' cannot be queued now: a queue, item or build limit is reached", production);
 
-			// Read before the order is issued, so the answer describes the copy that was already queued when the request arrived.
-			var (ready, etaTicks) = Progress(world, production, item);
+			// Read before the order is issued, since the copy joins the end of the queue as it stands now.
+			var etaTicks = EtaOfNewCopy(world, queue, item);
 
 			// The same order-accept check as the order command, so a queue that does not take StartProduction is refused too.
 			var actor = AgentOrder.Accept(world, queue.Actor, "StartProduction");
 			world.IssueOrder(Order.StartProduction(actor, item, request.Count));
 			selection.Ordered(world, actor);
 
+			// A copy queued now has not started, let alone finished, so it is never ready when the reply is sent.
 			return new BuildV1(true, "build", actor.ActorID, queue.QueueType, item, request.Count, world.WorldTick, world.WorldTick + 1,
-				ready, etaTicks, queue.Blocker);
+				false, etaTicks, queue.Blocker);
 		}
 
 		/// <summary>
@@ -144,45 +142,23 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Ready-vs-ETA for a copy of item that is already queued (P1.11). Ready is true when a copy is done and waits for placement.
-		/// Otherwise the ETA is the ticks until the first copy in each queue is done: the time of the items ahead of it in that
-		/// queue, plus its own, at the current power, and the earliest such copy wins. A queue builds one item at a time, so the
-		/// items ahead count in full. ETA is null when a finished item ahead blocks the queue. Both are null when no copy is queued.
+		/// The ETA of a copy of item that the build is about to queue at the end of queue: the ticks the items already in the queue
+		/// still need, plus the copy's own build time, at the current power. A queue builds one item at a time, so every item ahead
+		/// counts in full. Null when a finished item is in the queue: it holds the queue until it is placed, and nothing can say when that is.
 		/// </summary>
-		static (bool? Ready, int? EtaTicks) Progress(World world, ProductionV1 production, string item)
+		static int? EtaOfNewCopy(World world, ProductionQueueV1 queue, string item)
 		{
-			var anyCopy = false;
-			var anyDone = false;
-			int? eta = null;
-			foreach (var queue in production.Queues)
-			{
-				var trait = QueueTrait(world, queue);
-				var items = trait.AllQueued().ToArray();
-				var index = Array.FindIndex(items, i => i.Item == item);
-				if (index < 0)
-					continue;
+			var trait = QueueTrait(world, queue);
+			var items = trait.AllQueued().ToArray();
+			if (items.Any(i => i.Done))
+				return null;
 
-				anyCopy = true;
-				if (items[index].Done)
-				{
-					anyDone = true;
-					continue;
-				}
+			var total = 0;
+			foreach (var ahead in items)
+				total += RemainingTicks(world, trait, ahead);
 
-				if (items.Take(index).Any(i => i.Done))
-					continue;
-
-				var total = 0;
-				for (var i = 0; i <= index; i++)
-					total += RemainingTicks(world, trait, items[i]);
-
-				eta = eta == null ? total : Math.Min(eta.Value, total);
-			}
-
-			if (!anyCopy)
-				return (null, null);
-
-			return anyDone ? (true, 0) : (false, eta);
+			var info = world.Map.Rules.Actors[item];
+			return total + trait.GetBuildTime(info, info.TraitInfo<BuildableInfo>());
 		}
 
 		/// <summary>The ticks an item still needs. An unstarted item has no build time until it starts, so its time comes from the rules.</summary>
@@ -228,8 +204,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		static BuildRefusedException Refused(World world, string item, string error, ProductionV1 production, string[] missing = null)
 		{
-			var (ready, etaTicks) = Progress(world, production, item);
-			return new BuildRefusedException(error, Available(world, production), missing, ready, etaTicks, BlockedBy(world, item, production));
+			return new BuildRefusedException(error, Available(world, production), missing, BlockedBy(world, item, production));
 		}
 	}
 }

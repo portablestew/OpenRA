@@ -142,38 +142,42 @@ namespace OpenRA.Test
 			Assert.That(root.GetProperty("ready").ValueKind, Is.EqualTo(JsonValueKind.Null), "No ATEK is queued, so there is no ready state");
 		}
 
-		[TestCase(TestName = "A build for an item in progress reports ready:false with an ETA, and for a finished item reports ready:true")]
-		public void ReadyAndEtaFollowTheQueuedCopy()
+		[TestCase(TestName = "A build reports ready:false and an ETA for the copy it queues, counting the copies ahead of it; behind a finished head there is no ETA")]
+		public void ReadyAndEtaDescribeTheCopyThisBuildQueues()
 		{
 			using var hw = HeadlessWorld.Create(1);
 			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
 			hw.Tick(1);
 
-			// No copy is queued yet, so there is no ready state to report.
+			// Nothing is queued, so the copy this build queues is the only one ahead of its own build time: not ready, with an ETA.
+			int firstEta;
 			using (var first = AgentStateDumpTest.Request("{\"cmd\":\"build\",\"item\":\"powr\"}"))
 			{
-				Assert.That(first.RootElement.GetProperty("ok").GetBoolean(), Is.True);
-				Assert.That(first.RootElement.GetProperty("ready").ValueKind, Is.EqualTo(JsonValueKind.Null));
-				Assert.That(first.RootElement.GetProperty("eta_ticks").ValueKind, Is.EqualTo(JsonValueKind.Null));
-				Assert.That(first.RootElement.GetProperty("blocked_by").ValueKind, Is.EqualTo(JsonValueKind.Null), "Nothing is finished at the head, so nothing blocks");
+				var root = first.RootElement;
+				Assert.That(root.GetProperty("ok").GetBoolean(), Is.True);
+				Assert.That(root.GetProperty("ready").ValueKind, Is.EqualTo(JsonValueKind.False), "A copy queued now is not done yet");
+				firstEta = root.GetProperty("eta_ticks").GetInt32();
+				Assert.That(firstEta, Is.GreaterThan(0), "The new copy needs its build time");
+				Assert.That(root.GetProperty("blocked_by").ValueKind, Is.EqualTo(JsonValueKind.Null), "Nothing is finished at the head, so nothing blocks");
 			}
 
 			Assert.That(hw.TickUntil(PowrBuilding, 100), Is.Not.Null, "The POWR never started building.");
 
-			// The first copy is in progress, so a second build reports it: not ready, with the ticks it still needs.
+			// The first copy is in progress and ahead of this one, so this copy's ETA counts the first copy's remaining time too.
 			using (var second = AgentStateDumpTest.Request("{\"cmd\":\"build\",\"item\":\"powr\"}"))
 			{
 				var root = second.RootElement;
-				Assert.That(root.GetProperty("ready").GetBoolean(), Is.False);
-				Assert.That(root.GetProperty("eta_ticks").GetInt32(), Is.GreaterThan(0), "An in-progress item needs a positive ETA");
+				Assert.That(root.GetProperty("ready").ValueKind, Is.EqualTo(JsonValueKind.False));
+				Assert.That(root.GetProperty("eta_ticks").GetInt32(), Is.GreaterThan(firstEta), "The copy ahead of it is still building, so the ETA is longer");
 			}
 
 			Assert.That(hw.TickUntil(PowrFinished, 3000), Is.Not.Null, "The POWR never finished building.");
 
-			// The first copy is done and waits for placement, so a build now reports it ready.
-			using var finished = AgentStateDumpTest.Request("{\"cmd\":\"build\",\"item\":\"powr\"}");
-			Assert.That(finished.RootElement.GetProperty("ready").GetBoolean(), Is.True, "A finished item is ready");
-			Assert.That(finished.RootElement.GetProperty("eta_ticks").GetInt32(), Is.EqualTo(0));
+			// The first copy is done and holds the queue until it is placed, so a copy queued behind it has no ETA; blocked_by names the head.
+			using var blocked = AgentStateDumpTest.Request("{\"cmd\":\"build\",\"item\":\"powr\"}");
+			Assert.That(blocked.RootElement.GetProperty("ready").ValueKind, Is.EqualTo(JsonValueKind.False));
+			Assert.That(blocked.RootElement.GetProperty("eta_ticks").ValueKind, Is.EqualTo(JsonValueKind.Null), "A finished head holds the queue, so the ETA depends on placement");
+			Assert.That(blocked.RootElement.GetProperty("blocked_by").GetString(), Is.EqualTo("powr"));
 		}
 
 		[TestCase(TestName = "A finished head blocks the queue: a build into it names the blocker, and the queue view names it too")]

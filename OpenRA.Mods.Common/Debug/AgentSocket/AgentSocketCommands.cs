@@ -264,7 +264,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 			catch (BuildRefusedException e)
 			{
-				return Serialize(new BuildRefusedV1(false, cmd, e.Message, e.Available, e.MissingPrerequisites, e.Ready, e.EtaTicks, e.BlockedBy, Hint));
+				return Serialize(new BuildRefusedV1(false, cmd, e.Message, e.Available, e.MissingPrerequisites, null, null, e.BlockedBy, Hint));
 			}
 			catch (OrderRefusedException e)
 			{
