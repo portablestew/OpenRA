@@ -15,4 +15,5 @@
 Always load optional steering when appropriate. Detailed guidance lives in `.agents/steering/`:
 
 - `.agents/steering/build-and-run.md` — How to build, run, check status, and stop the OpenRA game; where logs, crash dumps, and other runtime artifacts live.
+- `.agents/steering/agent_text_adventure.md` — How to get into an OpenRA game through the text_adventure tool, and the timeouts and file locations the banner does not give.
 - `.agents/steering/debug.md` — Debugging a running game from Python with the `openra_debug` library: breakpoints, stacks, live variable inspection, crash-dump analysis, and safety rules.
