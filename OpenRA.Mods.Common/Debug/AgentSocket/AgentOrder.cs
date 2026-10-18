@@ -89,6 +89,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null);
 
 	/// <summary>
+	/// The AttackMove reply (P3.0a). Valid, EffectTick and Settled follow the Move reply, but there is no path: the unit's travel is not
+	/// awaited. Outcome is started, or no_path when the unit planned no way to the cell (valid is then false). Reason is set for a
+	/// no_path and for a refusal, and Orders only for a refusal. A paused game gives nulls, as a Move does.
+	/// </summary>
+	public sealed record AttackMoveV1(bool Ok, string Cmd, int Tick, int MinEffectTick, bool? Valid, int? EffectTick, bool Settled,
+		int SettledTicks,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Outcome = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Orders = null);
+
+	/// <summary>
 	/// What Issue returns on the game thread. Move is true for a Move order. Await is the wait for a Move or an Attack, and null
 	/// for any other order. Paused is true for a Move or an Attack in a paused game, which never ticks, so Settle does not wait for it (Q1).
 	/// </summary>
@@ -121,6 +132,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	{
 		/// <summary>The reason a Move reply gives when the validators refused the order (P1.5).</summary>
 		public const string ValidatorRejected = "rejected by order validator";
+		const string NoPathReason = "no path to the cell";
 
 		/// <summary>Parses the request on the socket thread. Returns an error message, or null when the request is valid.</summary>
 		public static string Parse(JsonElement root, out OrderRequest request)
@@ -247,8 +259,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				if (!TryGetUInt(root.GetProperty("settle_ticks"), out var settle) || settle > int.MaxValue)
 					return "settle_ticks must be an unsigned integer";
 
-				if (orderElement.GetString() != "Move")
-					return "settle_ticks applies only to Move";
+				if (orderElement.GetString() is not ("Move" or "AttackMove"))
+					return "settle_ticks applies only to Move and AttackMove";
 
 				settleTicks = (int)settle;
 			}
@@ -261,8 +273,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				if (awaitElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
 					return "await must be a boolean";
 
-				if (orderElement.GetString() != "Move" && awaitElement.ValueKind == JsonValueKind.False)
-					return "await:false applies only to Move";
+				if (orderElement.GetString() is not ("Move" or "AttackMove") && awaitElement.ValueKind == JsonValueKind.False)
+					return "await:false applies only to Move and AttackMove";
 
 				// A group has one await per actor, and a job holds one, so a group always waits (P1.14).
 				if ((actors != null || typePattern != null) && awaitElement.ValueKind == JsonValueKind.False)
@@ -283,7 +295,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static Issued Issue(World world, OrderRequest request, AgentSelection selection)
 		{
 			var order = ToOrder(world, request);
-			var move = order.OrderString == "Move";
+			var move = order.OrderString is "Move" or "AttackMove";
 			var attack = order.OrderString == "Attack";
 			var deploy = order.OrderString == "DeployTransform";
 			var await = AgentOrderAwait.Register(order, move ? request.SettleTicks ?? AgentOrderAwait.DefaultSettleTicks : 0);
@@ -322,6 +334,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 				if (await is { IsDeploy: true })
 					return new DeployV1(true, "order", ack.Tick, ack.MinEffectTick, false, null);
 
+				if (await is { IsAttackMove: true })
+					return new AttackMoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0);
+
 				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
 			}
 
@@ -331,6 +346,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 			await.Wait();
 			if (await.IsAttack)
 				return new AttackV1(true, "order", ack.Tick, ack.MinEffectTick, true, await.Outcome, await.Reason);
+
+			if (await.IsAttackMove)
+			{
+				var (valid, outcome, reason, orders) = AttackMoveOutcome(await);
+				return new AttackMoveV1(true, "order", ack.Tick, ack.MinEffectTick, valid, await.ResolvedTick, true, await.SettleTicks, outcome, reason, orders);
+			}
 
 			if (await.IsDeploy)
 				return new DeployV1(await.Outcome == AgentOrderAwait.Completed, "order", ack.Tick, ack.MinEffectTick, true, await.Outcome, await.Reason);
@@ -348,7 +369,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			var actors = GroupActors(world, request);
 			var order = ToGroupOrder(world, request, actors);
-			var move = order.OrderString == "Move";
+			var move = order.OrderString is "Move" or "AttackMove";
 			var tracked = move || order.OrderString is "Attack" or "DeployTransform";
 
 			// Each await is registered on the copy of the order that the engine resolves for its actor, so Resolve matches it by subject.
@@ -404,6 +425,22 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, ids.Length, results);
 		}
 
+		/// <summary>
+		/// The AttackMove outcome of a settled await (P3.0a): whether the order is valid, the outcome and reason to report, and the
+		/// orders the subject accepts on a refusal. A refusal is valid false with its reason. A path of no cells, from a unit not
+		/// already on the cell, is valid false with no_path.
+		/// </summary>
+		static (bool Valid, string Outcome, string Reason, string[] Orders) AttackMoveOutcome(AgentOrderAwait await)
+		{
+			if (!await.Valid)
+				return (false, null, ValidatorRejected, await.Orders);
+
+			if (await.NoPath)
+				return (false, AgentOrderAwait.NoPathOutcome, NoPathReason, null);
+
+			return (true, AgentOrderAwait.Started, null, null);
+		}
+
 		/// <summary>One actor's entry in a grouped reply. Called once the actor's await has settled or failed. Must not run on the game thread.</summary>
 		static GroupResultV1 GroupResult(uint id, AgentOrderAwait await)
 		{
@@ -418,6 +455,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			if (await.IsAttack || await.IsDeploy)
 				return new GroupResultV1(id, true, Outcome: await.Outcome, Reason: await.Reason);
+
+			if (await.IsAttackMove)
+			{
+				var (valid, outcome, reason, orders) = AttackMoveOutcome(await);
+				return new GroupResultV1(id, true, Valid: valid, EffectTick: await.ResolvedTick, SettledTicks: await.SettleTicks,
+					Outcome: outcome, Reason: reason, Orders: orders);
+			}
 
 			var refused = !await.Valid;
 			return new GroupResultV1(id, true, Valid: await.Valid, EffectTick: await.ResolvedTick, SettledTicks: await.SettleTicks,

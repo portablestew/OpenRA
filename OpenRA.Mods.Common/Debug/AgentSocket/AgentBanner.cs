@@ -47,17 +47,19 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("order", "exactly one of actor (uint), actors ([uint]), or type (string: a regex matched against the whole type name of"
 				+ " each owned actor, so \"e1\" is e1 only and \"e.\" is every e-type); order (string); at most one of cell [x,y],"
 				+ " pos [x,y,z], target_actor (uint); optional queued (bool), item (string), extra_data (uint), extra_location [x,y],"
-				+ " settle_ticks (Move only), await (bool, default true; false is Move only and single actor only)\n"
+				+ " settle_ticks (Move and AttackMove), await (bool, default true; false is Move and AttackMove only, and single actor only)\n"
 					+ "                -> tick, min_effect_tick, and for a Move, valid, effect_tick, settled, settled_ticks, path."
 					+ " valid:false adds reason and orders (the names the actor accepts)."
 						+ " For an Attack, outcome (started | no_valid_target) and settled; no_valid_target adds reason."
+							+ " For an AttackMove, valid, effect_tick, settled, settled_ticks,"
+							+ " outcome (started | no_path), and reason and orders on a refusal; no path, since its travel is not awaited."
 				+ " await:false returns job (the id for wait) with tick, min_effect_tick, and does not wait."
 				+ " A group returns ordered (the actor ids), matched, and results (one per actor: actor, valid, effect_tick, settled,"
 				+ " settled_ticks, path, outcome, reason, orders, error). One actor that refuses the name refuses the whole group."
 				+ " A name the actor does not accept is refused: ok:false, error, available (the names it accepts)."
 				+ " The exception is Attack, which is never refused here: an attack that cannot start replies no_valid_target."
 				+ " Zero or several selectors, a bad regex, or a type with no match are errors",
-				"{\"cmd\":\"order\",\"actor\":12,\"order\":\"Move\",\"cell\":[40,50],\"await\":false}"),
+				"{\"cmd\":\"order\",\"actor\":12,\"order\":\"AttackMove\",\"cell\":[40,50]}"),
 			("wait", "job (int), or no job; optional timeout_ms (non-negative int, default 10000)\n"
 				+ "                -> with job: the Move reply (cmd:wait, same keys as a Move order reply) with result:\"job\", once the job settles, or"
 				+ " status:\"pending\" at the timeout (the job stays open). An unknown job, or a job whose world load_map or undo replaced: ok:false, error."

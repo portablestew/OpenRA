@@ -52,6 +52,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The deploy outcome when the transform did not finish. Reason says why (P1.8).</summary>
 		public const string Canceled = "canceled";
 
+		/// <summary>The AttackMove outcome when the unit found no path to the cell (P3.0a).</summary>
+		public const string NoPathOutcome = "no_path";
+
 		/// <summary>
 		/// The clock the event long-poll reads, in milliseconds (P3.4). The wall clock by default. A test sets a fake clock, so a
 		/// wait times out on the test's ticks and not on real time. The job wait keeps its own limit.
@@ -76,6 +79,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		Order heldOrder;
 		bool moveEnded;
 
+		// An AttackMove that starts on its cell has no travel, so an empty path there is not a failure (P3.0a).
+		readonly bool startedAtDestination;
+
 		AgentOrderAwait(Actor subject, string order, Target target, int settleTicks)
 		{
 			this.subject = subject;
@@ -83,6 +89,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			this.target = target;
 			SettleTicks = settleTicks;
 			registeredTick = subject.World.WorldTick;
+			startedAtDestination = order == "AttackMove" && subject.Location == subject.World.Map.CellContaining(target.CenterPosition);
 		}
 
 		/// <summary>The world the order was issued on.</summary>
@@ -111,6 +118,18 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>True for an Attack await. Its outcome is set by Tick or Resolve, not by settling (P1.6).</summary>
 		public bool IsAttack => order == "Attack";
+
+		/// <summary>True for an AttackMove await (P3.0a). It settles on its order's resolution, as a Move does, and does not wait for travel.</summary>
+		public bool IsAttackMove => order == "AttackMove";
+
+		/// <summary>
+		/// True for an AttackMove whose unit planned no path to the cell and was not already on it (P3.0a). Path is set by the move the
+		/// order starts, so this is only known once that path has been captured.
+		/// </summary>
+		public bool NoPath => IsAttackMove && Path is { Length: 0 } && !startedAtDestination;
+
+		/// <summary>True for a Move, or an AttackMove whose move the order starts (P3.0a): both plan a path the await reports.</summary>
+		bool IsMoveOrder => order is "Move" or "AttackMove";
 
 		/// <summary>True for a DeployTransform await. Its outcome is set by the transform activity's end, or by a refusal (P1.8).</summary>
 		public bool IsDeploy => order == "DeployTransform";
@@ -247,7 +266,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static bool AwaitingPath(Actor subject)
 		{
 			lock (Gate)
-				return Settling.Exists(p => p.order == "Move" && p.Path == null && ReferenceEquals(p.subject, subject));
+				return Settling.Exists(p => p.IsMoveOrder && p.Path == null && ReferenceEquals(p.subject, subject));
 		}
 
 		/// <summary>Stores the path a Move planned, for the await on subject. An empty cell list is a path that found nothing. Must run on the game thread.</summary>
@@ -255,7 +274,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			lock (Gate)
 			{
-				var await = Settling.Find(p => p.order == "Move" && p.Path == null && ReferenceEquals(p.subject, subject));
+				var await = Settling.Find(p => p.IsMoveOrder && p.Path == null && ReferenceEquals(p.subject, subject));
 				if (await != null)
 					await.Path = cells;
 			}
