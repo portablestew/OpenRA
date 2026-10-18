@@ -118,7 +118,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("look", "at [x, y] or points [[x, y], ...] (at most 16), and an optional k (1 to 100, default 20)\n"
 				+ "                -> cells (per cell: cell, terrain, buildable, and resource and density when the cell has them) and actors"
 				+ " (the k nearest you know, of any owner: id, type, owner, cell, hp). With points, each actor also has dist (world units,"
-				+ " 1024 per cell) and pt, the point it is nearest to, and the k is shared so each point gets a fair share. Scenery is left"
+				+ " 1024 per cell) and pt, the point it is nearest to, and the k is shared so each point gets a fair share. Scenery (trees, husks, map props, spawn markers) is left"
 				+ " out. buildable means a construction yard could stand on the cell. An empty or invalid selector is ok:false, error",
 				"{\"cmd\":\"look\",\"points\":[[40,50]],\"k\":5}"),
 		];

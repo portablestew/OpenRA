@@ -111,12 +111,21 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Scenery is what the world owns (the neutral player that OwnsWorld, which map trees and buildings belong to), or an mpspawn
-		/// marker. Creeps are not scenery: they are NonCombatant but they fight, so they stay in the digest.
+		/// Scenery is what the world owns (the neutral player that OwnsWorld) and that is not a unit (IsUnit), or an mpspawn marker.
+		/// Neutral civilians are units, so they are not scenery. Creeps are not scenery either: they are not owned by the world.
 		/// </summary>
 		internal static bool IsScenery(Actor a)
 		{
-			return a.Owner?.PlayerReference?.OwnsWorld == true || a.Info.Name == "mpspawn";
+			return a.Info.Name == "mpspawn" || (a.Owner?.PlayerReference?.OwnsWorld == true && !IsUnit(a));
+		}
+
+		/// <summary>
+		/// A unit moves or fights: it has Mobile (infantry, civilians, vehicles) or Armament (armed civilians, turrets). Trees, husks
+		/// and map props have neither, so they stay scenery (8.6).
+		/// </summary>
+		static bool IsUnit(Actor a)
+		{
+			return a.Info.HasTraitInfo<MobileInfo>() || a.Info.HasTraitInfo<ArmamentInfo>();
 		}
 
 		/// <summary>

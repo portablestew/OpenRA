@@ -70,10 +70,10 @@ namespace OpenRA.Test
 
 			Assert.That(spawn.IsDead, Is.False, "The spawn marker should exist in the world.");
 
-			// The expected set (adjusted for the fog policy): every occupying actor that is not owned by the neutral world and not a
-			// spawn marker, and that the local player owns or knows (AgentFog). The enemy unit is fogged and never seen, so it is out.
+			// The expected set (adjusted for the fog policy): every occupying actor that the digest does not call scenery (AgentStateDump.IsScenery),
+			// and that the local player owns or knows (AgentFog). The enemy unit is fogged and never seen, so it is out.
 			var expected = hw.World.Actors
-				.Where(a => a.OccupiesSpace != null && !a.IsDead && a.Owner != neutral && a.Info.Name != SpawnMarker
+				.Where(a => a.OccupiesSpace != null && !a.IsDead && !Scenery(a)
 					&& (a.Owner == hw.LocalPlayer || Known(a, hw.LocalPlayer)))
 				.Select(a => (Owner: a.Owner.PlayerName, Type: a.Info.Name, Id: a.ActorID))
 				.ToArray();
@@ -87,7 +87,12 @@ namespace OpenRA.Test
 			Assert.That(units, Is.EquivalentTo(expected), "The state units should be exactly the non-scenery actors of the world.");
 
 			// The two cases by name, for the failure message.
-			Assert.That(units.Any(u => u.Owner == neutral.PlayerName), Is.False, "No neutral scenery should appear in state units.");
+			var neutralScenery = hw.World.Actors
+				.Where(a => a.Owner == neutral && a.OccupiesSpace != null && !a.IsDead && Scenery(a))
+				.Select(a => a.ActorID)
+				.ToArray();
+			Assert.That(neutralScenery, Is.Not.Empty, "The world should contain neutral scenery to exclude.");
+			Assert.That(units.Any(u => neutralScenery.Contains(u.Id)), Is.False, "No neutral scenery should appear in state units.");
 			Assert.That(units.Any(u => u.Type == SpawnMarker), Is.False, "No mpspawn should appear in state units.");
 			Assert.That(units.Any(u => u.Id == own.ActorID && u.Owner == hw.LocalPlayer.PlayerName), Is.True,
 				"A player-owned unit should still appear in state units.");
@@ -131,6 +136,14 @@ namespace OpenRA.Test
 		static bool Known(Actor actor, Player observer)
 		{
 			return (bool)ModType("AgentSocket.AgentFog").GetMethod("Known").Invoke(null, [actor, observer]);
+		}
+
+		/// <summary>The digest's scenery definition (AgentStateDump.IsScenery, internal), called through the mod's type.</summary>
+		static bool Scenery(Actor actor)
+		{
+			var method = ModType("AgentSocket.AgentStateDump").GetMethod("IsScenery",
+				System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+			return (bool)method.Invoke(null, [actor]);
 		}
 
 		/// <summary>Whether the state's units include the actor, read from a fresh state request.</summary>
