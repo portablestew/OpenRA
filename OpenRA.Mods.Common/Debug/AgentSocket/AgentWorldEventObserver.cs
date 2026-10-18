@@ -21,7 +21,7 @@ namespace OpenRA.Mods.Common
 	/// <summary>
 	/// Raises produced events (D2, P4). Registered in the World: block only. The order and stance events come from
 	/// static notifies: AgentWorldBridge installs Ordered on UnitOrders.OrderResolving (D3), and AutoTarget.SetStance
-	/// calls Stanced directly. Both check AgentEvents.HasSubscribers before they build a DTO.
+	/// calls Stanced directly. Both check AgentEvents.Enabled before they build a DTO.
 	/// </summary>
 	public sealed class AgentWorldEventObserver : INotifyOtherProduction
 	{
@@ -33,7 +33,7 @@ namespace OpenRA.Mods.Common
 		/// <summary>Raises a produced event for a unit that a producer has just built. Called from the production notify.</summary>
 		public static void Produced(Actor producer, Actor produced)
 		{
-			if (!AgentEvents.HasSubscribers)
+			if (!AgentEvents.Enabled)
 				return;
 
 			AgentEvents.Raise("production", produced.Owner.PlayerName, new ProducedV1("produced", produced.World.WorldTick,
@@ -50,7 +50,7 @@ namespace OpenRA.Mods.Common
 			// Resolves the socket's pending await. It runs without a subscriber, so an await never waits on an event.
 			AgentOrderAwait.Resolve(order, valid);
 
-			if (!AgentEvents.HasSubscribers)
+			if (!AgentEvents.Enabled)
 				return;
 
 			var world = order.Subject.World;

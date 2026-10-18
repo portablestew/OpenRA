@@ -27,7 +27,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		public static void Raise(Player player, string name)
 		{
-			if (!AgentEvents.HasSubscribers)
+			if (!AgentEvents.Enabled)
 				return;
 
 			var tick = player?.World.WorldTick ?? AgentWorldBridge.Active?.WorldTick ?? 0;

@@ -40,7 +40,7 @@ namespace OpenRA.Mods.Common
 
 		static void DamagedEvent(Actor self, AttackInfo e)
 		{
-			if (!AgentEvents.HasSubscribers)
+			if (!AgentEvents.Enabled)
 				return;
 
 			var health = self.TraitOrDefault<Health>();
@@ -62,7 +62,7 @@ namespace OpenRA.Mods.Common
 
 		void INotifyKilled.Killed(Actor self, AttackInfo e)
 		{
-			if (!AgentEvents.HasSubscribers)
+			if (!AgentEvents.Enabled)
 				return;
 
 			var cost = self.Info.TraitInfoOrDefault<ValuedInfo>()?.Cost ?? 0;
@@ -73,7 +73,7 @@ namespace OpenRA.Mods.Common
 
 		void INotifyBuildingPlaced.BuildingPlaced(Actor self, Actor building)
 		{
-			if (!AgentEvents.HasSubscribers)
+			if (!AgentEvents.Enabled)
 				return;
 
 			AgentEvents.Raise("production", building.Owner.PlayerName, new PlacedV1("placed", building.World.WorldTick,
@@ -94,7 +94,7 @@ namespace OpenRA.Mods.Common
 				return;
 
 			powerLow = low;
-			if (!AgentEvents.HasSubscribers)
+			if (!AgentEvents.Enabled)
 				return;
 
 			AgentEvents.Raise("power", self.Owner.PlayerName, new PowerEventV1(low ? "power_low" : "power_restored", self.World.WorldTick,
@@ -103,7 +103,7 @@ namespace OpenRA.Mods.Common
 
 		void INotifyWinStateChanged.OnPlayerWon(Player player)
 		{
-			if (!AgentEvents.HasSubscribers)
+			if (!AgentEvents.Enabled)
 				return;
 
 			AgentEvents.Raise("player", player.PlayerName, new GameOverV1("game_over", player.World.WorldTick, player.PlayerName));
@@ -111,7 +111,7 @@ namespace OpenRA.Mods.Common
 
 		void INotifyWinStateChanged.OnPlayerLost(Player player)
 		{
-			if (!AgentEvents.HasSubscribers)
+			if (!AgentEvents.Enabled)
 				return;
 
 			AgentEvents.Raise("player", player.PlayerName, new DefeatedV1("defeated", player.World.WorldTick, player.PlayerName));

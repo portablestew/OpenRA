@@ -124,7 +124,7 @@ namespace OpenRA.Mods.Common.Activities
 		{
 			startTicks = self.World.WorldTick;
 			mobile.MoveResult = MoveResult.InProgress;
-			if (AgentEvents.HasSubscribers)
+			if (AgentEvents.Enabled)
 				AgentActivityEvents.Raise(self, "move", "started");
 
 			if (evaluateNearestMovableCell && destination.HasValue)

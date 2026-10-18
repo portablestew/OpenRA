@@ -15,7 +15,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// Raises the activity lifecycle events (P1.7). An activity starts once, then completes or is canceled once. Trait-level
 	/// aborts pass a reason, so a silent abort shows up as canceled. Raise always reaches the DeployTransform await (P1.8), which
 	/// reads transform events with no subscriber, so Transform calls it unguarded. Move's completed and canceled events are unguarded, since a held deploy waits on them (P1.14c).
-	/// Its started and path events still test HasSubscribers first. Raise only reads the actor, so it touches no RNG and no world state.
+	/// Its started and path events still test Enabled first. Raise only reads the actor, so it touches no RNG and no world state.
 	/// </summary>
 	public static class AgentActivityEvents
 	{
@@ -27,7 +27,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			AgentOrderAwait.Activity(self, kind, state, reason);
 
-			if (!AgentEvents.HasSubscribers)
+			if (!AgentEvents.Enabled)
 				return;
 
 			AgentEvents.Raise("activity", self.Owner.PlayerName, new ActivityV1("activity", self.World.WorldTick,

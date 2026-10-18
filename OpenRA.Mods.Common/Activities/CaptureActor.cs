@@ -125,7 +125,7 @@ namespace OpenRA.Mods.Common.Activities
 				foreach (var t in enterActor.TraitsImplementing<INotifyCapture>())
 					t.OnCapture(enterActor, self, oldOwner, self.Owner, captures.Info.CaptureTypes);
 
-				if (AgentEvents.HasSubscribers)
+				if (AgentEvents.Enabled)
 					AgentPlayerEventObserver.Captured(enterActor, self, oldOwner, self.Owner);
 
 				if (self.Owner.RelationshipWith(oldOwner).HasRelationship(captures.Info.PlayerExperienceRelationships))

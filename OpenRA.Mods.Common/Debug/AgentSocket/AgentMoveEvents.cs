@@ -18,7 +18,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 {
 	/// <summary>
 	/// Builds the path payload (M10, <c>3k-move-hooks</c>). Move calls these behind
-	/// AgentEvents.HasSubscribers. They are pure observers: they read the path and the locomotor's terrain cost, and
+	/// AgentEvents.Enabled. They are pure observers: they read the path and the locomotor's terrain cost, and
 	/// they touch no RNG and no world state.
 	/// </summary>
 	public static class AgentMoveEvents
@@ -83,7 +83,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		public static bool Wanted(Actor self)
 		{
-			return AgentEvents.HasSubscribers || AgentOrderAwait.AwaitingPath(self);
+			return AgentEvents.Enabled || AgentOrderAwait.AwaitingPath(self);
 		}
 
 		static PathCell Cell(CPos c)

@@ -165,7 +165,7 @@ namespace OpenRA.Mods.Common.Traits
 			Stance = PredictedStance = value;
 			ApplyStanceCondition(self);
 
-			if (AgentEvents.HasSubscribers)
+			if (AgentEvents.Enabled)
 				AgentWorldEventObserver.Stanced(self, oldStance, Stance);
 
 			foreach (var nsc in notifyStanceChanged)

@@ -71,6 +71,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 		static AgentEventSubscriber[] subscribers = [];
 
 		/// <summary>
+		/// Test use only: sees every event raised while the socket is enabled, with or without a subscriber (P3.1). Null in a
+		/// running game, so production pays nothing for it.
+		/// </summary>
+		public static Action<string, string, object> Sink;
+
+		/// <summary>
 		/// True when the socket is enabled and at least one connection is subscribed. Engine hooks test this before they
 		/// build a DTO, so an unsubscribed game does no event work.
 		/// </summary>
@@ -98,9 +104,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		public static void Raise(string group, string owner, object dto)
 		{
-			if (!HasSubscribers)
+			if (!enabled)
 				return;
 
+			Sink?.Invoke(group, owner, dto);
 			foreach (var subscriber in Volatile.Read(ref subscribers))
 				subscriber.Enqueue(group, owner, dto);
 		}
