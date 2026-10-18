@@ -64,7 +64,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 			"power", "player", "notification"];
 
 		static volatile bool enabled;
-		static volatile int subscriberCount;
 		static readonly Lock Gate = new();
 
 		// Copy-on-write: writers replace the array under Gate, so Raise can read it without a lock.
@@ -80,7 +79,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// True when the socket is enabled and at least one connection is subscribed. Engine hooks test this before they
 		/// build a DTO, so an unsubscribed game does no event work.
 		/// </summary>
-		public static bool HasSubscribers => enabled && subscriberCount != 0;
+		public static bool HasSubscribers => enabled && SubscriberCount != 0;
 
 		/// <summary>Set from Debug.AgentSocket by AgentWorldBridge at each world load (D12).</summary>
 		public static bool Enabled
@@ -90,7 +89,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>The number of connections with at least one subscribed group.</summary>
-		public static int SubscriberCount => subscriberCount;
+		public static int SubscriberCount => Volatile.Read(ref subscribers).Count(s => s.Subscribed);
 
 		/// <summary>Queues dto for every subscriber to group. Runs on the game thread; never blocks on socket I/O.</summary>
 		public static void Raise(string group, object dto)
@@ -112,6 +111,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 				subscriber.Enqueue(group, owner, dto);
 		}
 
+		/// <summary>
+		/// Adds or removes a connection from the hub. A connection is registered from the start of Serve until Close, so its
+		/// turn buffer sees every event whether or not it subscribed (P3.3). Subscribing and unsubscribing do not change this.
+		/// </summary>
 		internal static void SetRegistered(AgentEventSubscriber subscriber, bool registered)
 		{
 			lock (Gate)
@@ -122,7 +125,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 					return;
 
 				subscribers = registered ? [.. current, subscriber] : current.Where(s => s != subscriber).ToArray();
-				subscriberCount = subscribers.Length;
 			}
 		}
 	}
@@ -150,6 +152,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		internal AgentTurnBuffer Turn { get; } = new();
 
+		/// <summary>True while the connection is subscribed to at least one group.</summary>
+		internal bool Subscribed
+		{
+			get
+			{
+				lock (gate)
+					return groups.Count > 0;
+			}
+		}
+
 		/// <summary>Events waiting to be taken. Test use.</summary>
 		public int Pending
 		{
@@ -167,7 +179,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		public string[] Subscribe(IEnumerable<string> names, string ownerFilter = null)
 		{
-			bool registered;
 			lock (gate)
 			{
 				if (closed)
@@ -175,11 +186,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 				foreach (var name in names)
 					groups[name] = ownerFilter;
-
-				registered = groups.Count > 0;
 			}
 
-			AgentEvents.SetRegistered(this, registered);
+			AgentEvents.SetRegistered(this, true);
 			return Active();
 		}
 
@@ -189,7 +198,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		public string[] Unsubscribe(IEnumerable<string> names)
 		{
-			bool registered;
 			lock (gate)
 			{
 				if (names == null)
@@ -197,11 +205,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				else
 					foreach (var name in names)
 						groups.Remove(name);
-
-				registered = groups.Count > 0;
 			}
 
-			AgentEvents.SetRegistered(this, registered);
 			return Active();
 		}
 
@@ -219,21 +224,25 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			lock (gate)
 			{
-				if (closed || !groups.TryGetValue(group, out var owner))
+				if (closed)
 					return;
 
-				if (owner != null && eventOwner != null && eventOwner != owner)
-					return;
-
-				if (queue.Count == Capacity)
+				// A subscribed group whose owner filter passes is pushed on the stream. Every other event waits in the turn buffer
+				// for the next response, so each event reaches the connection once.
+				if (groups.TryGetValue(group, out var owner) && (owner == null || eventOwner == null || eventOwner == owner))
 				{
-					queue.Dequeue();
-					dropped++;
+					if (queue.Count == Capacity)
+					{
+						queue.Dequeue();
+						dropped++;
+					}
+
+					queue.Enqueue(dto);
+					Monitor.Pulse(gate);
+					return;
 				}
 
-				queue.Enqueue(dto);
 				Turn.Add(dto);
-				Monitor.Pulse(gate);
 			}
 		}
 

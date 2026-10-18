@@ -198,7 +198,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("  After the banner, and after every response, the server sends a lone > line as a prompt: it is your turn.\n");
 			text.Append("  A > line is not a response and not an event; skip lines that are just >.\n");
 			text.Append("  An array is one request: the items run in order and results is one JSON array, one result per item.\n");
-			text.Append("  The envelope: results (the request's result, or the array), events (empty until P3), state (the digest, as the state\n");
+			text.Append("  The envelope: results (the request's result, or the array), events (the turn's events, each once: the first 3 of a type in full,"
+				+ " then {event, aggregated, tick_from, tick_to};\n"
+				+ "    a subscribed group is also pushed as a line), state (the digest, as the state\n");
 			text.Append("    command returns it), tick (the game clock after the request). The map image: map_state_png (its workspace path, or\n");
 			text.Append("    null), map_state_tick (the tick it was rendered at, equal to tick after a world-changing request), map_state_render\n");
 			text.Append("    (ok or unavailable), and map_px_per_cell, map_origin, map_size (its geometry). With no world loaded, tick, state and\n");

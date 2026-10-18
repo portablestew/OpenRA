@@ -94,6 +94,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static void Serve(TextReader reader, TextWriter writer)
 		{
 			var subscriber = new AgentEventSubscriber();
+
+			// Registered from the start, so the turn buffer sees every event, subscribed or not (P3.3).
+			AgentEvents.SetRegistered(subscriber, true);
 			var writeGate = new object();
 			var events = new Thread(() => PumpEvents(subscriber, writer, writeGate)) { Name = "Agent socket events", IsBackground = true };
 

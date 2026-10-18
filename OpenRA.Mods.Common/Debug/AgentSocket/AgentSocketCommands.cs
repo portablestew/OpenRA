@@ -85,7 +85,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					var items = root.EnumerateArray().ToArray();
 					var results = "[" + string.Join(",", items.Select((item, index) =>
 						UndoRefusal(item, index, items.Length) ?? HandleItem(item, subscriber, selection))) + "]";
-					return AgentEnvelope.Wrap(results, AgentEnvelope.WantsState(items));
+					return AgentEnvelope.Wrap(results, AgentEnvelope.WantsState(items), subscriber?.Turn.Flush());
 				}
 
 				// help is documentation, not a turn: it answers with the banner alone.
@@ -93,7 +93,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					cmdElement.ValueKind == JsonValueKind.String && cmdElement.GetString() == "help")
 					return HandleItem(root, subscriber, selection);
 
-				return AgentEnvelope.Wrap(HandleItem(root, subscriber, selection), AgentEnvelope.WantsState(root));
+				return AgentEnvelope.Wrap(HandleItem(root, subscriber, selection), AgentEnvelope.WantsState(root), subscriber?.Turn.Flush());
 			}
 		}
 
