@@ -139,5 +139,34 @@ namespace OpenRA.Test
 			Assert.That(unsent.Select(CmdOf), Is.EquivalentTo(Unexercised.Keys));
 			Assert.That(Unexercised.Values, Has.All.Not.Empty);
 		}
+
+		[TestCase(TestName = "The bearing list and the map axes are each stated exactly once in help")]
+		public void BearingIsStatedOnce()
+		{
+			var banner = Banner();
+			Assert.That(Regex.Count(banner, Regex.Escape("N/NE/E/SE/S/SW/W/NW")), Is.EqualTo(1),
+				"The 8-way bearing list should be stated exactly once in help.");
+			Assert.That(Regex.Count(banner, Regex.Escape("+X East, +Y South")), Is.EqualTo(1),
+				"The map axes should be stated exactly once in help.");
+		}
+
+		[TestCase(TestName = "The conventions state the bearing rule for heading, the fog policy, and omitted versus null")]
+		public void ConventionsAreStated()
+		{
+			var banner = Banner();
+			Assert.That(banner, Does.Contain("heading is an actor's own facing or motion direction, never a bearing."),
+				"The banner should say heading is never a bearing.");
+			Assert.That(banner, Does.Contain("Fog: known means visible, or a FrozenUnderFog last-known snapshot," +
+				"\n    and extends to radar-dot actors once a GPS satellite is launched."),
+				"The banner should state the fog policy.");
+			Assert.That(banner, Does.Contain("An attacker is named only when known."),
+				"The banner should say an attacker is named only when known.");
+			Assert.That(banner, Does.Contain("Null and omitted: a null key is present with no value"),
+				"The banner should state which keys are null.");
+			Assert.That(banner, Does.Contain("dist and pt in look actors without reference points, and look on a refusal with no local player."),
+				"The banner should state which keys are omitted.");
+			Assert.That(Regex.Count(banner, "^Conventions", RegexOptions.Multiline), Is.EqualTo(1),
+				"The conventions should be introduced once.");
+		}
 	}
 }

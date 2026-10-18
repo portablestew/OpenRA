@@ -34,11 +34,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("state", "-> tick, net_frame, map, paused, game_over, local_player, players, units\n"
 				+ "                -> map is uid, title, bounds ([x, y, width, height], Map.Bounds in cells) and spawns (one per player with a home"
 				+ " cell: player, cell [x, y]). Your own structures in units are id, type, cell and hp only."
-				+ " players[].known_counts is the count by type of the actors you know: all of your own, and another player's only"
-				+ " where you see them, know them from a snapshot, or a satellite shows them."
+				+ " players[].known_counts is the count by type of the actors you know: all of your own, and another player's only where known."
 				+ " threats: the top 15 known enemies by standoff (at most 3 per type; a recent attacker first), each with id, type, cell,"
-				+ " hp, attack_target (the friendly it hit recently, or null: only a recent attacker has one), heading (the way it faces),"
-				+ " bearing (from its closest friendly toward it),"
+				+ " hp, attack_target (the friendly it hit recently, or null: only a recent attacker has one), heading (its facing, not a bearing),"
+				+ " bearing (from its closest friendly),"
 				+ " friendly_id and distance (world units, 1024 per cell) of that friendly.",
 				"{\"cmd\":\"state\"}"),
 			("actors", "owner, type (optional filters) -> units", "{\"cmd\":\"actors\",\"type\":\"e1\"}"),
@@ -80,24 +79,24 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " or the producer disabled: ok:false, error",
 				"{\"cmd\":\"cancel\",\"item\":\"powr\",\"count\":1}"),
 			("place", "item (string); optional cell [x,y] (default: the producer's location)\n"
-				+ "                -> ok, item, requested_cell (null if omitted), search_from, cell, tick, min_effect_tick. The nearest"
+				+ "                -> ok, item, requested_cell, search_from, cell, tick, min_effect_tick. The nearest"
 				+ " valid cell within 10 of search_from is used. Not done: ok:false, error. No valid cell: ok:false, error,"
 				+ " cells_checked, candidates (the nearest 8 cells, each with cell and reason), and look (the look command's reply over those"
-				+ " cells, so the blockers show). A successful place has no look. A refusal has one, empty with no candidates, and omits it with no local player.",
+				+ " cells, so the blockers show). A successful place has no look. A refusal has one, empty with no candidates.",
 				"{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[40,50]}"),
 			("deploy", "actor (uint, an mcv); optional at [x,y] (the top-left cell, anywhere on the map, no search); optional await (default"
 				+ " true; false returns a job id, and wait {job} returns the outcome)\n"
-				+ "                -> ok, cmd, actor, requested_cell (null if omitted), cell, moved (true when a Move took the actor there first),"
+				+ "                -> ok, cmd, actor, requested_cell, cell, moved (true when a Move took the actor there first),"
 				+ " settled, outcome (completed or canceled; null when unsettled), reason (null unless canceled), tick, min_effect_tick."
 				+ " The cell is the actor's own when its footprint is valid there, else the nearest valid, reachable cell within 20. One reply covers"
 				+ " the Move and the deploy. No valid cell: ok:false, error, cells_checked, candidates (the nearest 8 cells, each with cell and reason),"
 				+ " and look (the look reply over those cells, so the blockers show). A successful deploy has no look."
-				+ " A refusal has one, empty with no candidates, and omits it with no local player.",
+				+ " A refusal has one, empty with no candidates.",
 				"{\"cmd\":\"deploy\",\"actor\":123}"),
 			("screenshot", "optional actor (uint): centre the view on that live unit first; optional dir (string): the folder to write to,\n"
 				+ "                default screenshots in the workspace\n"
-				+ "                -> ok, cmd, path (the PNG, already written), actor (null if omitted), center_px, unit_px (map pixels, not window pixels; null if"
-				+ " omitted), tick. Waits for the next rendered frame to be saved, so the file exists when the reply arrives."
+				+ "                -> ok, cmd, path (the PNG, already written), actor, center_px, unit_px (map pixels, not window pixels; null when no unit was asked for),"
+				+ " tick. Waits for the next rendered frame to be saved, so the file exists when the reply arrives."
 				+ " No window (headless), no world view, the shellmap, an unknown or dead actor, or a failed write: ok:false, error",
 				"{\"cmd\":\"screenshot\",\"actor\":12,\"dir\":\"shots\"}"),
 			("subscribe", "events (non-empty array of group names); optional owner (player name) -> subscribed\n"
@@ -157,6 +156,18 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("Every response but help is an envelope: results, events, state, tick, map_state_png, map_state_tick, map_state_render,\n"
 					+ "    map_px_per_cell, map_origin, map_size.\n");
 			text.Append("Inside results, responses echo cmd and carry ok. Errors carry ok:false and error.\n");
+			text.Append("Conventions, each stated once here:\n");
+			text.Append("  Bearing: 8-way N/NE/E/SE/S/SW/W/NW on map axes (+X East, +Y South),\n");
+			text.Append("    from a friendly reference actor toward an enemy or target.\n");
+			text.Append("    heading is an actor's own facing or motion direction, never a bearing.\n");
+			text.Append("    damaged.attacker_bearing runs from the victim toward the attacker.\n");
+			text.Append("  Fog: known means visible, or a FrozenUnderFog last-known snapshot,\n");
+			text.Append("    and extends to radar-dot actors once a GPS satellite is launched.\n");
+			text.Append("    An attacker is named only when known. Otherwise attacker, attacker_type and attacker_owner are null,\n");
+			text.Append("    attacker_shrouded is true, and attacker_bearing is given.\n");
+			text.Append("  Null and omitted: a null key is present with no value (an unknown value, or an optional request key left out).\n");
+			text.Append("    A key that does not apply is omitted:\n");
+			text.Append("    dist and pt in look actors without reference points, and look on a refusal with no local player.\n");
 			text.Append("Commands (request keys, then response keys):\n");
 			foreach (var (name, summary, example) in Commands)
 			{
@@ -184,9 +195,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 			Row(text, "item", 12, Fields(typeof(ProductionItemV1)));
 
 			text.Append("Notes:\n");
-			text.Append("  Bearings: 8-way N/NE/E/SE/S/SW/W/NW on map axes (+X East, +Y South), from a friendly actor toward the target.\n");
-			text.Append("  damaged (the fog policy): attacker, attacker_type and attacker_owner are null, and attacker_shrouded is true,\n");
-			text.Append("    when the attacker is not known to you. attacker_bearing is 8-way from the damaged actor toward the attacker.\n");
 			text.Append("  After the banner, and after every response, the server sends a lone > line as a prompt: it is your turn.\n");
 			text.Append("  A > line is not a response and not an event; skip lines that are just >.\n");
 			text.Append("  An array is one request: the items run in order and results is one JSON array, one result per item.\n");
