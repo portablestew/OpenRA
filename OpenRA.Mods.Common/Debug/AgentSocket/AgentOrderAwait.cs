@@ -134,6 +134,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>True for a DeployTransform await. Its outcome is set by the transform activity's end, or by a refusal (P1.8).</summary>
 		public bool IsDeploy => order == "DeployTransform";
 
+		/// <summary>True for a PlaceBuilding await (F6). Its outcome is the new building's id, set by the placed notify.</summary>
+		public bool IsPlace => order == "PlaceBuilding";
+
+		/// <summary>The id of the building a PlaceBuilding await placed (F6). Null until the placed notify, and for other awaits.</summary>
+		public uint? PlacedActor { get; private set; }
+
 		/// <summary>
 		/// The cell a deploy must end on (P1.14), the top-left cell the request resolved to. Null for other awaits, and for a deploy
 		/// that was not checked. Set by AgentDeploy before the transform can start.
@@ -251,6 +257,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 					return;
 				}
 
+				// A valid PlaceBuilding stays Pending: the placed notify ends it with the new building's id (F6). A refused one places nothing.
+				if (await.IsPlace)
+				{
+					if (!valid)
+						Fail(await, new InvalidOperationException(AgentOrder.ValidatorRejected));
+
+					return;
+				}
+
 				Pending.RemoveAt(index);
 				if (!valid)
 					await.Orders = AgentOrderNames.For(order.Subject);
@@ -322,6 +337,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 							Fail(p, new InvalidOperationException($"actor {p.subject.ActorID} died before the attack started"));
 						else if (world.WorldTick - p.registeredTick >= ResolveBudgetTicks)
 							Finish(p, NoValidTarget, AttackRefusal(p.subject, p.target));
+					}
+					else if (p.IsPlace && p.Resolved)
+					{
+						// The placed notify ends a place. A dead subject can place nothing, and a subject that has not placed for the
+						// resolve budget has stalled, so both fail here (F6).
+						if (p.subject.IsDead)
+							Fail(p, new InvalidOperationException($"actor {p.subject.ActorID} died before the building was placed"));
+						else if (world.WorldTick - p.registeredTick >= ResolveBudgetTicks)
+							Fail(p, new TimeoutException($"the building was not placed within {ResolveBudgetTicks} ticks"));
 					}
 					else if (p.subject.IsDead)
 						Fail(p, new InvalidOperationException($"actor {p.subject.ActorID} died before the order resolved"));
@@ -432,6 +456,24 @@ namespace OpenRA.Mods.Common.AgentSocket
 					Finish(await, Completed, null);
 				else
 					Finish(await, Canceled, reason == "cannot_deploy" ? transforms?.DeployRefusalReason() ?? reason : reason);
+			}
+		}
+
+		/// <summary>
+		/// The placed notify: a PlaceBuilding order created a building, so the socket's pending place await on the notifier gets the
+		/// new actor's id and settles (F6). Called for every placed building, with or without a connection, so a reply can name what
+		/// it placed. The notifier is the actor the order resolved on, which is the await's subject. Must run on the game thread.
+		/// </summary>
+		public static void Placed(Actor notifier, uint buildingId)
+		{
+			lock (Gate)
+			{
+				var await = Pending.Find(a => a.IsPlace && ReferenceEquals(a.subject, notifier));
+				if (await == null)
+					return;
+
+				await.PlacedActor = buildingId;
+				Finish(await, Completed, null);
 			}
 		}
 

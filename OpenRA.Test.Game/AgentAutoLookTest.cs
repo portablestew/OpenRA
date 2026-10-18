@@ -168,7 +168,7 @@ namespace OpenRA.Test
 				AgentPlaceTest.QueueAndFinishPowr(hw);
 
 				var cell = hw.FindClearArea(fact.Location, 2, 2, 6);
-				using var placed = AgentStateDumpTest.Request($"{{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[{cell.X},{cell.Y}]}}");
+				using var placed = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[{cell.X},{cell.Y}]}}");
 				Assert.That(placed.RootElement.GetProperty("ok").GetBoolean(), Is.True, placed.RootElement.ToString());
 				Assert.That(placed.RootElement.TryGetProperty("look", out _), Is.False, "A successful place must carry no look.");
 			}

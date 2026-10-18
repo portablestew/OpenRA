@@ -298,14 +298,28 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 		}
 
-		/// <summary>Parses the item and optional cell on the socket thread, then finds the cell and issues the placement on the game thread.</summary>
+		/// <summary>
+		/// Parses the item and optional cell on the socket thread, then finds the cell and issues the placement on the game thread.
+		/// The reply then waits there for the placed building, so it can name the actor it placed (F6), and the game keeps ticking.
+		/// </summary>
 		static string StartPlace(string cmd, JsonElement root, AgentSelection selection)
 		{
 			var error = AgentPlace.Parse(root, out var request);
 			if (error != null)
 				return Error(cmd, error);
 
-			return Run(cmd, () => AgentPlace.Start(AgentWorldBridge.RequireWorld(), request, selection));
+			try
+			{
+				var started = AgentMarshal.ExecuteOnGameThread(() => AgentPlace.Start(AgentWorldBridge.RequireWorld(), request, selection));
+				if (started is PlaceRefusedV1 refusal)
+					return Serialize(refusal);
+
+				return Serialize(AgentPlace.Settle((PlaceIssued)started));
+			}
+			catch (Exception e)
+			{
+				return Error(cmd, e.Message);
+			}
 		}
 
 		/// <summary>

@@ -30,7 +30,7 @@ namespace OpenRA.Test
 
 		static readonly string[] RefusalKeys = ["ok", "cmd", "error", "hint", "cells_checked", "candidates", "look"];
 
-		static readonly string[] SuccessKeys = ["ok", "cmd", "item", "requested_cell", "search_from", "cell", "tick", "min_effect_tick"];
+		static readonly string[] SuccessKeys = ["ok", "cmd", "item", "requested_cell", "search_from", "cell", "actor", "settled", "tick", "min_effect_tick"];
 
 		bool savedAgentSocket;
 
@@ -62,19 +62,23 @@ namespace OpenRA.Test
 			QueueAndFinishPowr(hw);
 
 			var cell = hw.FindClearArea(fact.Location, 2, 2, 6);
-			using (var response = AgentStateDumpTest.Request($"{{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[{cell.X},{cell.Y}]}}"))
+			using (var response = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[{cell.X},{cell.Y}]}}"))
 			{
 				var root = response.RootElement;
 				Assert.That(AgentProductionTest.Keys(root), Is.EquivalentTo(SuccessKeys));
 				Assert.That(root.GetProperty("ok").GetBoolean(), Is.True);
 				Assert.That(root.GetProperty("cmd").GetString(), Is.EqualTo("place"));
+				Assert.That(root.GetProperty("settled").GetBoolean(), Is.True, "A place that placed its building is settled");
 				Assert.That(root.GetProperty("requested_cell").EnumerateArray().Select(c => c.GetInt32()), Is.EqualTo(new[] { cell.X, cell.Y }));
 				Assert.That(root.GetProperty("cell").EnumerateArray().Select(c => c.GetInt32()), Is.EqualTo(new[] { cell.X, cell.Y }),
 					"A valid requested cell is used as it is");
+
+				// The reply names the building it placed, so success is self-proving without a second call (F6).
+				var placed = PowrAt(hw, cell);
+				Assert.That(placed, Is.Not.Null, "The PlaceBuilding order never placed a POWR on the chosen cell.");
+				Assert.That(root.GetProperty("actor").GetUInt32(), Is.EqualTo(placed.ActorID));
 			}
 
-			Assert.That(hw.TickUntil(() => PowrAt(hw, cell) != null, 20), Is.Not.Null,
-				"The PlaceBuilding order never placed a POWR on the chosen cell.");
 			Assert.That(PowrDone(), Is.False, "The finished item was consumed by the placement");
 		}
 
@@ -88,7 +92,7 @@ namespace OpenRA.Test
 
 			// The fact's own top-left cell is occupied, so no building can go there.
 			var requested = fact.Location;
-			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[{requested.X},{requested.Y}]}}");
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[{requested.X},{requested.Y}]}}");
 			var root = response.RootElement;
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True);
 
@@ -96,7 +100,9 @@ namespace OpenRA.Test
 			Assert.That(chosen, Is.Not.EqualTo(requested), "The occupied requested cell was chosen");
 			Assert.That(Math.Max(Math.Abs(chosen.X - requested.X), Math.Abs(chosen.Y - requested.Y)), Is.LessThanOrEqualTo(MaxRadius));
 
-			Assert.That(hw.TickUntil(() => PowrAt(hw, chosen) != null, 20), Is.Not.Null, "No POWR was placed on the chosen cell.");
+			var placed = PowrAt(hw, chosen);
+			Assert.That(placed, Is.Not.Null, "No POWR was placed on the chosen cell.");
+			Assert.That(root.GetProperty("actor").GetUInt32(), Is.EqualTo(placed.ActorID));
 			Assert.That(PowrAt(hw, requested), Is.Null, "A POWR was placed on the occupied requested cell");
 		}
 
@@ -108,14 +114,16 @@ namespace OpenRA.Test
 			hw.Tick(1);
 			QueueAndFinishPowr(hw);
 
-			using var response = AgentStateDumpTest.Request("{\"cmd\":\"place\",\"item\":\"powr\"}");
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, "{\"cmd\":\"place\",\"item\":\"powr\"}");
 			var root = response.RootElement;
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True);
 			Assert.That(root.GetProperty("requested_cell").ValueKind, Is.EqualTo(JsonValueKind.Null));
 			Assert.That(root.GetProperty("search_from").EnumerateArray().Select(c => c.GetInt32()), Is.EqualTo(new[] { fact.Location.X, fact.Location.Y }));
 
 			var chosen = new CPos(root.GetProperty("cell")[0].GetInt32(), root.GetProperty("cell")[1].GetInt32());
-			Assert.That(hw.TickUntil(() => PowrAt(hw, chosen) != null, 20), Is.Not.Null, "No POWR was placed on the chosen cell.");
+			var placed = PowrAt(hw, chosen);
+			Assert.That(placed, Is.Not.Null, "No POWR was placed on the chosen cell.");
+			Assert.That(root.GetProperty("actor").GetUInt32(), Is.EqualTo(placed.ActorID));
 		}
 
 		[TestCase(TestName = "A place with no valid cell within range is refused, and the finished item stays in the queue")]
@@ -193,7 +201,7 @@ namespace OpenRA.Test
 			hw.Tick(1);
 			QueueAndFinishPowr(hw);
 
-			using var response = AgentStateDumpTest.Request("{\"cmd\":\"place\",\"item\":\"powr\"}");
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, "{\"cmd\":\"place\",\"item\":\"powr\"}");
 			var root = response.RootElement;
 			Assert.That(AgentProductionTest.Keys(root), Is.EquivalentTo(SuccessKeys));
 			Assert.That(root.TryGetProperty("candidates", out _), Is.False);

@@ -79,6 +79,9 @@ namespace OpenRA.Mods.Common
 
 		void INotifyBuildingPlaced.BuildingPlaced(Actor self, Actor building)
 		{
+			// Resolves the socket's pending place await, so its reply can name the building (F6). Runs without a connection.
+			AgentOrderAwait.Placed(self, building.ActorID);
+
 			if (!AgentEvents.Enabled || !AgentFog.Reported(building, building.World.LocalPlayer))
 				return;
 

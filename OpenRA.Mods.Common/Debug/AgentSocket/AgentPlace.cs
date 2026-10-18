@@ -22,11 +22,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 	// Schema v1, additive. Wire keys are snake_case (AgentSocketCommands.Json).
 
 	/// <summary>
-	/// The place command's success. RequestedCell is the cell the request gave, or null when it was omitted. SearchFrom is
+	/// The place command's success (F6). RequestedCell is the cell the request gave, or null when it was omitted. SearchFrom is
 	/// the cell the search started from: the requested cell, or the producer's location when none was given. Cell is the
-	/// top-left cell the PlaceBuilding order was issued for.
+	/// top-left cell the PlaceBuilding order was issued for. Actor is the building the order placed, so success is self-proving;
+	/// it is null only in a paused game, where Settled is false because nothing will place it.
 	/// </summary>
-	public sealed record PlaceV1(bool Ok, string Cmd, string Item, int[] RequestedCell, int[] SearchFrom, int[] Cell, int Tick, int MinEffectTick);
+	public sealed record PlaceV1(bool Ok, string Cmd, string Item, int[] RequestedCell, int[] SearchFrom, int[] Cell, uint? Actor,
+		bool Settled, int Tick, int MinEffectTick);
+
+	/// <summary>A place that was issued: the await that ends when its building exists, and the cells to report (F6).</summary>
+	public sealed record PlaceIssued(AgentOrderAwait Await, string Item, int[] RequestedCell, int[] SearchFrom, int[] Cell, bool Paused,
+		int Tick, int MinEffectTick);
 
 	/// <summary>One refused top-left cell and the cell reason (AgentCellReason) that refuses it.</summary>
 	public sealed record PlaceCandidateV1(int[] Cell, string Reason);
@@ -77,8 +83,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Finds the finished item, picks the cell, and issues PlaceBuilding. Returns a PlaceV1 on success, or a PlaceRefusedV1
-		/// when no cell in the search square is valid. Must run on the game thread.
+		/// Finds the finished item, picks the cell, and issues PlaceBuilding, registering the await its reply settles on so it can
+		/// name the building (F6). Returns a PlaceIssued on success, or a PlaceRefusedV1 when no cell in the search square is
+		/// valid. Must run on the game thread.
 		/// </summary>
 		public static object Start(World world, PlaceRequest request, AgentSelection selection)
 		{
@@ -119,15 +126,42 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			// ExtraData is the actor that holds the queue, as PlaceBuilding resolves it, not the producer that makes the item.
 			var actor = AgentOrder.Accept(world, queue.Actor, "PlaceBuilding");
-			world.IssueOrder(new Order("PlaceBuilding", actor, Target.FromCell(world, cell), false)
+			var order = new Order("PlaceBuilding", actor, Target.FromCell(world, cell), false)
 			{
 				TargetString = item,
 				ExtraData = queue.Actor,
-			});
+			};
+
+			// The await is registered before the order is issued, so the placed notify finds it (F6). It ends when the building
+			// exists, so the reply can name the actor without a second call.
+			var await = AgentOrderAwait.Register(order, 0);
+			world.IssueOrder(order);
 			selection.Ordered(world, actor);
 
 			var requested = request.Cell is { } given ? new[] { given.X, given.Y } : null;
-			return new PlaceV1(true, "place", item, requested, [searchFrom.X, searchFrom.Y], [cell.X, cell.Y], world.WorldTick, world.WorldTick + 1);
+			return new PlaceIssued(await, item, requested, [searchFrom.X, searchFrom.Y], [cell.X, cell.Y], world.Paused,
+				world.WorldTick, world.WorldTick + 1);
+		}
+
+		/// <summary>
+		/// The place reply, built once the PlaceBuilding order has created the building (F6), so it names the actor it placed.
+		/// Parks the calling socket thread in Wait, so the game thread keeps ticking. In a paused game nothing will place it, so
+		/// the await is dropped and the reply is unsettled. Throws when the await fails: restored, a resolve timeout, a dead
+		/// subject, or a validator refusal. Must not run on the game thread.
+		/// </summary>
+		public static PlaceV1 Settle(PlaceIssued issued)
+		{
+			if (issued.Paused)
+			{
+				// Nothing will tick the await in a paused game, so drop it here, or it stays in the registry until the world is disposed.
+				issued.Await.Abandon();
+				return new PlaceV1(true, "place", issued.Item, issued.RequestedCell, issued.SearchFrom, issued.Cell, null, false,
+					issued.Tick, issued.MinEffectTick);
+			}
+
+			issued.Await.Wait();
+			return new PlaceV1(true, "place", issued.Item, issued.RequestedCell, issued.SearchFrom, issued.Cell, issued.Await.PlacedActor,
+				true, issued.Tick, issued.MinEffectTick);
 		}
 
 		/// <summary>

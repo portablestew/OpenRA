@@ -266,7 +266,7 @@ namespace OpenRA.Test
 				EnableHub();
 
 				var cell = w.FindClearArea(fact.Location, 2, 2, 6);
-				using (var response = AgentStateDumpTest.Request($"{{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[{cell.X},{cell.Y}]}}"))
+				using (var response = AgentStateDumpTest.RequestWithTicks(w, $"{{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[{cell.X},{cell.Y}]}}"))
 					Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True, "The place command was refused");
 
 				Assert.That(w.TickUntil(() => Pending("placed") > 0, 20), Is.Not.Null, "No placed event was raised.");

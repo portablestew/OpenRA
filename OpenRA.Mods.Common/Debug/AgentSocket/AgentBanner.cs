@@ -33,7 +33,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("help", "-> banner (this text, as one string)", "{\"cmd\":\"help\"}"),
 			("state", "-> tick, net_frame, map, paused, game_over, local_player, players, units, selection\n"
 				+ "                -> map is uid, title, bounds ([x, y, width, height], Map.Bounds in cells) and spawns (one per player with a home"
-				+ " cell: player, cell [x, y]). Your own structures in units are id, type, cell and hp only."
+				+ " cell: player, cell [x, y]). Your own buildings in units are id, type, cell and hp only."
 				+ " selection is the sorted ids of the actors your orders selected, empty when none."
 				+ " players[].known_counts is the count by type of the actors you know: all of your own, and another player's only where known."
 				+ " players[].bot is the AI type of a bot-owned player (null for a human), and players[].handicap its handicap percent."
@@ -57,7 +57,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " settle_ticks (Move and AttackMove), await (bool, default true; false is Move and AttackMove only, and single actor only)\n"
 					+ "                -> tick, min_effect_tick, and for a Move, valid, effect_tick, settled, settled_ticks, path."
 					+ " valid:false adds reason and orders (the names the actor accepts)."
-						+ " For an Attack, outcome (started | no_valid_target) and settled; no_valid_target adds reason."
+						+ " For an Attack, outcome (started | no_valid_target; null when unsettled) and settled; no_valid_target adds reason."
 							+ " For an AttackMove, valid, effect_tick, settled, settled_ticks,"
 							+ " outcome (started | no_path), and reason and orders on a refusal; no path, since its travel is not awaited."
 				+ " await:false returns job (the id for wait) with tick, min_effect_tick, and does not wait."
@@ -78,7 +78,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ "                -> ok, actor, queue_type, item, count, tick, min_effect_tick, ready, eta_ticks, blocked_by. Not buildable now: ok:false, error,"
 				+ " available (the items build accepts now: buildable and affordable), missing_prerequisites (every unmet prerequisite;"
 				+ " null if the refusal is not about prerequisites), ready and eta_ticks (both null: a refused build queues nothing)."
-				+ " On success, ready is always false, and eta_ticks is the ticks until the first copy queued by this request is done,"
+				+ " On success, ready is always false, and eta_ticks is the ticks until the first copy queued by this request is done"
+				+ " (25 ticks per second at the default game speed),"
 				+ " counting the items ahead of it in its queue at the current power; null while a finished item at the head of that queue"
 				+ " holds it until it is placed. blocked_by names the finished item at the head of the queue this one joins, which holds"
 				+ " the queue until it is placed (null when that head is not finished); a refusal carries it too",
@@ -89,8 +90,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " or the producer disabled: ok:false, error",
 				"{\"cmd\":\"cancel\",\"item\":\"powr\",\"count\":1}"),
 			("place", "item (string); optional cell [x,y] (default: the producer's location)\n"
-				+ "                -> ok, item, requested_cell, search_from, cell, tick, min_effect_tick. The nearest"
-				+ " valid cell within 10 of search_from is used. Not done: ok:false, error. No valid cell: ok:false, error,"
+				+ "                -> ok, item, requested_cell, search_from, cell, actor, settled, tick, min_effect_tick. The nearest"
+				+ " valid cell within 10 of search_from is used, and the reply waits for the building, so actor names what it placed"
+				+ " (null when unsettled, in a paused game). Not done: ok:false, error. No valid cell: ok:false, error,"
 				+ " cells_checked, candidates (the nearest 8 cells, each with cell and reason), and look (the look command's reply over those"
 				+ " cells, so the blockers show). A successful place has no look. A refusal has one, empty with no candidates.",
 				"{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[40,50]}"),
