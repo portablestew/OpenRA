@@ -94,11 +94,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " and look (the look reply over those cells, so the blockers show). A successful deploy has no look."
 				+ " A refusal has one, empty with no candidates, and omits it with no local player.",
 				"{\"cmd\":\"deploy\",\"actor\":123}"),
-			("screenshot", "optional actor (uint): centre the view on that live unit first\n"
+			("screenshot", "optional actor (uint): centre the view on that live unit first; optional dir (string): the folder to write to,\n"
+				+ "                default screenshots in the workspace\n"
 				+ "                -> ok, cmd, path (the PNG, already written), actor (null if omitted), center_px, unit_px (map pixels, not window pixels; null if"
 				+ " omitted), tick. Waits for the next rendered frame to be saved, so the file exists when the reply arrives."
 				+ " No window (headless), no world view, the shellmap, an unknown or dead actor, or a failed write: ok:false, error",
-				"{\"cmd\":\"screenshot\",\"actor\":12}"),
+				"{\"cmd\":\"screenshot\",\"actor\":12,\"dir\":\"shots\"}"),
 			("subscribe", "events (non-empty array of group names); optional owner (player name) -> subscribed\n"
 				+ "                owner filters only the groups named in this request; omit it to receive every owner's events."
 				+ " A later subscribe replaces a group's filter",

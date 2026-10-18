@@ -10,6 +10,7 @@
 #endregion
 
 using System;
+using System.IO;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,8 +28,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// </summary>
 	public sealed record ScreenshotV1(bool Ok, string Cmd, string Path, uint? Actor, int[] CenterPx, int[] UnitPx, int Tick);
 
-	/// <summary>A parsed screenshot request. Actor is null when the request omitted it.</summary>
-	public sealed record ScreenshotRequest(uint? Actor);
+	/// <summary>A parsed screenshot request. Actor is null when the request omitted it. Dir is null when the request omitted it (P2.14).</summary>
+	public sealed record ScreenshotRequest(uint? Actor, string Dir);
 
 	/// <summary>
 	/// The game-thread half of a screenshot: the view is already centred and the capture armed. Written completes with the
@@ -37,28 +38,55 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record ScreenshotStart(Task<string> Written, uint? Actor, int[] CenterPx, int[] UnitPx, int Tick);
 
 	/// <summary>
-	/// Centres the view on a live unit, then writes the next rendered frame to a PNG in the Screenshots folder. The render
-	/// that captures the frame runs after this request, so the response waits for the file to be written.
+	/// Centres the view on a live unit, then writes the next rendered frame to a PNG in the screenshots folder of the workspace,
+	/// or in the folder the request's dir names (P2.14). The render that captures the frame runs after this request, so the
+	/// response waits for the file to be written.
 	/// </summary>
 	public static class AgentScreenshot
 	{
+		/// <summary>The folder inside the workspace that screenshots go to, unless a request names another with dir.</summary>
+		public const string DefaultDirectory = "screenshots";
+
 		/// <summary>Parses the request on the socket thread. Returns an error message, or null when the request is valid.</summary>
 		public static string Parse(JsonElement root, out ScreenshotRequest request)
 		{
 			request = null;
+
+			// A string dir names the folder to write to. It is checked before actor, so a bad dir is reported first.
+			string dir = null;
+			if (AgentOrder.IsPresent(root, "dir"))
+			{
+				var element = root.GetProperty("dir");
+				if (element.ValueKind != JsonValueKind.String)
+					return "dir must be a string";
+
+				dir = element.GetString();
+				if (string.IsNullOrWhiteSpace(dir))
+					return "dir must not be empty";
+			}
+
 			if (!AgentOrder.IsPresent(root, "actor"))
 			{
-				request = new ScreenshotRequest(null);
+				request = new ScreenshotRequest(null, dir);
 				return null;
 			}
 
 			// TryGetUInt32 throws, rather than returning false, for a non-number, so the kind is checked first.
-			var element = root.GetProperty("actor");
-			if (element.ValueKind != JsonValueKind.Number || !element.TryGetUInt32(out var actor))
+			var actorElement = root.GetProperty("actor");
+			if (actorElement.ValueKind != JsonValueKind.Number || !actorElement.TryGetUInt32(out var actor))
 				return "actor must be an unsigned integer";
 
-			request = new ScreenshotRequest(actor);
+			request = new ScreenshotRequest(actor, dir);
 			return null;
+		}
+
+		/// <summary>
+		/// The full path of the folder a screenshot is written to: dir when given, else DefaultDirectory inside the workspace root,
+		/// the same root map-state.png uses (P2.14). Not created here: the writer creates it when it writes.
+		/// </summary>
+		public static string DirectoryFor(string dir)
+		{
+			return Path.GetFullPath(dir ?? Path.Combine(AgentWorkspace.Root, DefaultDirectory));
 		}
 
 		/// <summary>
@@ -98,7 +126,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 
 			var centre = int2.FromVector(wr.Viewport.CenterLocation);
-			return new ScreenshotStart(Game.RequestScreenshot(cancellation), request.Actor, [centre.X, centre.Y], unitPx, world.WorldTick);
+			return new ScreenshotStart(Game.RequestScreenshot(cancellation, DirectoryFor(request.Dir)), request.Actor, [centre.X, centre.Y], unitPx, world.WorldTick);
 		}
 
 		/// <summary>Waits on the socket thread for the file to be written. The game thread is not involved in the wait.</summary>

@@ -11,6 +11,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -38,9 +39,9 @@ namespace OpenRA.Test
 		bool savedAgentSocket;
 
 		// Each batch of requests the capture step hands to the writer. The writer is replaced, so nothing is written to disk.
-		List<IReadOnlyList<TaskCompletionSource<string>>> captures;
+		List<(string Directory, IReadOnlyList<TaskCompletionSource<string>> Requests)> captures;
 
-		Action<IReadOnlyList<TaskCompletionSource<string>>> savedWriter;
+		Action<string, IReadOnlyList<TaskCompletionSource<string>>> savedWriter;
 
 		[OneTimeSetUp]
 		public void InitializeMod()
@@ -67,10 +68,10 @@ namespace OpenRA.Test
 			captures = [];
 			savedWriter = Game.ScreenshotWriter;
 
-			// Stands in for the file writer: records the batch and completes each request as a successful write would.
-			Game.ScreenshotWriter = requests =>
+			// Stands in for the file writer: records the folder and batch, and completes each request as a successful write would.
+			Game.ScreenshotWriter = (directory, requests) =>
 			{
-				captures.Add(requests);
+				captures.Add((directory, requests));
 				foreach (var request in requests)
 					request.TrySetResult(FakePath);
 			};
@@ -80,6 +81,12 @@ namespace OpenRA.Test
 		public void RestoreWriter()
 		{
 			Game.ScreenshotWriter = savedWriter;
+		}
+
+		/// <summary>A mod type, read by name: this project references only the engine.</summary>
+		static Type ModType(string name)
+		{
+			return HeadlessMod.ModData.ObjectCreator.FindType(name);
 		}
 
 		// The wait the socket thread does in AgentScreenshot.Await, repeated here because this project cannot reference the mod.
@@ -191,12 +198,47 @@ namespace OpenRA.Test
 
 			// The companion case: the same steps without the cancel must reach the writer, so the test above is not vacuous.
 			Assert.That(captures, Has.Count.EqualTo(1));
-			Assert.That(captures[0].Count, Is.EqualTo(1));
+			Assert.That(captures[0].Requests.Count, Is.EqualTo(1));
 
 			Assert.That(AwaitPath(written, timeoutMs: 1000), Is.EqualTo(FakePath));
 
 			Game.CaptureArmedScreenshots();
 			Assert.That(captures, Has.Count.EqualTo(1), "a written request must not stay armed");
+		}
+
+		[TestCase(TestName = "The default screenshot folder is inside the workspace root, the one map-state.png uses")]
+		public void DefaultFolderIsInsideTheWorkspace()
+		{
+			var root = Path.GetFullPath(AgentWorkspaceRoot.Get());
+			var directory = (string)ModType("AgentSocket.AgentScreenshot").GetMethod("DirectoryFor").Invoke(null, [null]);
+
+			Assert.That(directory, Does.StartWith(root + Path.DirectorySeparatorChar),
+				"The default screenshot folder should lie inside the workspace root.");
+			Assert.That(Path.GetFileName(directory), Is.EqualTo("screenshots"));
+		}
+
+		[TestCase(TestName = "A dir override is honored: the request names the folder the writer is given, and a bad dir is refused")]
+		public void DirOverrideIsHonored()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var shots = Path.Combine(Path.GetTempPath(), "openra-shots-" + Guid.NewGuid().ToString("N"));
+
+			var overridden = (string)ModType("AgentSocket.AgentScreenshot").GetMethod("DirectoryFor").Invoke(null, [shots]);
+			Assert.That(overridden, Is.EqualTo(Path.GetFullPath(shots)), "A dir override should be the folder the request names.");
+
+			// The engine seam: a request armed for a folder reaches the writer with that folder, and a default request with none.
+			using var abandon = new CancellationTokenSource();
+			var named = Game.RequestScreenshot(abandon.Token, overridden);
+			var defaulted = Game.RequestScreenshot(abandon.Token);
+			Game.CaptureArmedScreenshots();
+
+			Assert.That(captures.Select(c => c.Directory), Is.EquivalentTo([overridden, null]),
+				"The writer should be given the folder each request named, and the default folder for a request with none.");
+			Assert.That(AwaitPath(named, timeoutMs: 1000), Is.EqualTo(FakePath));
+			Assert.That(AwaitPath(defaulted, timeoutMs: 1000), Is.EqualTo(FakePath));
+
+			using var bad = AgentStateDumpTest.Request("{\"cmd\":\"screenshot\",\"dir\":5}");
+			AssertRefused(bad.RootElement, "dir must be a string");
 		}
 	}
 }

@@ -70,7 +70,7 @@ namespace OpenRA
 		static Benchmark benchmark = null;
 
 		/// <summary>A requested capture. Cancelling the token before the frame renders means no file is written for it.</summary>
-		sealed record PendingScreenshot(TaskCompletionSource<string> Done, CancellationToken Cancellation);
+		sealed record PendingScreenshot(TaskCompletionSource<string> Done, string Directory, CancellationToken Cancellation);
 
 		public static event Action OnShellmapLoaded = () => { };
 
@@ -623,12 +623,13 @@ namespace OpenRA
 		public static void RunAfterTick(Action a) { delayedActions.Add(a, RunTime); }
 		public static void RunAfterDelay(int delayMilliseconds, Action a) { delayedActions.Add(a, RunTime + delayMilliseconds); }
 
-		static void TakeScreenshotInner(IReadOnlyList<TaskCompletionSource<string>> requests)
+		/// <summary>Writes one frame to a PNG in directory, or in the default Screenshots folder when directory is null.</summary>
+		static void TakeScreenshotInner(string directory, IReadOnlyList<TaskCompletionSource<string>> requests)
 		{
 			using (new PerfTimer("Renderer.SaveScreenshot"))
 			{
 				var mod = ModData.Manifest.Metadata;
-				var directory = Path.Combine(Platform.SupportDir, "Screenshots", ModData.Manifest.Id, mod.Version);
+				directory ??= Path.Combine(Platform.SupportDir, "Screenshots", ModData.Manifest.Id, mod.Version);
 				Directory.CreateDirectory(directory);
 
 				var filename = TimestampedFilename(true);
@@ -741,26 +742,30 @@ namespace OpenRA
 		/// and the task is cancelled. Call on the game thread: the capture itself runs in RenderTick, so the caller must not
 		/// wait on the task there.
 		/// </summary>
-		public static Task<string> RequestScreenshot(CancellationToken cancellation)
+		/// <summary>
+		/// Arms a capture as RequestScreenshot does, and writes the frame into directory (P2.14). A null directory is the default
+		/// Screenshots folder, which the hotkey uses too.
+		/// </summary>
+		public static Task<string> RequestScreenshot(CancellationToken cancellation, string directory = null)
 		{
 			var done = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-			PendingScreenshots.Add(new PendingScreenshot(done, cancellation));
+			PendingScreenshots.Add(new PendingScreenshot(done, directory, cancellation));
 			return done.Task;
 		}
 
 		/// <summary>Removes the requests that are still armed. The cancelled ones are cancelled here and are not captured.</summary>
-		static IReadOnlyList<TaskCompletionSource<string>> TakePendingScreenshots()
+		static IReadOnlyList<PendingScreenshot> TakePendingScreenshots()
 		{
 			if (PendingScreenshots.Count == 0)
 				return [];
 
-			var live = new List<TaskCompletionSource<string>>();
+			var live = new List<PendingScreenshot>();
 			foreach (var pending in PendingScreenshots)
 			{
 				if (pending.Cancellation.IsCancellationRequested)
 					pending.Done.TrySetCanceled();
 				else
-					live.Add(pending.Done);
+					live.Add(pending);
 			}
 
 			PendingScreenshots.Clear();
@@ -774,15 +779,24 @@ namespace OpenRA
 		internal static void CaptureArmedScreenshots()
 		{
 			var requests = TakePendingScreenshots();
-			if (takeScreenshot || requests.Count > 0)
-			{
-				takeScreenshot = false;
-				ScreenshotWriter(requests);
-			}
+			if (!takeScreenshot && requests.Count == 0)
+				return;
+
+			// One file per directory: requests for the same folder share a frame, and the hotkey writes to the default folder.
+			var batches = new List<(string Directory, List<TaskCompletionSource<string>> Requests)>();
+			foreach (var group in requests.GroupBy(r => r.Directory))
+				batches.Add((group.Key, group.Select(r => r.Done).ToList()));
+
+			if (takeScreenshot && !batches.Any(b => b.Directory == null))
+				batches.Add((null, []));
+
+			takeScreenshot = false;
+			foreach (var (directory, done) in batches)
+				ScreenshotWriter(directory, done);
 		}
 
 		// The file writer. A test replaces it to observe the capture without a GPU renderer.
-		internal static Action<IReadOnlyList<TaskCompletionSource<string>>> ScreenshotWriter = TakeScreenshotInner;
+		internal static Action<string, IReadOnlyList<TaskCompletionSource<string>>> ScreenshotWriter = TakeScreenshotInner;
 
 		static void RenderTick()
 		{
