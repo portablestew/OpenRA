@@ -68,6 +68,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		public static string Handle(string line, AgentEventSubscriber subscriber)
 		{
+			var initial = false;
+			return HandleTurn(line, subscriber, ref initial);
+		}
+
+		/// <summary>
+		/// Handles one request line on a connection. initial is true until the connection's first envelope is written, and that
+		/// envelope is then marked initial:true (P3.5). Its state is written in full, and the events raised before the request
+		/// are dropped, so a connection never replays a backlog.
+		/// </summary>
+		internal static string HandleTurn(string line, AgentEventSubscriber subscriber, ref bool initial)
+		{
 			JsonDocument doc;
 			try
 			{
@@ -75,7 +86,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 			catch (JsonException)
 			{
-				return AgentEnvelope.Wrap(Error(null, "invalid json"), includeState: true);
+				return AgentEnvelope.Wrap(Error(null, "invalid json"), includeState: true, initial: TakeInitial(ref initial));
 			}
 
 			using (doc)
@@ -85,19 +96,43 @@ namespace OpenRA.Mods.Common.AgentSocket
 				var root = doc.RootElement;
 				if (root.ValueKind == JsonValueKind.Array)
 				{
+					var first = StartTurn(ref initial, subscriber);
 					var items = root.EnumerateArray().ToArray();
 					var results = "[" + string.Join(",", items.Select((item, index) =>
 						UndoRefusal(item, index, items.Length) ?? HandleItem(item, subscriber, selection))) + "]";
-					return AgentEnvelope.Wrap(results, AgentEnvelope.WantsState(items), subscriber?.Turn.Flush());
+					return AgentEnvelope.Wrap(results, AgentEnvelope.WantsState(items), subscriber?.Turn.Flush(), first);
 				}
 
-				// help is documentation, not a turn: it answers with the banner alone.
+				// help is documentation, not a turn: it answers with the banner alone, and leaves the first envelope to the next request.
 				if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("cmd", out var cmdElement) &&
 					cmdElement.ValueKind == JsonValueKind.String && cmdElement.GetString() == "help")
 					return HandleItem(root, subscriber, selection);
 
-				return AgentEnvelope.Wrap(HandleItem(root, subscriber, selection), AgentEnvelope.WantsState(root), subscriber?.Turn.Flush());
+				var initialTurn = StartTurn(ref initial, subscriber);
+				return AgentEnvelope.Wrap(HandleItem(root, subscriber, selection), AgentEnvelope.WantsState(root), subscriber?.Turn.Flush(), initialTurn);
 			}
+		}
+
+		/// <summary>
+		/// Takes the first-envelope flag for a turn that is about to run. A first turn drops the backlog of events raised before
+		/// it, so the events its envelope reports are only those its own request raised (P3.5).
+		/// </summary>
+		static bool StartTurn(ref bool initial, AgentEventSubscriber subscriber)
+		{
+			if (!initial)
+				return false;
+
+			subscriber?.Turn.Flush();
+			initial = false;
+			return true;
+		}
+
+		/// <summary>Takes the first-envelope flag for a reply that is not a turn, such as an invalid request line.</summary>
+		static bool TakeInitial(ref bool initial)
+		{
+			var first = initial;
+			initial = false;
+			return first;
 		}
 
 		/// <summary>

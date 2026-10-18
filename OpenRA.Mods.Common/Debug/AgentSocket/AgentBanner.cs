@@ -203,7 +203,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ "    a subscribed group is also pushed as a line), state (the digest, as the state\n");
 			text.Append("    command returns it), tick (the game clock after the request). The map image: map_state_png (its workspace path, or\n");
 			text.Append("    null), map_state_tick (the tick it was rendered at, equal to tick after a world-changing request), map_state_render\n");
-			text.Append("    (ok or unavailable), and map_px_per_cell, map_origin, map_size (its geometry). With no world loaded, tick, state and\n");
+			text.Append("    (ok or unavailable), and map_px_per_cell, map_origin, map_size (its geometry).\n"
+				+ "    A connection's first envelope has initial:true, its state in full, and no events from before its first request.\n"
+				+ " With no world loaded, tick, state and\n");
 			text.Append("    the image are null, and render is unavailable.\n");
 			text.Append("  Add \"digest\":false to an object request to drop state and the map keys. An array drops them only when every item sets it.\n");
 			text.Append("  Selection: an issued order selects its actor, so world.Selection is the actors a request ordered (an array: their union).\n");

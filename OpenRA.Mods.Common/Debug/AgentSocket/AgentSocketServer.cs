@@ -98,6 +98,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			// Registered from the start, so the turn buffer sees every event, subscribed or not (P3.3).
 			AgentEvents.SetRegistered(subscriber, true);
 			var writeGate = new object();
+			var initial = true;
 			var events = new Thread(() => PumpEvents(subscriber, writer, writeGate)) { Name = "Agent socket events", IsBackground = true };
 
 			lock (writeGate)
@@ -115,7 +116,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					if (line.Trim().Length == 0)
 						continue;
 
-					var response = AgentSocketCommands.Handle(line, subscriber);
+					var response = AgentSocketCommands.HandleTurn(line, subscriber, ref initial);
 					lock (writeGate)
 					{
 						writer.WriteLine(response);

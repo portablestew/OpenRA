@@ -34,8 +34,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// reports map_state_render "unavailable" and does not fail the request either. events is the turn's events, already
 		/// flushed and aggregated by the caller; null, or no events, writes an empty array.
 		/// </summary>
-		public static string Wrap(string results, bool includeState, IReadOnlyList<object> events = null)
+		public static string Wrap(string results, bool includeState, IReadOnlyList<object> events = null, bool initial = false)
 		{
+			// A connection's first envelope always carries the state in full, whatever digest the request set (P3.5).
+			includeState |= initial;
 			var (tick, state, map) = Read(includeState);
 
 			var text = new StringBuilder("{\"results\":").Append(results).Append(",\"events\":")
@@ -46,6 +48,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append(",\"tick\":").Append(tick.HasValue ? tick.Value.ToString() : "null");
 			if (includeState)
 				AppendMap(text, map);
+
+			if (initial)
+				text.Append(",\"initial\":true");
 
 			return text.Append('}').ToString();
 		}

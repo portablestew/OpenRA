@@ -50,7 +50,9 @@ namespace OpenRA.Test
 		static string ResultsOf(string envelope)
 		{
 			using var doc = JsonDocument.Parse(envelope);
-			Assert.That(doc.RootElement.EnumerateObject().Select(p => p.Name), Is.EqualTo(EnvelopeKeys));
+
+			// initial is on a connection's first envelope only (P3.5), so it is not one of the turn's keys here.
+			Assert.That(doc.RootElement.EnumerateObject().Select(p => p.Name).Where(k => k != "initial"), Is.EqualTo(EnvelopeKeys));
 			return doc.RootElement.GetProperty("results").GetRawText();
 		}
 
