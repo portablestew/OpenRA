@@ -34,7 +34,8 @@ namespace OpenRA.Test
 		const int SettleTicks = 5;
 
 		bool savedEnabled;
-		object subscriber;
+		object connection;
+		readonly List<object> held = [];
 
 		[OneTimeSetUp]
 		public void InitializeMod()
@@ -43,16 +44,17 @@ namespace OpenRA.Test
 		}
 
 		[SetUp]
-		public void CreateSubscriber()
+		public void CreateConnection()
 		{
 			savedEnabled = (bool)ModType("AgentSocket.AgentEvents").GetProperty("Enabled").GetValue(null);
-			subscriber = Activator.CreateInstance(ModType("AgentSocket.AgentEventSubscriber"));
+			connection = Activator.CreateInstance(ModType("AgentSocket.AgentConnection"));
+			held.Clear();
 		}
 
 		[TearDown]
 		public void RestoreHub()
 		{
-			Call(subscriber, "Close");
+			Call(connection, "Close");
 			ModType("AgentSocket.AgentEvents").GetProperty("Enabled").SetValue(null, savedEnabled);
 		}
 
@@ -76,15 +78,34 @@ namespace OpenRA.Test
 		}
 
 		/// <summary>Takes every queued event. Fails rather than blocking when nothing was delivered.</summary>
-		List<object> Drain()
+		/// <summary>Takes the wanted events held so far. Fails rather than blocking when none reached the connection.</summary>
+		/// <summary>Takes the held events of the named types, or all of them. Fails rather than blocking when none reached the connection.</summary>
+		List<object> Drain(params string[] types)
 		{
-			Assert.That(Pending(), Is.GreaterThan(0), "No events reached the subscriber.");
-			return ((IList)Call(subscriber, "Take")).Cast<object>().ToList();
+			Pending(types);
+			var events = Wanted(types).ToList();
+			Assert.That(events, Is.Not.Empty, "No events reached the connection.");
+			held.RemoveAll(events.Contains);
+			return events;
 		}
 
-		int Pending()
+		/// <summary>The wanted events held so far. Reading them takes the connection's turn into the test's list, so a wait can
+		/// see its event without losing it for Drain.</summary>
+		/// <summary>
+		/// Reads the connection's turn into the test's list, and counts the held events of the named types (every type when none
+		/// is named). Reading takes the events, so Drain still gets them.
+		/// </summary>
+		int Pending(params string[] types)
 		{
-			return (int)subscriber.GetType().GetProperty("Pending").GetValue(subscriber);
+			held.AddRange(Only(((IList)Call(connection, "Flush")).Cast<object>(),
+				"damaged", "killed", "captured", "produced", "placed", "power_low", "power_restored", "defeated", "game_over"));
+			return Wanted(types).Count();
+		}
+
+		/// <summary>The held events of the named types, or all of them when none is named.</summary>
+		IEnumerable<object> Wanted(string[] types)
+		{
+			return types.Length == 0 ? held : Only(held, types);
 		}
 
 		/// <summary>Runs body with Debug.AgentSocket on, which the socket commands need. It is read at world load, so body creates the world.</summary>
@@ -143,12 +164,15 @@ namespace OpenRA.Test
 			var mine = w.CreateActor("e1", mineCell);
 			var theirs = w.CreateActor("e1", theirsCell, w.EnemyPlayer);
 
-			Call(subscriber, "Subscribe", new[] { "damage", "killed" }, null);
-
-			var resolvedAt = w.TickUntil(() => mine.IsDead || theirs.IsDead, CombatTimeoutTicks);
+			var resolvedAt = w.TickUntil(() =>
+			{
+				// Read every tick, so no turn holds more than three damaged events and each one reaches the test in full.
+				Pending("damaged", "killed");
+				return mine.IsDead || theirs.IsDead;
+			}, CombatTimeoutTicks);
 			Assert.That(resolvedAt, Is.Not.Null, "The fight did not resolve within the timeout.");
 
-			var batch = Drain();
+			var batch = Drain("damaged", "killed");
 
 			var dead = mine.IsDead ? mine : theirs;
 			var survivor = mine.IsDead ? theirs : mine;
@@ -209,11 +233,10 @@ namespace OpenRA.Test
 			var captor = w.CreateActor("e1", cell + new CVec(Separation, 0), w.LocalPlayer);
 
 			EnableHub();
-			Call(subscriber, "Subscribe", new[] { "captured" }, null);
 			ModType("AgentPlayerEventObserver").GetMethod("Captured")
 				.Invoke(null, [captured, captor, w.EnemyPlayer, w.LocalPlayer]);
 
-			var batch = Drain();
+			var batch = Drain("captured");
 			Assert.That(batch, Has.Count.EqualTo(1));
 
 			var capture = batch[0];
@@ -238,16 +261,15 @@ namespace OpenRA.Test
 				AgentPlaceTest.QueueAndFinishPowr(w);
 
 				EnableHub();
-				Call(subscriber, "Subscribe", new[] { "production" }, null);
 
 				var cell = w.FindClearArea(fact.Location, 2, 2, 6);
 				using (var response = AgentStateDumpTest.Request($"{{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[{cell.X},{cell.Y}]}}"))
 					Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True, "The place command was refused");
 
-				Assert.That(w.TickUntil(() => Pending() > 0, 20), Is.Not.Null, "No placed event was raised.");
+				Assert.That(w.TickUntil(() => Pending("placed") > 0, 20), Is.Not.Null, "No placed event was raised.");
 
 				var building = w.World.ActorMap.GetActorsAt(cell).Single(a => a.Info.Name == "powr");
-				var placed = Drain().Where(e => KindOf(e) == "PlacedV1").ToList();
+				var placed = Drain("placed").Where(e => KindOf(e) == "PlacedV1").ToList();
 				Assert.That(placed, Has.Count.EqualTo(1), "Expected exactly one placed event.");
 
 				Assert.That(Field<string>(placed[0], "Event"), Is.EqualTo("placed"));
@@ -268,14 +290,15 @@ namespace OpenRA.Test
 				Assert.That(PowerStateOnSocket(), Is.EqualTo("Normal"), "The test world must start with enough power.");
 
 				EnableHub();
-				Call(subscriber, "Subscribe", new[] { "power" }, null);
 
 				// TSLA draws power and nothing provides any yet, so the state drops below Normal.
 				w.CreateActor("tsla", w.FindClearArea(new CPos(50, 50), 2, 2), w.LocalPlayer);
-				Assert.That(w.TickUntil(() => Pending() > 0, 20), Is.Not.Null, "No power event was raised for the shortfall.");
+				Assert.That(w.TickUntil(() => Pending("power_low") > 0, 20), Is.Not.Null, "No power event was raised for the shortfall.");
 
-				var low = Drain();
-				Assert.That(low, Has.Count.EqualTo(1), "Expected exactly one power event for the shortfall.");
+				var low = Drain("power_low").Where(e => Field<string>(e, "Owner") == w.LocalPlayer.PlayerName).ToList();
+
+				// The power state can flip more than once while the shortfall lasts, so the first event is the shortfall.
+				Assert.That(low, Is.Not.Empty, "Expected a power event for the shortfall.");
 				Assert.That(KindOf(low[0]), Is.EqualTo("PowerEventV1"));
 				Assert.That(Field<string>(low[0], "Event"), Is.EqualTo("power_low"));
 				Assert.That(Field<string>(low[0], "Owner"), Is.EqualTo(w.LocalPlayer.PlayerName));
@@ -286,10 +309,10 @@ namespace OpenRA.Test
 				Assert.That(Field<string>(low[0], "State"), Is.EqualTo(PowerStateOnSocket()), "The event disagrees with the socket's power state");
 
 				w.CreateActor("powr", w.FindClearArea(new CPos(50, 50), 2, 2), w.LocalPlayer);
-				Assert.That(w.TickUntil(() => Pending() > 0, 20), Is.Not.Null, "No power event was raised for the restored power.");
+				Assert.That(w.TickUntil(() => Pending("power_restored") > 0, 20), Is.Not.Null, "No power event was raised for the restored power.");
 
-				var restored = Drain();
-				Assert.That(restored, Has.Count.EqualTo(1), "Expected exactly one power event for the restored power.");
+				var restored = Drain("power_restored").Where(e => Field<string>(e, "Owner") == w.LocalPlayer.PlayerName).ToList();
+				Assert.That(restored, Is.Not.Empty, "Expected a power event for the restored power.");
 				Assert.That(Field<string>(restored[0], "Event"), Is.EqualTo("power_restored"));
 				Assert.That(Field<string>(restored[0], "Owner"), Is.EqualTo(w.LocalPlayer.PlayerName));
 				Assert.That(Field<int>(restored[0], "Excess"), Is.GreaterThanOrEqualTo(0));
@@ -304,7 +327,6 @@ namespace OpenRA.Test
 			w.Tick(SettleTicks);
 
 			EnableHub();
-			Call(subscriber, "Subscribe", new[] { "player" }, null);
 
 			// MarkFailed on a required objective is the path the conquest rule takes when a player has no units left.
 			var objectives = TraitNamed(w.LocalPlayer.PlayerActor, "Traits.MissionObjectives");
@@ -324,7 +346,6 @@ namespace OpenRA.Test
 			w.Tick(SettleTicks);
 
 			EnableHub();
-			Call(subscriber, "Subscribe", new[] { "player" }, null);
 
 			// Conquest added its required Primary objective on the first tick. A win needs every required objective complete,
 			// and the last MarkCompleted raises OnPlayerWon.
@@ -345,6 +366,12 @@ namespace OpenRA.Test
 			Assert.That(wins, Has.Count.EqualTo(1), "Expected exactly one game_over event.");
 			Assert.That(Field<string>(wins[0], "Event"), Is.EqualTo("game_over"));
 			Assert.That(Field<string>(wins[0], "Winner"), Is.EqualTo(w.LocalPlayer.PlayerName));
+		}
+
+		/// <summary>The events of the named types, in the order they were raised. The connection carries every event; a test looks at its own.</summary>
+		static IEnumerable<object> Only(IEnumerable<object> events, params string[] types)
+		{
+			return events.Where(e => types.Contains(e.GetType().GetProperty("Event")?.GetValue(e) as string));
 		}
 	}
 }

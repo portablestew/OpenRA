@@ -22,9 +22,8 @@ namespace OpenRA.Test
 {
 	/// <summary>
 	/// The envelope's events are the turn's events for the connection, flushed once per request (P3.3). They are read through
-	/// Serve, the way a real connection reads them: a connection that never subscribed still gets its events in its envelope, a
-	/// subscribed group is pushed as a line and not repeated in the envelope, and a turn of more than three of one type is
-	/// aggregated in the response.
+	/// Serve, the way a real connection reads them: every connection gets its events in its envelope, and a turn of more than three
+	/// of one type is aggregated in the response.
 	/// </summary>
 	[TestFixture]
 	sealed class AgentEnvelopeEventsTest
@@ -144,8 +143,8 @@ namespace OpenRA.Test
 			Assert.That(Names(responses[1]), Is.Empty, "The next response should not repeat the events the last one carried.");
 		}
 
-		[TestCase(TestName = "A connection that never called subscribe gets its events in its envelope")]
-		public void UnsubscribedConnectionGetsEvents()
+		[TestCase(TestName = "Every connection gets its events in its envelope, with no event written outside a response")]
+		public void EveryConnectionGetsEventsInItsEnvelope()
 		{
 			using var hw = HeadlessWorld.Create(Seed);
 			var local = hw.LocalPlayer;
@@ -158,31 +157,8 @@ namespace OpenRA.Test
 			var output = Serve(hw, $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}\n");
 			var responses = Responses(output);
 
-			Assert.That(Lines(output, e => !e.TryGetProperty("results", out _)), Is.Empty, "A connection that never subscribed should get no pushed lines.");
-			Assert.That(Names(responses[0]), Does.Contain("path"), "A connection that never subscribed should still get the path in its envelope.");
-		}
-
-		[TestCase(TestName = "A subscribed group is pushed as a line, and is not repeated in the envelope")]
-		public void SubscribedGroupIsNotRepeated()
-		{
-			using var hw = HeadlessWorld.Create(Seed);
-			var local = hw.LocalPlayer;
-			hw.Tick(SettleTicks);
-
-			var unit = hw.CreateActor(Infantry, hw.FindClearArea(local.HomeLocation, 3, 3), local);
-			hw.Tick(SettleTicks);
-			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
-
-			var output = Serve(hw, "{\"cmd\":\"subscribe\",\"events\":[\"path\"]}\n"
-				+ $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}\n"
-				+ "{\"cmd\":\"ping\"}\n");
-			var responses = Responses(output);
-			var pushed = Lines(output, e => !e.TryGetProperty("results", out _)).ConvertAll(e => e.GetProperty("event").GetString());
-
-			Assert.That(pushed, Does.Contain("path"), "The subscribed group should be pushed as a line.");
-			Assert.That(Names(responses[1]), Does.Not.Contain("path"),
-				"The subscribed group should not also be in the envelope, so each path reaches the connection once.");
-			Assert.That(Names(responses[1]), Does.Contain("activity"), "An unsubscribed group should still be in the envelope.");
+			Assert.That(Lines(output, e => !e.TryGetProperty("results", out _)), Is.Empty, "No event should be written outside a response.");
+			Assert.That(Names(responses[0]), Does.Contain("path"), "A connection should get the path in its envelope.");
 		}
 
 		[TestCase(TestName = "More than three events of one type in one turn come back as three in full and one aggregated marker")]

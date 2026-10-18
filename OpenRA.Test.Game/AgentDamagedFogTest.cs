@@ -21,7 +21,7 @@ namespace OpenRA.Test
 	/// <summary>
 	/// Damaged events under the fog policy (P2.3). A hit always carries attacker_bearing, from the damaged actor toward the attacker.
 	/// The attacker's identity is named only when the local player knows it (AgentFog). The hits are real: IHealth.InflictDamage
-	/// raises the same Damaged notification a weapon does. The subscriber and the satellite are reached the way the other agent
+	/// raises the same Damaged notification a weapon does. The connection and the satellite are reached the way the other agent
 	/// tests reach them, since the mod's types load through ObjectCreator.
 	/// </summary>
 	[TestFixture]
@@ -42,7 +42,7 @@ namespace OpenRA.Test
 
 		bool savedAgentSocket;
 		bool savedEnabled;
-		object subscriber;
+		object connection;
 
 		[OneTimeSetUp]
 		public void InitializeMod()
@@ -51,19 +51,19 @@ namespace OpenRA.Test
 		}
 
 		[SetUp]
-		public void CreateSubscriber()
+		public void CreateConnection()
 		{
 			savedAgentSocket = Game.Settings.Debug.AgentSocket;
 			Game.Settings.Debug.AgentSocket = true;
 
 			savedEnabled = (bool)ModType("AgentSocket.AgentEvents").GetProperty("Enabled").GetValue(null);
-			subscriber = Activator.CreateInstance(ModType("AgentSocket.AgentEventSubscriber"));
+			connection = Activator.CreateInstance(ModType("AgentSocket.AgentConnection"));
 		}
 
 		[TearDown]
 		public void RestoreHub()
 		{
-			Call(subscriber, "Close");
+			Call(connection, "Close");
 			ModType("AgentSocket.AgentEvents").GetProperty("Enabled").SetValue(null, savedEnabled);
 			Game.Settings.Debug.AgentSocket = savedAgentSocket;
 		}
@@ -89,19 +89,14 @@ namespace OpenRA.Test
 			return (bool)ModType("AgentSocket.AgentFog").GetMethod("Known").Invoke(null, [actor, observer]);
 		}
 
-		void SubscribeToDamage()
-		{
-			Call(subscriber, "Subscribe", new[] { "damage" }, null);
-		}
-
-		/// <summary>Takes the damaged events queued so far that name the victim. Empty when none reached the subscriber.</summary>
+		/// <summary>Takes the damaged events queued so far that name the victim. Empty when none reached the connection.</summary>
 		List<object> TakeDamaged(uint victim)
 		{
-			var pending = (int)subscriber.GetType().GetProperty("Pending").GetValue(subscriber);
+			var pending = (int)connection.GetType().GetProperty("Pending").GetValue(connection);
 			if (pending == 0)
 				return [];
 
-			return ((IList)Call(subscriber, "Take")).Cast<object>()
+			return Only(((IList)Call(connection, "Flush")).Cast<object>(), "damaged")
 				.Where(e => e.GetType().Name == "DamagedV1" && Field<uint>(e, "Actor") == victim)
 				.ToList();
 		}
@@ -146,7 +141,6 @@ namespace OpenRA.Test
 			hw.Tick(SettleTicks);
 
 			var (victim, attacker) = Pair(hw, 2);
-			SubscribeToDamage();
 			hw.Tick(SettleTicks);
 			Assert.That(local.Shroud.IsVisible(attacker.CenterPosition), Is.True, "Precondition: the attacker should be visible.");
 
@@ -170,7 +164,6 @@ namespace OpenRA.Test
 			hw.Tick(SettleTicks);
 
 			var (victim, attacker) = Pair(hw, Separation);
-			SubscribeToDamage();
 			hw.Tick(SettleTicks);
 			Assert.That(local.Shroud.IsVisible(attacker.CenterPosition), Is.False, "Precondition: the attacker should be out of sight.");
 			Assert.That(Known(attacker, local), Is.False, "Precondition: the attacker should be unknown.");
@@ -195,7 +188,6 @@ namespace OpenRA.Test
 			hw.Tick(SettleTicks);
 
 			var (victim, attacker) = Pair(hw, Separation);
-			SubscribeToDamage();
 			hw.Tick(SettleTicks);
 			Hit(victim, attacker);
 			var before = TakeDamaged(victim.ActorID);
@@ -216,6 +208,12 @@ namespace OpenRA.Test
 			Assert.That(Field<string>(hit, "AttackerOwner"), Is.EqualTo(hw.EnemyPlayer.PlayerName));
 			Assert.That(Field<bool>(hit, "AttackerShrouded"), Is.False, "A known attacker is not shrouded.");
 			Assert.That(Field<string>(hit, "AttackerBearing"), Is.EqualTo("E"));
+		}
+
+		/// <summary>The events of the named types, in the order they were raised. The connection carries every event; a test looks at its own.</summary>
+		static IEnumerable<object> Only(IEnumerable<object> events, params string[] types)
+		{
+			return events.Where(e => types.Contains(e.GetType().GetProperty("Event")?.GetValue(e) as string));
 		}
 	}
 }

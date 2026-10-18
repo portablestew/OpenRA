@@ -99,11 +99,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " tick. Waits for the next rendered frame to be saved, so the file exists when the reply arrives."
 				+ " No window (headless), no world view, the shellmap, an unknown or dead actor, or a failed write: ok:false, error",
 				"{\"cmd\":\"screenshot\",\"actor\":12,\"dir\":\"shots\"}"),
-			("subscribe", "events (non-empty array of group names); optional owner (player name) -> subscribed\n"
-				+ "                owner filters only the groups named in this request; omit it to receive every owner's events."
-				+ " A later subscribe replaces a group's filter",
-				"{\"cmd\":\"subscribe\",\"events\":[\"damage\",\"killed\"],\"owner\":\"Multi0\"}"),
-			("unsubscribe", "events (array), or all:true -> subscribed", "{\"cmd\":\"unsubscribe\",\"events\":[\"damage\"]}"),
 			("undo", "offset (string): \"-<seconds>\" rewinds, \"+<seconds>\" advances, \"@<seconds>\" jumps to that"
 				+ " absolute game time, read at 25 ticks per second\n"
 				+ "                -> tick, requested_tick, moved_ticks (signed), held. The snapshot nearest the target game"
@@ -175,7 +170,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				Row(text, "", 11, $"example: {example}");
 			}
 
-			text.Append("Event groups, for subscribe. Each event is one line; its event key names its type:\n");
+			text.Append("Event types, in the envelope's events. Each event is one object; its event key names its type:\n");
 			foreach (var (group, type, payload) in Events)
 				Row(text, group, 12, $"{type}: {Fields(payload)}");
 
@@ -199,8 +194,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("  A > line is not a response and not an event; skip lines that are just >.\n");
 			text.Append("  An array is one request: the items run in order and results is one JSON array, one result per item.\n");
 			text.Append("  The envelope: results (the request's result, or the array), events (the turn's events, each once: the first 3 of a type in full,"
-				+ " then {event, aggregated, tick_from, tick_to};\n"
-				+ "    a subscribed group is also pushed as a line), state (the digest, as the state\n");
+				+ " then {event, aggregated, tick_from, tick_to}), state (the digest, as the state\n");
 			text.Append("    command returns it), tick (the game clock after the request). The map image: map_state_png (its workspace path, or\n");
 			text.Append("    null), map_state_tick (the tick it was rendered at, equal to tick after a world-changing request), map_state_render\n");
 			text.Append("    (ok or unavailable), and map_px_per_cell, map_origin, map_size (its geometry).\n"

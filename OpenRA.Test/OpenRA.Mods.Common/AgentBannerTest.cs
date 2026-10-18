@@ -37,7 +37,7 @@ namespace OpenRA.Test
 		public void BannerListsEveryCommand()
 		{
 			var start = Array.FindIndex(BannerLines, l => l.StartsWith("Commands", StringComparison.Ordinal));
-			var end = Array.FindIndex(BannerLines, l => l.StartsWith("Event groups", StringComparison.Ordinal));
+			var end = Array.FindIndex(BannerLines, l => l.StartsWith("Event types", StringComparison.Ordinal));
 
 			// Command rows are indented two spaces; the wrapped continuation of a row is indented further.
 			var listed = BannerLines[(start + 1)..end]
@@ -75,12 +75,9 @@ namespace OpenRA.Test
 			Assert.That(AgentSocketCommands.Handle("{\"cmd\":\"nope\"}", null), Does.Contain("unknown command"));
 		}
 
-		[TestCase(TestName = "The banner lists every event group the hub accepts, each with its event type")]
-		public void BannerListsEveryEventGroup()
+		[TestCase(TestName = "The banner lists every event type the hub raises, with its event key")]
+		public void BannerListsEveryEventType()
 		{
-			foreach (var group in AgentEvents.Groups)
-				Assert.That(BannerLines.Any(l => l.TrimStart().StartsWith(group + " ", StringComparison.Ordinal)), Is.True, group);
-
 			foreach (var type in AgentBanner.EventTypes)
 				Assert.That(BannerLines.Any(l => l.Contains($" {type}: ")), Is.True, type);
 		}
@@ -125,7 +122,6 @@ namespace OpenRA.Test
 			Assert.That(banner, Does.Contain("the server sends a lone > line as a prompt"));
 			Assert.That(banner, Does.Contain("min_effect_tick is a lower bound"));
 			Assert.That(banner, Does.Contain("An overflow event is sent before the events that follow it"));
-			Assert.That(banner, Does.Contain("owner filters only the groups named in this request"));
 		}
 
 		[TestCase(TestName = "The banner has one blank line, at its end, so a client can read up to the blank line")]

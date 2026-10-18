@@ -25,7 +25,7 @@ namespace OpenRA.Test
 {
 	/// <summary>
 	/// The pending-order registry (P1.2). Orders go through the real engine notify: Ordered runs for every resolved order,
-	/// with no subscriber, and resolves the await registered on the order's world. The mod's types are reached by
+	/// with no connection, and resolves the await registered on the order's world. The mod's types are reached by
 	/// reflection, as in AgentOrderStanceEventsTest.
 	/// </summary>
 	[TestFixture]
@@ -209,12 +209,12 @@ namespace OpenRA.Test
 			return target.GetType().GetMethod(method).Invoke(target, args);
 		}
 
-		/// <summary>Takes every queued event from the subscriber. Fails rather than blocking when nothing was delivered.</summary>
-		static List<object> Take(object subscriber)
+		/// <summary>Takes every queued event from the connection. Fails rather than blocking when nothing was delivered.</summary>
+		static List<object> Take(object connection)
 		{
-			var pending = (int)subscriber.GetType().GetProperty("Pending").GetValue(subscriber);
-			Assert.That(pending, Is.GreaterThan(0), "No events reached the subscriber.");
-			return ((IList)Invoke(subscriber, "Take")).Cast<object>().ToList();
+			var pending = (int)connection.GetType().GetProperty("Pending").GetValue(connection);
+			Assert.That(pending, Is.GreaterThan(0), "No events reached the connection.");
+			return Only(((IList)Invoke(connection, "Flush")).Cast<object>(), "order").ToList();
 		}
 
 		[TestCase(TestName = "A Move reply waits for the order to settle, then reports its effect tick, path and settle count")]
@@ -226,11 +226,9 @@ namespace OpenRA.Test
 			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
 			var start = unit.Location;
 
-			var subscriber = Activator.CreateInstance(ModType("AgentSocket.AgentEventSubscriber"));
+			var connection = Activator.CreateInstance(ModType("AgentSocket.AgentConnection"));
 			try
 			{
-				Invoke(subscriber, "Subscribe", new[] { "orders" }, null);
-
 				var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
 				using var response = AgentStateDumpTest.RequestWithTicks(hw, line);
 				var root = response.RootElement;
@@ -247,7 +245,7 @@ namespace OpenRA.Test
 				var effectTick = root.GetProperty("effect_tick").GetInt32();
 				Assert.That(effectTick, Is.GreaterThanOrEqualTo(issueTick + 1), "The order took effect before the tick after issue.");
 
-				var orders = Take(subscriber).Where(e => e.GetType().Name == "OrderEventV1").ToList();
+				var orders = Take(connection).Where(e => e.GetType().Name == "OrderEventV1").ToList();
 				Assert.That(orders, Has.Count.EqualTo(1), "Expected exactly one order event.");
 				Assert.That(Field<int>(orders[0], "EffectTick"), Is.EqualTo(effectTick), "The reply's effect_tick is not the order event's.");
 
@@ -257,7 +255,7 @@ namespace OpenRA.Test
 			}
 			finally
 			{
-				Invoke(subscriber, "Close");
+				Invoke(connection, "Close");
 			}
 		}
 
@@ -436,6 +434,12 @@ namespace OpenRA.Test
 			hw.Tick(budget + 1);
 
 			Assert.That(PendingCount(hw.World), Is.EqualTo(0), "The unresolved await was not failed by the resolve budget.");
+		}
+
+		/// <summary>The events of the named types, in the order they were raised. The connection carries every event; a test looks at its own.</summary>
+		static IEnumerable<object> Only(IEnumerable<object> events, params string[] types)
+		{
+			return events.Where(e => types.Contains(e.GetType().GetProperty("Event")?.GetValue(e) as string));
 		}
 	}
 }

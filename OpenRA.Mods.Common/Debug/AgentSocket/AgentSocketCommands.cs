@@ -10,7 +10,6 @@
 #endregion
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -21,8 +20,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 	{
 		sealed record Envelope(bool Ok, string Cmd, string Error, string Hint);
 		sealed record PingResponse(bool Ok, string Cmd, int Tick);
-		sealed record SubscriptionV1(bool Ok, string Cmd, string[] Subscribed);
-
 		/// <summary>The events wait's reply (P3.4): events when a turn event arrived, timeout otherwise. The events are in the envelope.</summary>
 		sealed record WaitResultV1(bool Ok, string Cmd, string Result);
 		sealed record HelpV1(bool Ok, string Cmd, string Banner);
@@ -48,7 +45,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static readonly string[] Names =
 		[
 			"ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "wait",
-			"production", "build", "cancel", "place", "deploy", "screenshot", "subscribe", "unsubscribe", "undo", "look", "map_state",
+			"production", "build", "cancel", "place", "deploy", "screenshot", "undo", "look", "map_state",
 		];
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
@@ -63,13 +60,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// Parses one request line and returns the single response line for it, wrapped in the turn envelope (AgentEnvelope)
 		/// except for help. A root array is one request: its items run in order, and the results are one JSON array with
 		/// one result per item, so a failing item does not stop the rest. Items run on the calling thread, so a slow awaited
-		/// item delays the whole response until it settles or its own wall-clock limit passes. subscriber is the calling
-		/// connection's subscription state; it is null only where no connection exists, and subscribe then returns an error.
+		/// item delays the whole response until it settles or its own wall-clock limit passes. connection is the calling
+		/// connection; it is null only where no connection exists, and a wait then has no events to wait for.
 		/// </summary>
-		public static string Handle(string line, AgentEventSubscriber subscriber)
+		public static string Handle(string line, AgentConnection connection)
 		{
 			var initial = false;
-			return HandleTurn(line, subscriber, ref initial);
+			return HandleTurn(line, connection, ref initial);
 		}
 
 		/// <summary>
@@ -77,7 +74,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// envelope is then marked initial:true (P3.5). Its state is written in full, and the events raised before the request
 		/// are dropped, so a connection never replays a backlog.
 		/// </summary>
-		internal static string HandleTurn(string line, AgentEventSubscriber subscriber, ref bool initial)
+		internal static string HandleTurn(string line, AgentConnection connection, ref bool initial)
 		{
 			JsonDocument doc;
 			try
@@ -96,20 +93,20 @@ namespace OpenRA.Mods.Common.AgentSocket
 				var root = doc.RootElement;
 				if (root.ValueKind == JsonValueKind.Array)
 				{
-					var first = StartTurn(ref initial, subscriber);
+					var first = StartTurn(ref initial, connection);
 					var items = root.EnumerateArray().ToArray();
 					var results = "[" + string.Join(",", items.Select((item, index) =>
-						UndoRefusal(item, index, items.Length) ?? HandleItem(item, subscriber, selection))) + "]";
-					return AgentEnvelope.Wrap(results, AgentEnvelope.WantsState(items), subscriber?.Turn.Flush(), first);
+						UndoRefusal(item, index, items.Length) ?? HandleItem(item, connection, selection))) + "]";
+					return AgentEnvelope.Wrap(results, AgentEnvelope.WantsState(items), connection?.Turn.Flush(), first);
 				}
 
 				// help is documentation, not a turn: it answers with the banner alone, and leaves the first envelope to the next request.
 				if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("cmd", out var cmdElement) &&
 					cmdElement.ValueKind == JsonValueKind.String && cmdElement.GetString() == "help")
-					return HandleItem(root, subscriber, selection);
+					return HandleItem(root, connection, selection);
 
-				var initialTurn = StartTurn(ref initial, subscriber);
-				return AgentEnvelope.Wrap(HandleItem(root, subscriber, selection), AgentEnvelope.WantsState(root), subscriber?.Turn.Flush(), initialTurn);
+				var initialTurn = StartTurn(ref initial, connection);
+				return AgentEnvelope.Wrap(HandleItem(root, connection, selection), AgentEnvelope.WantsState(root), connection?.Turn.Flush(), initialTurn);
 			}
 		}
 
@@ -117,12 +114,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// Takes the first-envelope flag for a turn that is about to run. A first turn drops the backlog of events raised before
 		/// it, so the events its envelope reports are only those its own request raised (P3.5).
 		/// </summary>
-		static bool StartTurn(ref bool initial, AgentEventSubscriber subscriber)
+		static bool StartTurn(ref bool initial, AgentConnection connection)
 		{
 			if (!initial)
 				return false;
 
-			subscriber?.Turn.Flush();
+			connection?.Turn.Flush();
 			initial = false;
 			return true;
 		}
@@ -154,7 +151,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>Answers one request object. A value that is not an object is an error for that item alone.</summary>
-		static string HandleItem(JsonElement root, AgentEventSubscriber subscriber, AgentSelection selection)
+		static string HandleItem(JsonElement root, AgentConnection connection, AgentSelection selection)
 		{
 			if (root.ValueKind != JsonValueKind.Object)
 				return Error(null, "expected a JSON object");
@@ -173,15 +170,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"load_map" => LoadMap(cmd, root),
 				"order" => IssueOrder(cmd, root, selection),
 				"orders" => Orders(cmd, root),
-				"wait" => Wait(cmd, root, subscriber),
+				"wait" => Wait(cmd, root, connection),
 				"production" => Run(cmd, () => AgentProduction.List(AgentWorldBridge.RequireWorld())),
 				"build" => StartBuild(cmd, root, selection),
 				"cancel" => StartCancel(cmd, root),
 				"place" => StartPlace(cmd, root, selection),
 				"deploy" => StartDeploy(cmd, root, selection),
 				"screenshot" => Screenshot(cmd, root),
-				"subscribe" => Subscribe(cmd, root, subscriber),
-				"unsubscribe" => Unsubscribe(cmd, root, subscriber),
 				"undo" => SnapshotStep(cmd, root),
 				"look" => Look(cmd, root),
 				"map_state" => Run(cmd, () => AgentMapState.Render(AgentWorldBridge.RequireWorld(), AgentWorldBridge.RequireWorld().LocalPlayer)),
@@ -393,10 +388,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>
 		/// wait with a job is the job's reply (P1.4), with result:"job" at its front. wait with no job long-polls the connection's turn
 		/// buffer (P3.4): result is events when an event arrived, which is in this response's events, and timeout otherwise. A
-		/// connection-less request (no subscriber) has nothing to wait for, so it times out at once. The events wait does not hold a
+		/// connection-less request (no connection) has nothing to wait for, so it times out at once. The events wait does not hold a
 		/// lock the game thread needs; it runs on the connection's thread.
 		/// </summary>
-		static string Wait(string cmd, JsonElement root, AgentEventSubscriber subscriber)
+		static string Wait(string cmd, JsonElement root, AgentConnection connection)
 		{
 			var timeoutMs = AgentOrderAwait.WallClockMs;
 			if (root.TryGetProperty("timeout_ms", out var timeoutElement) && timeoutElement.ValueKind != JsonValueKind.Null &&
@@ -405,7 +400,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			if (!root.TryGetProperty("job", out var jobElement))
 			{
-				var eventful = subscriber != null && subscriber.Turn.WaitForEvents(timeoutMs, AgentOrderAwait.Clock);
+				var eventful = connection != null && connection.Turn.WaitForEvents(timeoutMs, AgentOrderAwait.Clock);
 				return Serialize(new WaitResultV1(true, cmd, eventful ? "events" : "timeout"));
 			}
 
@@ -472,70 +467,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 				var requestedTick = (int)Math.Clamp(targetTick, 0, int.MaxValue);
 				return new SnapshotV1(true, cmd, restoredTick, requestedTick, restoredTick - liveTick, WorldForks.Count);
 			});
-		}
-
-		/// <summary>Adds the named event groups. Runs on the connection thread: the subscription state is not game state.</summary>
-		static string Subscribe(string cmd, JsonElement root, AgentEventSubscriber subscriber)
-		{
-			if (subscriber == null)
-				return Error(cmd, "events need a connection");
-
-			if (!root.TryGetProperty("events", out var element) || element.ValueKind != JsonValueKind.Array || element.GetArrayLength() == 0)
-				return Error(cmd, "events must be a non-empty array of group names");
-
-			if (!TryGetGroups(element, out var names, out var error))
-				return Error(cmd, error);
-
-			if (!TryGetOptionalString(root, "owner", out var owner))
-				return Error(cmd, "owner must be a string");
-
-			return Serialize(new SubscriptionV1(true, cmd, subscriber.Subscribe(names, owner)));
-		}
-
-		/// <summary>Removes the named event groups, or every group with {"all":true}.</summary>
-		static string Unsubscribe(string cmd, JsonElement root, AgentEventSubscriber subscriber)
-		{
-			if (subscriber == null)
-				return Error(cmd, "events need a connection");
-
-			if (root.TryGetProperty("all", out var all) && all.ValueKind == JsonValueKind.True)
-				return Serialize(new SubscriptionV1(true, cmd, subscriber.Unsubscribe(null)));
-
-			if (!root.TryGetProperty("events", out var element) || element.ValueKind != JsonValueKind.Array)
-				return Error(cmd, "unsubscribe needs events, or all:true");
-
-			if (!TryGetGroups(element, out var names, out var error))
-				return Error(cmd, error);
-
-			return Serialize(new SubscriptionV1(true, cmd, subscriber.Unsubscribe(names)));
-		}
-
-		/// <summary>Checks every name before any is applied, so a bad name changes nothing.</summary>
-		static bool TryGetGroups(JsonElement element, out string[] names, out string error)
-		{
-			names = null;
-			error = null;
-			var list = new List<string>();
-			foreach (var item in element.EnumerateArray())
-			{
-				if (item.ValueKind != JsonValueKind.String)
-				{
-					error = "event group names must be strings";
-					return false;
-				}
-
-				var name = item.GetString();
-				if (!AgentEvents.Groups.Contains(name))
-				{
-					error = $"unknown event group '{name}'";
-					return false;
-				}
-
-				list.Add(name);
-			}
-
-			names = list.ToArray();
-			return true;
 		}
 
 		/// <summary>Absent or null is no filter. Any non-string value is rejected.</summary>

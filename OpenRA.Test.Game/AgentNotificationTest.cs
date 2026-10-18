@@ -20,7 +20,7 @@ namespace OpenRA.Test
 	/// <summary>
 	/// The notification event (P2.10). A refused non-queued DeployTransform plays the mcv's NoTransformNotification through
 	/// Transforms.DeployTransform, and Sound.PlayNotification reports it. The owner is the actor's owner, so the event also covers a
-	/// player that is not the local one. The subscriber is reached the way the other agent tests reach it.
+	/// player that is not the local one. The connection is reached the way the other agent tests reach it.
 	/// </summary>
 	[TestFixture]
 	sealed class AgentNotificationTest
@@ -40,7 +40,7 @@ namespace OpenRA.Test
 
 		bool savedAgentSocket;
 		bool savedEnabled;
-		object subscriber;
+		object connection;
 
 		[OneTimeSetUp]
 		public void InitializeMod()
@@ -49,19 +49,19 @@ namespace OpenRA.Test
 		}
 
 		[SetUp]
-		public void CreateSubscriber()
+		public void CreateConnection()
 		{
 			savedAgentSocket = Game.Settings.Debug.AgentSocket;
 			Game.Settings.Debug.AgentSocket = true;
 
 			savedEnabled = (bool)ModType("AgentSocket.AgentEvents").GetProperty("Enabled").GetValue(null);
-			subscriber = Activator.CreateInstance(ModType("AgentSocket.AgentEventSubscriber"));
+			connection = Activator.CreateInstance(ModType("AgentSocket.AgentConnection"));
 		}
 
 		[TearDown]
 		public void RestoreHub()
 		{
-			Call(subscriber, "Close");
+			Call(connection, "Close");
 			ModType("AgentSocket.AgentEvents").GetProperty("Enabled").SetValue(null, savedEnabled);
 			Game.Settings.Debug.AgentSocket = savedAgentSocket;
 		}
@@ -81,19 +81,14 @@ namespace OpenRA.Test
 			return (T)target.GetType().GetProperty(name).GetValue(target);
 		}
 
-		void SubscribeToNotifications()
-		{
-			Call(subscriber, "Subscribe", new[] { "notification" }, null);
-		}
-
-		/// <summary>Takes the notification events queued so far. Empty when none reached the subscriber.</summary>
+		/// <summary>Takes the notification events queued so far. Empty when none reached the connection.</summary>
 		List<object> TakeNotifications()
 		{
-			var pending = (int)subscriber.GetType().GetProperty("Pending").GetValue(subscriber);
+			var pending = (int)connection.GetType().GetProperty("Pending").GetValue(connection);
 			if (pending == 0)
 				return [];
 
-			return ((IList)Call(subscriber, "Take")).Cast<object>()
+			return Only(((IList)Call(connection, "Flush")).Cast<object>(), "notification")
 				.Where(e => e.GetType().Name == "NotificationV1")
 				.ToList();
 		}
@@ -115,7 +110,6 @@ namespace OpenRA.Test
 			hw.CreateActor(Blocker, mcv.Location + new CVec(-1, -1), local);
 			hw.Tick(1);
 
-			SubscribeToNotifications();
 			var start = hw.World.WorldTick;
 			using var response = AgentStateDumpTest.RequestWithTicks(hw,
 				$"{{\"cmd\":\"order\",\"actor\":{mcv.ActorID},\"order\":\"DeployTransform\",\"queued\":false}}");
@@ -141,7 +135,6 @@ namespace OpenRA.Test
 			hw.CreateActor(Blocker, mcv.Location + new CVec(-1, -1), enemy);
 			hw.Tick(1);
 
-			SubscribeToNotifications();
 			hw.World.IssueOrder(new Order("DeployTransform", mcv, false));
 			hw.Tick(3);
 			var notes = TakeNotifications();
@@ -150,6 +143,12 @@ namespace OpenRA.Test
 			Assert.That(refusals, Has.Count.EqualTo(1), "The enemy's refused deploy should emit its notification.");
 			Assert.That(Field<string>(refusals[0], "Owner"), Is.EqualTo(enemy.PlayerName),
 				"The notification should name the enemy as owner, not the local player.");
+		}
+
+		/// <summary>The events of the named types, in the order they were raised. The connection carries every event; a test looks at its own.</summary>
+		static IEnumerable<object> Only(IEnumerable<object> events, params string[] types)
+		{
+			return events.Where(e => types.Contains(e.GetType().GetProperty("Event")?.GetValue(e) as string));
 		}
 	}
 }

@@ -23,7 +23,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	{
 		/// <summary>
 		/// Raises a notification event for a notification the engine plays. Sound.PlayNotification calls it before its guards, so it sees
-		/// every notification, whether or not the local player hears it. Raised only when a subscriber is listening.
+		/// every notification, whether or not the local player hears it. Raised only when a connection is listening.
 		/// </summary>
 		public static void Raise(Player player, string name)
 		{
@@ -31,7 +31,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return;
 
 			var tick = player?.World.WorldTick ?? AgentWorldBridge.Active?.WorldTick ?? 0;
-			AgentEvents.Raise("notification", player?.PlayerName, new NotificationV1("notification", tick, name, player?.PlayerName));
+			AgentEvents.Raise(new NotificationV1("notification", tick, name, player?.PlayerName));
 		}
 	}
 }

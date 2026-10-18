@@ -36,7 +36,7 @@ namespace OpenRA.Mods.Common
 			if (!AgentEvents.Enabled)
 				return;
 
-			AgentEvents.Raise("production", produced.Owner.PlayerName, new ProducedV1("produced", produced.World.WorldTick,
+			AgentEvents.Raise(new ProducedV1("produced", produced.World.WorldTick,
 				produced.ActorID, produced.Info.Name, produced.Owner.PlayerName, producer.ActorID, producer.Info.Name));
 		}
 
@@ -47,7 +47,7 @@ namespace OpenRA.Mods.Common
 		/// </summary>
 		public static void Ordered(Order order, int clientId, bool valid)
 		{
-			// Resolves the socket's pending await. It runs without a subscriber, so an await never waits on an event.
+			// Resolves the socket's pending await. It runs without a connection, so an await never waits on an event.
 			AgentOrderAwait.Resolve(order, valid);
 
 			if (!AgentEvents.Enabled)
@@ -57,7 +57,7 @@ namespace OpenRA.Mods.Common
 			var cell = order.Target.Type == TargetType.Terrain ? world.Map.CellContaining(order.Target.CenterPosition) : (CPos?)null;
 			var targetActor = order.Target.Type == TargetType.Actor ? order.Target.Actor?.ActorID : null;
 
-			AgentEvents.Raise("orders", order.Subject.Owner.PlayerName, new OrderEventV1("order", world.WorldTick, world.WorldTick,
+			AgentEvents.Raise(new OrderEventV1("order", world.WorldTick, world.WorldTick,
 				valid, clientId, order.OrderString, order.Subject.ActorID, order.Subject.Info.Name, order.Subject.Owner.PlayerName,
 				cell is { } c ? [c.X, c.Y] : null, targetActor, order.Queued));
 		}
@@ -65,7 +65,7 @@ namespace OpenRA.Mods.Common
 		/// <summary>Raises a stance event when an actor's stance changes. Called from AutoTarget.SetStance behind the same guard.</summary>
 		public static void Stanced(Actor self, UnitStance from, UnitStance to)
 		{
-			AgentEvents.Raise("stance", self.Owner.PlayerName, new StanceV1("stance", self.World.WorldTick, self.ActorID,
+			AgentEvents.Raise(new StanceV1("stance", self.World.WorldTick, self.ActorID,
 				self.Info.Name, self.Owner.PlayerName, from.ToString(), to.ToString()));
 		}
 	}

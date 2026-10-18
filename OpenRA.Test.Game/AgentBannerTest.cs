@@ -168,5 +168,28 @@ namespace OpenRA.Test
 			Assert.That(Regex.Count(banner, "^Conventions", RegexOptions.Multiline), Is.EqualTo(1),
 				"The conventions should be introduced once.");
 		}
+
+		[TestCase(TestName = "subscribe and unsubscribe are unknown commands, answered with the help hint")]
+		public void SubscribeIsAnUnknownCommand()
+		{
+			foreach (var cmd in new[] { "subscribe", "unsubscribe" })
+			{
+				using var response = AgentStateDumpTest.RawRequest($"{{\"cmd\":\"{cmd}\"}}");
+				var results = response.RootElement.GetProperty("results");
+
+				Assert.That(results.GetProperty("ok").GetBoolean(), Is.False, cmd);
+				Assert.That(results.GetProperty("error").GetString(), Is.EqualTo("unknown command"),
+					$"{cmd} should be an unknown command now that events are always on.");
+				Assert.That(results.GetProperty("hint").GetString(), Is.EqualTo("see {\"cmd\":\"help\"}"),
+					"The unknown-command error should point at help.");
+			}
+		}
+
+		[TestCase(TestName = "The banner has no subscribe or unsubscribe entry")]
+		public void BannerHasNoSubscribeEntry()
+		{
+			Assert.That(Banner(), Does.Not.Contain("subscribe"), "The banner should not mention subscribe.");
+			Assert.That(Banner(), Does.Not.Contain("unsubscribe"), "The banner should not mention unsubscribe.");
+		}
 	}
 }

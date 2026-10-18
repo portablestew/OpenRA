@@ -30,8 +30,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// </summary>
 	public sealed class AgentTurnBuffer
 	{
-		/// <summary>The most events the buffer holds before it drops the oldest. The same bound as the subscriber queue.</summary>
-		public const int Capacity = AgentEventSubscriber.Capacity;
+		/// <summary>The most events the buffer holds before it drops the oldest. The most events a connection holds between responses.</summary>
+		public const int Capacity = 4096;
 
 		/// <summary>How many events of each type a flush returns in full.</summary>
 		public const int FullPerType = 3;

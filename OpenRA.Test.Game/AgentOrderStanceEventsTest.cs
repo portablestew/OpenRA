@@ -29,7 +29,7 @@ namespace OpenRA.Test
 	{
 		bool savedAgentSocket;
 		bool savedEnabled;
-		object subscriber;
+		object connection;
 
 		[OneTimeSetUp]
 		public void InitializeMod()
@@ -38,19 +38,19 @@ namespace OpenRA.Test
 		}
 
 		[SetUp]
-		public void CreateSubscriber()
+		public void CreateConnection()
 		{
 			savedAgentSocket = Game.Settings.Debug.AgentSocket;
 			Game.Settings.Debug.AgentSocket = true;
 
 			savedEnabled = (bool)ModType("AgentSocket.AgentEvents").GetProperty("Enabled").GetValue(null);
-			subscriber = Activator.CreateInstance(ModType("AgentSocket.AgentEventSubscriber"));
+			connection = Activator.CreateInstance(ModType("AgentSocket.AgentConnection"));
 		}
 
 		[TearDown]
 		public void RestoreHub()
 		{
-			Call(subscriber, "Close");
+			Call(connection, "Close");
 			ModType("AgentSocket.AgentEvents").GetProperty("Enabled").SetValue(null, savedEnabled);
 			Game.Settings.Debug.AgentSocket = savedAgentSocket;
 		}
@@ -78,9 +78,9 @@ namespace OpenRA.Test
 		/// <summary>Takes every queued event. Fails rather than blocking when nothing was delivered.</summary>
 		List<object> Drain()
 		{
-			var pending = (int)subscriber.GetType().GetProperty("Pending").GetValue(subscriber);
-			Assert.That(pending, Is.GreaterThan(0), "No events reached the subscriber.");
-			return ((IList)Call(subscriber, "Take")).Cast<object>().ToList();
+			var pending = (int)connection.GetType().GetProperty("Pending").GetValue(connection);
+			Assert.That(pending, Is.GreaterThan(0), "No events reached the connection.");
+			return Only(((IList)Call(connection, "Flush")).Cast<object>(), "order", "stance", "produced", "placed").ToList();
 		}
 
 		/// <summary>The mod's copy of a trait on the actor, found by its type name.</summary>
@@ -101,8 +101,6 @@ namespace OpenRA.Test
 			using var hw = HeadlessWorld.Create(1);
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
-
-			Call(subscriber, "Subscribe", new[] { "orders" }, null);
 
 			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
 			var issuedAt = hw.World.WorldTick;
@@ -140,8 +138,6 @@ namespace OpenRA.Test
 			var from = Field<object>(autoTarget, "Stance");
 			var to = Enum.GetValues(ModType("Traits.UnitStance")).Cast<object>().First(v => !v.Equals(from));
 
-			Call(subscriber, "Subscribe", new[] { "stance" }, null);
-
 			var value = Convert.ToUInt32(to, CultureInfo.InvariantCulture);
 			var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"SetUnitStance\",\"extra_data\":{value}}}";
 			using (var response = AgentStateDumpTest.Request(line))
@@ -166,8 +162,6 @@ namespace OpenRA.Test
 			var from = Field<object>(autoTarget, "Stance");
 			var to = Enum.GetValues(stanceType).Cast<object>().First(v => !v.Equals(from));
 
-			Call(subscriber, "Subscribe", new[] { "stance" }, null);
-
 			autoTarget.GetType().GetMethod("SetStance").Invoke(autoTarget, [unit, to]);
 
 			var stances = Drain();
@@ -183,26 +177,6 @@ namespace OpenRA.Test
 			Assert.That(Field<string>(stance, "To"), Is.EqualTo(to.ToString()));
 		}
 
-		[TestCase(TestName = "An owner filter drops a stance event for an actor owned by someone else")]
-		public void OwnerFilterDropsOtherOwnersStance()
-		{
-			using var hw = HeadlessWorld.Create(1);
-			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
-			hw.Tick(1);
-
-			var autoTarget = Trait(unit, "Traits.AutoTarget");
-			var stanceType = ModType("Traits.UnitStance");
-			var from = Field<object>(autoTarget, "Stance");
-			var to = Enum.GetValues(stanceType).Cast<object>().First(v => !v.Equals(from));
-
-			Assert.That(hw.EnemyPlayer, Is.Not.Null, "The selected map has only one playable slot.");
-			Call(subscriber, "Subscribe", new[] { "stance" }, hw.EnemyPlayer.PlayerName);
-
-			autoTarget.GetType().GetMethod("SetStance").Invoke(autoTarget, [unit, to]);
-
-			Assert.That(subscriber.GetType().GetProperty("Pending").GetValue(subscriber), Is.EqualTo(0));
-		}
-
 		[TestCase(TestName = "A produced unit yields a produced event naming the unit and its producer")]
 		public void ProducedPayloadNamesUnitAndProducer()
 		{
@@ -211,7 +185,6 @@ namespace OpenRA.Test
 			var produced = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 52), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
-			Call(subscriber, "Subscribe", new[] { "production" }, null);
 			ModType("AgentWorldEventObserver").GetMethod("Produced").Invoke(null, [producer, produced]);
 
 			var batch = Drain();
@@ -225,6 +198,12 @@ namespace OpenRA.Test
 			Assert.That(Field<string>(built, "Owner"), Is.EqualTo(hw.LocalPlayer.PlayerName));
 			Assert.That(Field<uint>(built, "Producer"), Is.EqualTo(producer.ActorID));
 			Assert.That(Field<string>(built, "ProducerType"), Is.EqualTo("e1"));
+		}
+
+		/// <summary>The events of the named types, in the order they were raised. The connection carries every event; a test looks at its own.</summary>
+		static IEnumerable<object> Only(IEnumerable<object> events, params string[] types)
+		{
+			return events.Where(e => types.Contains(e.GetType().GetProperty("Event")?.GetValue(e) as string));
 		}
 	}
 }

@@ -22,7 +22,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>
 	/// An order the socket issued that has not settled yet. Registered on the game thread at issue. Resolve moves it from
 	/// Pending to Settling when the order resolves: AgentWorldEventObserver.Ordered runs for every resolved order, before the
-	/// subscriber check. Tick, the settle clock, completes it once settleTicks have passed, or fails it when the resolve budget
+	/// connection check. Tick, the settle clock, completes it once settleTicks have passed, or fails it when the resolve budget
 	/// runs out or its subject dies. The socket thread parks in Wait until then. The registry is world-scoped: a resolution only
 	/// matches an await on the same world, because Undo swaps the world and actor IDs are not unique across worlds.
 	/// The socket thread abandons its await on a wall-clock timeout, so every list access takes Gate.
@@ -242,7 +242,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>
 		/// True while a resolved Move for subject still waits for its path. Move.cs asks this before it builds a path event,
-		/// so the path is captured without a subscriber. Must run on the game thread.
+		/// so the path is captured without a connection. Must run on the game thread.
 		/// </summary>
 		public static bool AwaitingPath(Actor subject)
 		{
@@ -368,7 +368,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>
 		/// The transform activity reports its end here (P1.8): completed when the actor was replaced, or canceled with a reason. A
 		/// cannot_deploy cancel takes the cell reason the footprint fails, so the reply names the cell. Called for every transform
-		/// event, with or without a subscriber. Must run on the game thread.
+		/// event, with or without a connection. Must run on the game thread.
 		/// </summary>
 		public static void Activity(Actor self, string kind, string state, string reason)
 		{

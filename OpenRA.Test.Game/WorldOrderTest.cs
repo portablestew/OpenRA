@@ -140,23 +140,23 @@ namespace OpenRA.Test
 				"order execution is not deterministic.");
 		}
 
-		[TestCase(TestName = "A move order plays out identically with the agent socket off, on without a subscriber, and on with a subscriber")]
+		[TestCase(TestName = "A move order plays out identically with the agent socket off, on without a connection, and on with a connection")]
 		public void MoveOrderIsDeterministicAcrossAgentSocketConfigurations()
 		{
-			var off = AgentSocketConfig.Execute(agentSocket: false, subscribe: false, () => RunMoveToCompletion(0x4242));
-			var onIdle = AgentSocketConfig.Execute(agentSocket: true, subscribe: false, () => RunMoveToCompletion(0x4242));
-			var subscribed = AgentSocketConfig.Execute(agentSocket: true, subscribe: true, () => RunMoveToCompletion(0x4242));
+			var off = AgentSocketConfig.Execute(agentSocket: false, connect: false, () => RunMoveToCompletion(0x4242));
+			var onIdle = AgentSocketConfig.Execute(agentSocket: true, connect: false, () => RunMoveToCompletion(0x4242));
+			var connected = AgentSocketConfig.Execute(agentSocket: true, connect: true, () => RunMoveToCompletion(0x4242));
 
 			Assert.That(off.Result.ArrivedAt, Is.Not.Null, "The flag-off run never arrived, so there is nothing to compare.");
 
-			// Without these checks a subscriber that never received anything would pass the comparison without the
+			// Without these checks a connection that never received anything would pass the comparison without the
 			// event path having run at all.
-			Assert.That(onIdle.Events, Is.Zero, "A run with no subscriber queued events.");
-			Assert.That(subscribed.Events, Is.GreaterThan(0),
-				"The subscribed run queued no events, so the comparison did not exercise the event path.");
+			Assert.That(onIdle.Events, Is.Zero, "A run with no connection queued events.");
+			Assert.That(connected.Events, Is.GreaterThan(0),
+				"The connected run queued no events, so the comparison did not exercise the event path.");
 
-			AssertSamePlayout(off.Result, onIdle.Result, "The flag on with no subscriber");
-			AssertSamePlayout(off.Result, subscribed.Result, "The flag on with a subscriber");
+			AssertSamePlayout(off.Result, onIdle.Result, "The flag on with no connection");
+			AssertSamePlayout(off.Result, connected.Result, "The flag on with a connection");
 		}
 
 		static void AssertSamePlayout(MoveResult expected, MoveResult actual, string config)

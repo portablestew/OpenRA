@@ -70,16 +70,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 				}
 			}
 
-			// A socket await for this Move takes the path whether or not anything subscribes. An empty list means no path was found.
+			// A socket await for this Move takes the path whether or not a connection is open. An empty list means no path was found.
 			AgentOrderAwait.CapturePath(self, cells);
 
-			AgentEvents.Raise("path", self.Owner.PlayerName, new PathV1("path", self.World.WorldTick, self.ActorID,
+			AgentEvents.Raise(new PathV1("path", self.World.WorldTick, self.ActorID,
 				self.Info.Name, self.Owner.PlayerName, from, [to.X, to.Y], check.ToString(), repath, result, cells, metrics));
 		}
 
 		/// <summary>
-		/// True when Path should run for self: a subscriber wants the event, or a socket Move awaiting its path wants it (P1.3).
-		/// Move.cs gates its Path calls on this, so the path is captured without a subscriber.
+		/// True when Path should run for self: a connection wants the event, or a socket Move awaiting its path wants it (P1.3).
+		/// Move.cs gates its Path calls on this, so the path is captured without a connection.
 		/// </summary>
 		public static bool Wanted(Actor self)
 		{

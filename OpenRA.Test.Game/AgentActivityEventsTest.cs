@@ -38,8 +38,9 @@ namespace OpenRA.Test
 		const int Clearing = 6;
 
 		bool savedAgentSocket;
+		readonly List<object> held = [];
 		bool savedEnabled;
-		object subscriber;
+		object connection;
 
 		[OneTimeSetUp]
 		public void InitializeMod()
@@ -48,19 +49,20 @@ namespace OpenRA.Test
 		}
 
 		[SetUp]
-		public void CreateSubscriber()
+		public void CreateConnection()
 		{
 			savedAgentSocket = Game.Settings.Debug.AgentSocket;
 			Game.Settings.Debug.AgentSocket = true;
 
 			savedEnabled = (bool)ModType("AgentSocket.AgentEvents").GetProperty("Enabled").GetValue(null);
-			subscriber = Activator.CreateInstance(ModType("AgentSocket.AgentEventSubscriber"));
+			connection = Activator.CreateInstance(ModType("AgentSocket.AgentConnection"));
+			held.Clear();
 		}
 
 		[TearDown]
 		public void RestoreHub()
 		{
-			Call(subscriber, "Close");
+			Call(connection, "Close");
 			ModType("AgentSocket.AgentEvents").GetProperty("Enabled").SetValue(null, savedEnabled);
 			Game.Settings.Debug.AgentSocket = savedAgentSocket;
 		}
@@ -85,16 +87,34 @@ namespace OpenRA.Test
 			return payload.GetType().Name;
 		}
 
-		int Pending()
+		/// <summary>The wanted events held so far. Reading them takes the connection's turn into the test's list, so a wait can
+		/// see its event without losing it for Drain.</summary>
+		/// <summary>
+		/// Reads the connection's turn into the test's list, and counts the held events of the named types (every type when none
+		/// is named). Reading takes the events, so Drain still gets them.
+		/// </summary>
+		int Pending(params string[] types)
 		{
-			return (int)subscriber.GetType().GetProperty("Pending").GetValue(subscriber);
+			held.AddRange(Only(((IList)Call(connection, "Flush")).Cast<object>(), "activity"));
+			return Wanted(types).Count();
+		}
+
+		/// <summary>The held events of the named types, or all of them when none is named.</summary>
+		IEnumerable<object> Wanted(string[] types)
+		{
+			return types.Length == 0 ? held : Only(held, types);
 		}
 
 		/// <summary>Takes every queued event. Fails rather than blocking when nothing was delivered.</summary>
-		List<object> Drain()
+		/// <summary>Takes the wanted events held so far. Fails rather than blocking when none reached the connection.</summary>
+		/// <summary>Takes the held events of the named types, or all of them. Fails rather than blocking when none reached the connection.</summary>
+		List<object> Drain(params string[] types)
 		{
-			Assert.That(Pending(), Is.GreaterThan(0), "No events reached the subscriber.");
-			return ((IList)Call(subscriber, "Take")).Cast<object>().ToList();
+			Pending(types);
+			var events = Wanted(types).ToList();
+			Assert.That(events, Is.Not.Empty, "No events reached the connection.");
+			held.RemoveAll(events.Contains);
+			return events;
 		}
 
 		/// <summary>Places an mcv in the middle of a clear patch, big enough for its fact to be built there.</summary>
@@ -113,7 +133,6 @@ namespace OpenRA.Test
 			hw.Tick(SettleTicks);
 			var mcv = CreateMcv(hw);
 
-			Call(subscriber, "Subscribe", new[] { "activity" }, null);
 			hw.World.IssueOrder(new Order("DeployTransform", mcv, queued: false));
 
 			Assert.That(hw.TickUntil(() => Pending() >= 2, DeployTimeoutTicks), Is.Not.Null, "The deploy did not finish.");
@@ -147,7 +166,6 @@ namespace OpenRA.Test
 			hw.CreateActor(Blocker, mcv.Location + new CVec(-1, -1));
 			hw.Tick(1);
 
-			Call(subscriber, "Subscribe", new[] { "activity" }, null);
 			hw.World.IssueOrder(new Order("DeployTransform", mcv, queued: true));
 
 			Assert.That(hw.TickUntil(() => Pending() >= 2, DeployTimeoutTicks), Is.Not.Null, "The refused deploy reported no end.");
@@ -159,6 +177,12 @@ namespace OpenRA.Test
 			Assert.That(Field<string>(events[1], "Kind"), Is.EqualTo("transform"));
 			Assert.That(Field<string>(events[1], "State"), Is.EqualTo("canceled"));
 			Assert.That(Field<string>(events[1], "Reason"), Is.EqualTo("cannot_deploy"));
+		}
+
+		/// <summary>The events of the named types, in the order they were raised. The connection carries every event; a test looks at its own.</summary>
+		static IEnumerable<object> Only(IEnumerable<object> events, params string[] types)
+		{
+			return events.Where(e => types.Contains(e.GetType().GetProperty("Event")?.GetValue(e) as string));
 		}
 	}
 }

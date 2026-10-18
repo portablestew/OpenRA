@@ -46,7 +46,7 @@ namespace OpenRA.Test
 		static readonly CVec TransformOffset = new(-1, -1);
 
 		bool savedAgentSocket;
-		object subscriber;
+		object connection;
 
 		[OneTimeSetUp]
 		public void InitializeMod()
@@ -64,8 +64,8 @@ namespace OpenRA.Test
 		[TearDown]
 		public void RestoreAgentSocket()
 		{
-			subscriber?.GetType().GetMethod("Close").Invoke(subscriber, null);
-			subscriber = null;
+			connection?.GetType().GetMethod("Close").Invoke(connection, null);
+			connection = null;
 			Game.Settings.Debug.AgentSocket = savedAgentSocket;
 		}
 
@@ -81,14 +81,14 @@ namespace OpenRA.Test
 			return hw.CreateActor(DeployableUnit, area + new CVec(2, 2));
 		}
 
-		/// <summary>Takes the activity events queued on the subscriber so far. Empty when none reached it.</summary>
-		static List<object> TakeActivityEvents(object subscriber)
+		/// <summary>Takes the activity events queued on the connection so far. Empty when none reached it.</summary>
+		static List<object> TakeActivityEvents(object connection)
 		{
-			var pending = (int)subscriber.GetType().GetProperty("Pending").GetValue(subscriber);
+			var pending = (int)connection.GetType().GetProperty("Pending").GetValue(connection);
 			if (pending == 0)
 				return [];
 
-			return ((IList)subscriber.GetType().GetMethod("Take").Invoke(subscriber, null)).Cast<object>().ToList();
+			return Only(((IList)connection.GetType().GetMethod("Flush").Invoke(connection, null)).Cast<object>(), "activity").ToList();
 		}
 
 		static int CountActors(HeadlessWorld hw, string name)
@@ -217,9 +217,8 @@ namespace OpenRA.Test
 			var placed = false;
 			var buildingsBefore = CountActors(hw, Building);
 
-			// Subscribed before the request, so the transform's start is seen even if the deploy is refused at once.
-			subscriber = Activator.CreateInstance(HeadlessMod.ModData.ObjectCreator.FindType("AgentSocket.AgentEventSubscriber"));
-			subscriber.GetType().GetMethod("Subscribe").Invoke(subscriber, [new[] { "activity" }, null]);
+			// Connected before the request, so the transform's start is seen even if the deploy is refused at once.
+			connection = Activator.CreateInstance(HeadlessMod.ModData.ObjectCreator.FindType("AgentSocket.AgentConnection"));
 
 			using var response = AgentStateDumpTest.RequestWithTicks(hw, DeployLine(mcv), () =>
 			{
@@ -251,7 +250,7 @@ namespace OpenRA.Test
 			Assert.That(labels, Does.Not.Contain("Transform"), "No transform should be queued on the mcv.");
 
 			// A transform that started, even one refused at once, would report a started transform event.
-			var started = TakeActivityEvents(subscriber)
+			var started = TakeActivityEvents(connection)
 				.Where(e => e.GetType().GetProperty("Kind").GetValue(e) as string == "transform"
 					&& e.GetType().GetProperty("State").GetValue(e) as string == "started")
 				.ToArray();
@@ -307,6 +306,12 @@ namespace OpenRA.Test
 			Assert.That(outcome.GetProperty("cmd").GetString(), Is.EqualTo("wait"));
 			Assert.That(outcome.GetProperty("outcome").GetString(), Is.EqualTo("completed"));
 			Assert.That(mcv.IsDead, Is.True, "The mcv should have been replaced.");
+		}
+
+		/// <summary>The events of the named types, in the order they were raised. The connection carries every event; a test looks at its own.</summary>
+		static IEnumerable<object> Only(IEnumerable<object> events, params string[] types)
+		{
+			return events.Where(e => types.Contains(e.GetType().GetProperty("Event")?.GetValue(e) as string));
 		}
 	}
 }

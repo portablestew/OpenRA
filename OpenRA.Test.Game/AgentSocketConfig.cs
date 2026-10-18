@@ -19,38 +19,34 @@ namespace OpenRA.Test
 	/// </summary>
 	static class AgentSocketConfig
 	{
-		/// <summary>The scenario's result, and how many events the subscriber queued while it ran (0 when there is no subscriber).</summary>
+		/// <summary>The scenario's result, and how many events the connection queued while it ran (0 when there is no connection).</summary>
 		internal sealed record Run<T>(T Result, int Events);
 
 		/// <summary>
-		/// Runs scenario with the agent socket setting and hub state chosen, and reports how many events the subscriber queued.
+		/// Runs scenario with the agent socket setting and hub state chosen, and reports how many events the connection holds.
 		/// The setting is read when the world loads, so scenario must create its world after this call sets it.
 		/// </summary>
-		public static Run<T> Execute<T>(bool agentSocket, bool subscribe, Func<T> scenario)
+		public static Run<T> Execute<T>(bool agentSocket, bool connect, Func<T> scenario)
 		{
 			var savedAgentSocket = Game.Settings.Debug.AgentSocket;
 			var hub = ModType("AgentSocket.AgentEvents");
 			var savedEnabled = (bool)hub.GetProperty("Enabled").GetValue(null);
 
-			object subscriber = null;
+			object connection = null;
 			try
 			{
 				Game.Settings.Debug.AgentSocket = agentSocket;
 
-				if (subscribe)
-				{
-					subscriber = Activator.CreateInstance(ModType("AgentSocket.AgentEventSubscriber"));
-					var groups = (string[])hub.GetField("Groups").GetValue(null);
-					subscriber.GetType().GetMethod("Subscribe").Invoke(subscriber, [groups, null]);
-				}
+				if (connect)
+					connection = Activator.CreateInstance(ModType("AgentSocket.AgentConnection"));
 
 				var result = scenario();
-				var events = subscriber == null ? 0 : (int)subscriber.GetType().GetProperty("Pending").GetValue(subscriber);
+				var events = connection == null ? 0 : (int)connection.GetType().GetProperty("Pending").GetValue(connection);
 				return new Run<T>(result, events);
 			}
 			finally
 			{
-				subscriber?.GetType().GetMethod("Close").Invoke(subscriber, null);
+				connection?.GetType().GetMethod("Close").Invoke(connection, null);
 				hub.GetProperty("Enabled").SetValue(null, savedEnabled);
 				Game.Settings.Debug.AgentSocket = savedAgentSocket;
 			}

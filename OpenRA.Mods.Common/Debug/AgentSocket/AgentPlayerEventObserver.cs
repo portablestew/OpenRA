@@ -31,7 +31,7 @@ namespace OpenRA.Mods.Common
 
 		void INotifyDamage.Damaged(Actor self, AttackInfo e)
 		{
-			// The threat list reads recent hits from the state, so a hit is recorded whether or not anyone subscribes (P2.7).
+			// The threat list reads recent hits from the state, so a hit is recorded whether or not a connection is open (P2.7).
 			if (e.Attacker != null)
 				AgentRecentDamage.Record(self, e.Attacker);
 
@@ -55,7 +55,7 @@ namespace OpenRA.Mods.Common
 			var shrouded = attacker != null && !known;
 			var bearing = attacker == null ? null : AgentBearing.Of(self.CenterPosition, attacker.CenterPosition);
 
-			AgentEvents.Raise("damage", self.Owner.PlayerName, new DamagedV1("damaged", self.World.WorldTick, self.ActorID,
+			AgentEvents.Raise(new DamagedV1("damaged", self.World.WorldTick, self.ActorID,
 				self.Info.Name, self.Owner.PlayerName, attackerId, attackerType, attackerOwner,
 				e.Damage.Value, health?.HP ?? 0, health?.MaxHP ?? 0, e.DamageState.ToString(), bearing, shrouded));
 		}
@@ -66,7 +66,7 @@ namespace OpenRA.Mods.Common
 				return;
 
 			var cost = self.Info.TraitInfoOrDefault<ValuedInfo>()?.Cost ?? 0;
-			AgentEvents.Raise("killed", self.Owner.PlayerName, new KilledV1("killed", self.World.WorldTick, self.ActorID,
+			AgentEvents.Raise(new KilledV1("killed", self.World.WorldTick, self.ActorID,
 				self.Info.Name, self.Owner.PlayerName, e.Attacker?.ActorID, e.Attacker?.Info.Name, e.Attacker?.Owner.PlayerName,
 				cost));
 		}
@@ -76,14 +76,14 @@ namespace OpenRA.Mods.Common
 			if (!AgentEvents.Enabled)
 				return;
 
-			AgentEvents.Raise("production", building.Owner.PlayerName, new PlacedV1("placed", building.World.WorldTick,
+			AgentEvents.Raise(new PlacedV1("placed", building.World.WorldTick,
 				building.ActorID, building.Info.Name, building.Owner.PlayerName, [building.Location.X, building.Location.Y]));
 		}
 
 		void INotifyPowerLevelChanged.PowerLevelChanged(Actor self)
 		{
 			// The notify fires on each flip of low power, and once when the world is created. It is reported only when the
-			// low state differs from the last one, and the state is kept even with no subscriber, so a later subscriber
+			// low state differs from the last one, and the state is kept even with no connection, so a later connection
 			// sees the correct transition.
 			var power = self.TraitOrDefault<PowerManager>();
 			if (power == null)
@@ -97,7 +97,7 @@ namespace OpenRA.Mods.Common
 			if (!AgentEvents.Enabled)
 				return;
 
-			AgentEvents.Raise("power", self.Owner.PlayerName, new PowerEventV1(low ? "power_low" : "power_restored", self.World.WorldTick,
+			AgentEvents.Raise(new PowerEventV1(low ? "power_low" : "power_restored", self.World.WorldTick,
 				self.Owner.PlayerName, power.PowerProvided, power.PowerDrained, power.ExcessPower, power.PowerState.ToString()));
 		}
 
@@ -106,7 +106,7 @@ namespace OpenRA.Mods.Common
 			if (!AgentEvents.Enabled)
 				return;
 
-			AgentEvents.Raise("player", player.PlayerName, new GameOverV1("game_over", player.World.WorldTick, player.PlayerName));
+			AgentEvents.Raise(new GameOverV1("game_over", player.World.WorldTick, player.PlayerName));
 		}
 
 		void INotifyWinStateChanged.OnPlayerLost(Player player)
@@ -114,13 +114,13 @@ namespace OpenRA.Mods.Common
 			if (!AgentEvents.Enabled)
 				return;
 
-			AgentEvents.Raise("player", player.PlayerName, new DefeatedV1("defeated", player.World.WorldTick, player.PlayerName));
+			AgentEvents.Raise(new DefeatedV1("defeated", player.World.WorldTick, player.PlayerName));
 		}
 
 		/// <summary>Raises a captured event for an actor that changed owner. Called from CaptureActor behind the same guard.</summary>
 		public static void Captured(Actor captured, Actor captor, Player oldOwner, Player newOwner)
 		{
-			AgentEvents.Raise("captured", newOwner.PlayerName, new CapturedV1("captured", captured.World.WorldTick,
+			AgentEvents.Raise(new CapturedV1("captured", captured.World.WorldTick,
 				captured.ActorID, captured.Info.Name, oldOwner.PlayerName, newOwner.PlayerName, captor.ActorID));
 		}
 	}

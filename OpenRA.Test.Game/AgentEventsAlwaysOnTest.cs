@@ -17,9 +17,9 @@ using OpenRA.Traits;
 namespace OpenRA.Test
 {
 	/// <summary>
-	/// Events are recorded with no subscriber (P3.1). The gates that guarded DTO construction now test only whether the socket
+	/// Events are recorded with no connection open (P3.1). The gates that guarded DTO construction now test only whether the socket
 	/// is enabled, so a Move's path and activity events, and a refused deploy's notification, reach the test sink while no
-	/// connection is subscribed. With the socket disabled nothing is raised.
+	/// connection is open. With the socket disabled nothing is raised.
 	/// </summary>
 	[TestFixture]
 	sealed class AgentEventsAlwaysOnTest
@@ -37,10 +37,10 @@ namespace OpenRA.Test
 
 		bool savedAgentSocket;
 		bool savedEnabled;
-		Action<string, string, object> savedSink;
+		Action<object> savedSink;
 
 		// Every event the sink sees, as its group and payload.
-		readonly List<(string Group, object Dto)> seen = [];
+		readonly List<object> seen = [];
 
 		[OneTimeSetUp]
 		public void InitializeMod()
@@ -56,9 +56,9 @@ namespace OpenRA.Test
 
 			var events = ModType("AgentSocket.AgentEvents");
 			savedEnabled = (bool)events.GetProperty("Enabled").GetValue(null);
-			savedSink = (Action<string, string, object>)events.GetField("Sink").GetValue(null);
+			savedSink = (Action<object>)events.GetField("Sink").GetValue(null);
 			seen.Clear();
-			events.GetField("Sink").SetValue(null, new Action<string, string, object>((group, owner, dto) => seen.Add((group, dto))));
+			events.GetField("Sink").SetValue(null, new Action<object>(dto => seen.Add(dto)));
 		}
 
 		[TearDown]
@@ -78,7 +78,13 @@ namespace OpenRA.Test
 		/// <summary>Every event group the sink has seen, in the order raised.</summary>
 		List<string> Groups()
 		{
-			return seen.ConvertAll(s => s.Group);
+			return seen.ConvertAll(EventName);
+		}
+
+		/// <summary>The event key of a DTO, which names its type.</summary>
+		static string EventName(object dto)
+		{
+			return (string)dto.GetType().GetProperty("Event").GetValue(dto);
 		}
 
 		static Actor CreateMcv(HeadlessWorld hw, Player owner, CPos near)
@@ -87,14 +93,14 @@ namespace OpenRA.Test
 			return hw.CreateActor(Mcv, area + new CVec(2, 2), owner);
 		}
 
-		[TestCase(TestName = "With no subscriber, a Move's path and activity events reach the sink")]
+		[TestCase(TestName = "With no connection open, a Move's path and activity events reach the sink")]
 		public void MoveReachesSinkWithNoSubscriber()
 		{
 			using var hw = HeadlessWorld.Create(Seed);
 			var local = hw.LocalPlayer;
 			hw.Tick(SettleTicks);
-			Assert.That((int)ModType("AgentSocket.AgentEvents").GetProperty("SubscriberCount").GetValue(null), Is.Zero,
-				"Precondition: no connection should be subscribed.");
+			Assert.That((int)ModType("AgentSocket.AgentEvents").GetProperty("ConnectionCount").GetValue(null), Is.Zero,
+				"Precondition: no connection should be open.");
 
 			var unit = hw.CreateActor(Infantry, hw.FindClearArea(local.HomeLocation, 3, 3), local);
 			hw.Tick(1);
@@ -102,11 +108,11 @@ namespace OpenRA.Test
 			hw.World.IssueOrder(new Order("Move", unit, Target.FromCell(hw.World, destination), false));
 			Assert.That(hw.TickUntil(() => unit.Location == destination, 500), Is.Not.Null, "The unit never reached the destination.");
 
-			Assert.That(Groups(), Does.Contain("path"), "A Move with no subscriber should raise its path to the sink.");
-			Assert.That(Groups(), Does.Contain("activity"), "A Move with no subscriber should raise its activity to the sink.");
+			Assert.That(Groups(), Does.Contain("path"), "A Move with no connection open should raise its path to the sink.");
+			Assert.That(Groups(), Does.Contain("activity"), "A Move with no connection open should raise its activity to the sink.");
 		}
 
-		[TestCase(TestName = "With no subscriber, a refused deploy's notification reaches the sink")]
+		[TestCase(TestName = "With no connection open, a refused deploy's notification reaches the sink")]
 		public void NotificationReachesSinkWithNoSubscriber()
 		{
 			using var hw = HeadlessWorld.Create(Seed);

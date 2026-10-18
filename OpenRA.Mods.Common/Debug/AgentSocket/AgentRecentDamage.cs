@@ -15,7 +15,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 {
 	/// <summary>
 	/// The most recent hit each attacker landed on one of ours (P2.7). The threat list bumps a recent attacker to the front. Hits are
-	/// recorded whether or not anyone subscribes, since the threat list reads them from the state digest. The record belongs to one
+	/// recorded whether or not a connection is open, since the threat list reads them from the state digest. The record belongs to one
 	/// world: a different world clears it, since ActorIDs are compared only within their own world.
 	/// </summary>
 	public static class AgentRecentDamage

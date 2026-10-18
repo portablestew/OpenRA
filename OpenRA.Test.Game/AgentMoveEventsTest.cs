@@ -30,8 +30,9 @@ namespace OpenRA.Test
 	sealed class AgentMoveEventsTest
 	{
 		bool savedAgentSocket;
+		readonly List<object> held = [];
 		bool savedEnabled;
-		object subscriber;
+		object connection;
 
 		[OneTimeSetUp]
 		public void InitializeMod()
@@ -40,19 +41,20 @@ namespace OpenRA.Test
 		}
 
 		[SetUp]
-		public void CreateSubscriber()
+		public void CreateConnection()
 		{
 			savedAgentSocket = Game.Settings.Debug.AgentSocket;
 			Game.Settings.Debug.AgentSocket = true;
 
 			savedEnabled = (bool)ModType("AgentSocket.AgentEvents").GetProperty("Enabled").GetValue(null);
-			subscriber = Activator.CreateInstance(ModType("AgentSocket.AgentEventSubscriber"));
+			connection = Activator.CreateInstance(ModType("AgentSocket.AgentConnection"));
+			held.Clear();
 		}
 
 		[TearDown]
 		public void RestoreHub()
 		{
-			Call(subscriber, "Close");
+			Call(connection, "Close");
 			ModType("AgentSocket.AgentEvents").GetProperty("Enabled").SetValue(null, savedEnabled);
 			Game.Settings.Debug.AgentSocket = savedAgentSocket;
 		}
@@ -77,17 +79,34 @@ namespace OpenRA.Test
 			return payload.GetType().Name;
 		}
 
-		int Pending()
+		/// <summary>The wanted events held so far. Reading them takes the connection's turn into the test's list, so a wait can
+		/// see its event without losing it for Drain.</summary>
+		/// <summary>
+		/// Reads the connection's turn into the test's list, and counts the held events of the named types (every type when none
+		/// is named). Reading takes the events, so Drain still gets them.
+		/// </summary>
+		int Pending(params string[] types)
 		{
-			return (int)subscriber.GetType().GetProperty("Pending").GetValue(subscriber);
+			held.AddRange(Only(((IList)Call(connection, "Flush")).Cast<object>(), "path", "activity"));
+			return Wanted(types).Count();
+		}
+
+		/// <summary>The held events of the named types, or all of them when none is named.</summary>
+		IEnumerable<object> Wanted(string[] types)
+		{
+			return types.Length == 0 ? held : Only(held, types);
 		}
 
 		/// <summary>Takes every queued event. Fails rather than blocking when nothing was delivered.</summary>
-		List<object> Drain()
+		/// <summary>Takes the wanted events held so far. Fails rather than blocking when none reached the connection.</summary>
+		/// <summary>Takes the held events of the named types, or all of them. Fails rather than blocking when none reached the connection.</summary>
+		List<object> Drain(params string[] types)
 		{
-			var pending = (int)subscriber.GetType().GetProperty("Pending").GetValue(subscriber);
-			Assert.That(pending, Is.GreaterThan(0), "No events reached the subscriber.");
-			return ((IList)Call(subscriber, "Take")).Cast<object>().ToList();
+			Pending(types);
+			var events = Wanted(types).ToList();
+			Assert.That(events, Is.Not.Empty, "No events reached the connection.");
+			held.RemoveAll(events.Contains);
+			return events;
 		}
 
 		/// <summary>
@@ -117,8 +136,6 @@ namespace OpenRA.Test
 			using var hw = HeadlessWorld.Create(1);
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
-
-			Call(subscriber, "Subscribe", new[] { "path", "activity" }, null);
 
 			var origin = unit.Location;
 			var destination = hw.FindClearArea(origin, 1, 1, 6);
@@ -168,8 +185,6 @@ namespace OpenRA.Test
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
-			Call(subscriber, "Subscribe", new[] { "path", "activity" }, null);
-
 			QueueMoveToOwnCell(unit);
 			hw.Tick(3);
 
@@ -198,8 +213,6 @@ namespace OpenRA.Test
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
-			Call(subscriber, "Subscribe", new[] { "path", "activity" }, null);
-
 			QueueMoveWithPath(unit, []);
 			hw.Tick(5);
 
@@ -220,8 +233,6 @@ namespace OpenRA.Test
 			using var hw = HeadlessWorld.Create(1);
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
-
-			Call(subscriber, "Subscribe", new[] { "path", "activity" }, null);
 
 			var origin = unit.Location;
 			var near = new CPos(origin.X + 2, origin.Y);
@@ -258,6 +269,10 @@ namespace OpenRA.Test
 			unit.QueueActivity((Activity)Activator.CreateInstance(ModType("Activities.Move"), unit, destination, null));
 			hw.Tick(2);
 
+			// The move's start is raised before the cancel, and only the cancel is under test.
+			Pending();
+			held.Clear();
+
 			var move = unit.CurrentActivity;
 			Assert.That(move.GetType().Name, Is.EqualTo("Move"));
 
@@ -267,8 +282,6 @@ namespace OpenRA.Test
 			Assert.That(path.Count, Is.GreaterThan(0), "The move has no cells left on its path, so the cancel did not exercise the bug.");
 
 			typeof(Activity).GetProperty("State").GetSetMethod(true).Invoke(move, [ActivityState.Canceling]);
-
-			Call(subscriber, "Subscribe", new[] { "activity" }, null);
 
 			// Move hands its cancel branch to Tick only after its child move part finishes, so wait for the event.
 			Assert.That(hw.TickUntil(() => Pending() > 0, 200), Is.Not.Null, "The canceled move never reported an activity event.");
@@ -292,7 +305,10 @@ namespace OpenRA.Test
 			hw.World.IssueOrder(new Order("Move", unit, Target.FromCell(hw.World, destination), false));
 			hw.Tick(2);
 
-			Call(subscriber, "Subscribe", new[] { "activity" }, null);
+			// The move's start is raised before the Stop, and only the Stop's cancel is under test.
+			Pending();
+			held.Clear();
+
 			hw.World.IssueOrder(new Order("Stop", unit, false));
 
 			Assert.That(hw.TickUntil(() => Pending() > 0, 200), Is.Not.Null, "The stopped move never reported an activity event.");
@@ -305,7 +321,7 @@ namespace OpenRA.Test
 			Assert.That(Field<string>(events[0], "Reason"), Is.EqualTo("interrupted"));
 		}
 
-		[TestCase(TestName = "With the socket disabled, a subscriber gets no path or activity events")]
+		[TestCase(TestName = "With the socket disabled, a connection gets no path or activity events")]
 		public void NoEventsWhenSocketDisabled()
 		{
 			Game.Settings.Debug.AgentSocket = false;
@@ -315,14 +331,17 @@ namespace OpenRA.Test
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
-			Call(subscriber, "Subscribe", new[] { "path", "activity" }, null);
-			Assert.That((bool)ModType("AgentSocket.AgentEvents").GetProperty("HasSubscribers").GetValue(null), Is.False);
-
 			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
 			hw.World.IssueOrder(new Order("Move", unit, Target.FromCell(hw.World, destination), false));
 			Assert.That(hw.TickUntil(() => unit.Location == destination, 500), Is.Not.Null, "The unit never reached the destination.");
 
-			Assert.That((int)subscriber.GetType().GetProperty("Pending").GetValue(subscriber), Is.EqualTo(0));
+			Assert.That((int)connection.GetType().GetProperty("Pending").GetValue(connection), Is.EqualTo(0));
+		}
+
+		/// <summary>The events of the named types, in the order they were raised. The connection carries every event; a test looks at its own.</summary>
+		static IEnumerable<object> Only(IEnumerable<object> events, params string[] types)
+		{
+			return events.Where(e => types.Contains(e.GetType().GetProperty("Event")?.GetValue(e) as string));
 		}
 	}
 }

@@ -9,9 +9,7 @@
  */
 #endregion
 
-using System;
 using System.IO;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -87,65 +85,32 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>
 		/// Writes the banner, then answers each non-blank input line with exactly one response line, followed by a lone
-		/// "&gt;" prompt line: the connection is ready for the next command. Event lines for this connection's
-		/// subscriptions come from a second thread, so responses, prompts, and events share one write lock. Prompts are
-		/// only ever written after responses, never after events, so a prompt always means "your turn".
+		/// "&gt;" prompt line: the connection is ready for the next command. The connection's events come back in the envelope of
+		/// the response that follows them, so nothing is written between responses, and a prompt always means "your turn".
 		/// </summary>
 		public static void Serve(TextReader reader, TextWriter writer)
 		{
-			var subscriber = new AgentEventSubscriber();
-
-			// Registered from the start, so the turn buffer sees every event, subscribed or not (P3.3).
-			AgentEvents.SetRegistered(subscriber, true);
-			var writeGate = new object();
-			var initial = true;
-			var events = new Thread(() => PumpEvents(subscriber, writer, writeGate)) { Name = "Agent socket events", IsBackground = true };
-
-			lock (writeGate)
+			var connection = new AgentConnection();
+			try
 			{
 				writer.Write(Banner);
 				writer.WriteLine(Prompt);
-			}
 
-			events.Start();
-			try
-			{
+				var initial = true;
 				string line;
 				while ((line = reader.ReadLine()) != null)
 				{
 					if (line.Trim().Length == 0)
 						continue;
 
-					var response = AgentSocketCommands.HandleTurn(line, subscriber, ref initial);
-					lock (writeGate)
-					{
-						writer.WriteLine(response);
-						writer.WriteLine(Prompt);
-					}
+					writer.WriteLine(AgentSocketCommands.HandleTurn(line, connection, ref initial));
+					writer.WriteLine(Prompt);
 				}
 			}
 			finally
 			{
-				subscriber.Close();
-				events.Join();
+				connection.Close();
 			}
-		}
-
-		/// <summary>Serializes queued events on this connection's thread, so the game thread only enqueues DTOs.</summary>
-		static void PumpEvents(AgentEventSubscriber subscriber, TextWriter writer, object writeGate)
-		{
-			try
-			{
-				while (subscriber.Take() is { } batch)
-				{
-					var lines = batch.Select(AgentSocketCommands.Serialize).ToArray();
-					lock (writeGate)
-						foreach (var line in lines)
-							writer.WriteLine(line);
-				}
-			}
-			catch (IOException) { }
-			catch (ObjectDisposedException) { }
 		}
 	}
 }
