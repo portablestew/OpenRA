@@ -50,6 +50,14 @@ namespace OpenRA.Test
 			.FindType("AgentSocket.AgentLoadMap")
 			.GetMethod("Load", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static, [typeof(string), typeof(Action<string>)]));
 
+		static readonly Lazy<MethodInfo> LoadWithDeadline = new(() => HeadlessMod.ModData.ObjectCreator
+			.FindType("AgentSocket.AgentLoadMap")
+			.GetMethod("Load", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static, [typeof(string), typeof(Action<string>), typeof(int)]));
+
+		static readonly Lazy<FieldInfo> PendingLoad = new(() => HeadlessMod.ModData.ObjectCreator
+			.FindType("AgentSocket.AgentLoadMap")
+			.GetField("pending", BindingFlags.NonPublic | BindingFlags.Static));
+
 		static readonly Action<string> StartNoGame = _ => { };
 
 		/// <summary>Runs one load on a worker thread without pumping, and returns the exception it ends with, or null.</summary>
@@ -69,10 +77,37 @@ namespace OpenRA.Test
 			});
 		}
 
+		/// <summary>Runs one load on a worker thread with the poll deadline given, and returns the exception it ends with, or null.</summary>
+		static Task<Exception> LoadPastDeadline(string uid, int timeoutMs)
+		{
+			return Task.Run(() =>
+			{
+				try
+				{
+					LoadWithDeadline.Value.Invoke(null, [uid, StartNoGame, timeoutMs]);
+					return null;
+				}
+				catch (TargetInvocationException e)
+				{
+					return e.InnerException;
+				}
+			});
+		}
+
 		static void PumpFor(TimeSpan span)
 		{
 			var deadline = DateTime.UtcNow + span;
 			while (DateTime.UtcNow < deadline)
+			{
+				Game.PerformDelayedActions();
+				Thread.Sleep(1);
+			}
+		}
+
+		static void PumpUntil(Task task, TimeSpan span)
+		{
+			var deadline = DateTime.UtcNow + span;
+			while (!task.IsCompleted && DateTime.UtcNow < deadline)
 			{
 				Game.PerformDelayedActions();
 				Thread.Sleep(1);
@@ -109,6 +144,46 @@ namespace OpenRA.Test
 			// An accepted load keeps polling for its world, so it does not return within this window.
 			var secondError = second.IsCompleted ? second.Result?.Message : null;
 			Assert.That(secondError ?? string.Empty, Does.Not.Contain("already in progress"));
+		}
+
+		[TestCase(TestName = "A load_map that never gets its world fails at the poll deadline, and clears pending so the next load_map is not refused")]
+		public void LoadPastPollDeadlineClearsPending()
+		{
+			string uid;
+			using (var maps = AgentStateDumpTest.Request("{\"cmd\":\"maps\"}"))
+				uid = maps.RootElement.GetProperty("maps")[0].GetProperty("uid").GetString();
+
+			// The other case in this fixture leaves a load in flight, so the shared pending load must be cleared
+			// before this case runs. Clearing it is exactly the contract under test: the deadline path does it.
+			Game.RunAfterTick(() => PendingLoad.Value.SetValue(null, null));
+			PumpFor(TimeSpan.FromMilliseconds(100));
+
+			// A 2 s deadline, so the real poll loop reaches its own timeout in seconds. The test thread keeps
+			// pumping, so the game thread answers every step, but no new world ever appears and Check returns
+			// null until the deadline. That is the branch the 5 s marshal-step timeout never reaches.
+			var first = LoadPastDeadline(uid, 2000);
+			PumpUntil(first, TimeSpan.FromSeconds(30));
+
+			Assert.That(first.IsCompleted, Is.True, "The first load did not return.");
+			Assert.That(first.Result?.Message ?? string.Empty, Does.Contain("did not start within 2 s"),
+				"The load must fail at its own poll deadline, not the game-thread step timeout.");
+
+			// The catch queues the clear of pending behind the last poll step; run it before the next load.
+			PumpFor(TimeSpan.FromMilliseconds(200));
+
+			// The next load must be accepted (pending cleared) and run its own real loop to its own deadline.
+			var second = LoadPastDeadline(uid, 1000);
+			PumpUntil(second, TimeSpan.FromSeconds(15));
+
+			Assert.That(second.IsCompleted, Is.True, "The second load did not return.");
+			var secondError = second.Result?.Message ?? string.Empty;
+			Assert.That(secondError, Does.Not.Contain("already in progress"),
+				"The timed-out load must clear pending so the next load_map is not refused.");
+			Assert.That(secondError, Does.Contain("did not start within 1 s"),
+				"The second load must reach its own poll deadline, proving it ran the real loop.");
+
+			// Run the second load's own queued clear, so this case leaves shared state clean for the other case.
+			PumpFor(TimeSpan.FromMilliseconds(200));
 		}
 	}
 }

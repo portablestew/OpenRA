@@ -39,17 +39,26 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		public static StateV1 Load(string name)
 		{
-			return Load(name, StartSkirmish);
+			return Load(name, StartSkirmish, TimeoutMs);
 		}
 
 		/// <summary>Load with the game-side start step given, so the poll and its cleanup can be tested without a game.</summary>
 		internal static StateV1 Load(string name, Action<string> startGame)
 		{
+			return Load(name, startGame, TimeoutMs);
+		}
+
+		/// <summary>
+		/// Load with the poll deadline given, so the deadline path can be exercised in seconds rather than 60. Production
+		/// always passes <see cref="TimeoutMs"/>; the behavior is otherwise identical.
+		/// </summary>
+		internal static StateV1 Load(string name, Action<string> startGame, int timeoutMs)
+		{
 			try
 			{
 				var request = AgentMarshal.ExecuteOnGameThread(() => Begin(name, startGame));
 
-				var deadline = DateTime.UtcNow.AddMilliseconds(TimeoutMs);
+				var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
 				while (true)
 				{
 					var state = AgentMarshal.ExecuteOnGameThread(() => Check(request));
@@ -57,7 +66,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 						return state;
 
 					if (DateTime.UtcNow >= deadline)
-						throw new TimeoutException($"the new game did not start within {TimeoutMs / 1000} s");
+						throw new TimeoutException($"the new game did not start within {timeoutMs / 1000} s");
 
 					Thread.Sleep(PollIntervalMs);
 				}
