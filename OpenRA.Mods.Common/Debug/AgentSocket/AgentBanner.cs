@@ -58,11 +58,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " The exception is Attack, which is never refused here: an attack that cannot start replies no_valid_target."
 				+ " Zero or several selectors, a bad regex, or a type with no match are errors",
 				"{\"cmd\":\"order\",\"actor\":12,\"order\":\"Move\",\"cell\":[40,50],\"await\":false}"),
-			("wait", "job (int); optional timeout_ms (non-negative int, default 10000)\n"
-				+ "                -> the Move reply (cmd:wait, same keys as a Move order reply) once the job settles, or"
-				+ " status:\"pending\" if it has not settled by the timeout (the job stays open). An unknown job, or a job whose"
-				+ " world load_map or undo replaced: ok:false, error",
-				"{\"cmd\":\"wait\",\"job\":1,\"timeout_ms\":5000}"),
+			("wait", "job (int), or no job; optional timeout_ms (non-negative int, default 10000)\n"
+				+ "                -> with job: the Move reply (cmd:wait, same keys as a Move order reply) with result:\"job\", once the job settles, or"
+				+ " status:\"pending\" at the timeout (the job stays open). An unknown job, or a job whose world load_map or undo replaced: ok:false, error."
+				+ " With no job: result:\"events\" when an event arrives (it is in this response's events), or result:\"timeout\"",
+				"{\"cmd\":\"wait\",\"timeout_ms\":5000}"),
 			("orders", "actor (uint) -> type, orders (the order names the actor accepts)", "{\"cmd\":\"orders\",\"actor\":12}"),
 			("production", "-> player, cash, resources, power, queues (the local player's queues; see Production keys)", "{\"cmd\":\"production\"}"),
 			("build", "item (string); optional count (positive int, default 1)\n"

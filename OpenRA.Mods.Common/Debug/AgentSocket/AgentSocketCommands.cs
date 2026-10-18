@@ -22,6 +22,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		sealed record Envelope(bool Ok, string Cmd, string Error, string Hint);
 		sealed record PingResponse(bool Ok, string Cmd, int Tick);
 		sealed record SubscriptionV1(bool Ok, string Cmd, string[] Subscribed);
+
+		/// <summary>The events wait's reply (P3.4): events when a turn event arrived, timeout otherwise. The events are in the envelope.</summary>
+		sealed record WaitResultV1(bool Ok, string Cmd, string Result);
 		sealed record HelpV1(bool Ok, string Cmd, string Banner);
 
 		/// <summary>Every error envelope and refusal carries this hint, so an agent that gets an error finds the command list on its own (P1.18).</summary>
@@ -135,7 +138,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"load_map" => LoadMap(cmd, root),
 				"order" => IssueOrder(cmd, root, selection),
 				"orders" => Orders(cmd, root),
-				"wait" => Wait(cmd, root),
+				"wait" => Wait(cmd, root, subscriber),
 				"production" => Run(cmd, () => AgentProduction.List(AgentWorldBridge.RequireWorld())),
 				"build" => StartBuild(cmd, root, selection),
 				"cancel" => StartCancel(cmd, root),
@@ -352,19 +355,32 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return Run(cmd, () => AgentLook.Build(AgentWorldBridge.RequireWorld(), AgentWorldBridge.RequireWorld().LocalPlayer, request));
 		}
 
-		static string Wait(string cmd, JsonElement root)
+		/// <summary>
+		/// wait with a job is the job's reply (P1.4), with result:"job" at its front. wait with no job long-polls the connection's turn
+		/// buffer (P3.4): result is events when an event arrived, which is in this response's events, and timeout otherwise. A
+		/// connection-less request (no subscriber) has nothing to wait for, so it times out at once. The events wait does not hold a
+		/// lock the game thread needs; it runs on the connection's thread.
+		/// </summary>
+		static string Wait(string cmd, JsonElement root, AgentEventSubscriber subscriber)
 		{
-			if (!root.TryGetProperty("job", out var jobElement) || !jobElement.TryGetInt32(out var job))
-				return Error(cmd, "job must be an integer");
-
 			var timeoutMs = AgentOrderAwait.WallClockMs;
 			if (root.TryGetProperty("timeout_ms", out var timeoutElement) && timeoutElement.ValueKind != JsonValueKind.Null &&
 				(!timeoutElement.TryGetInt32(out timeoutMs) || timeoutMs < 0))
 				return Error(cmd, "timeout_ms must be a non-negative integer");
 
+			if (!root.TryGetProperty("job", out var jobElement))
+			{
+				var eventful = subscriber != null && subscriber.Turn.WaitForEvents(timeoutMs, AgentOrderAwait.Clock);
+				return Serialize(new WaitResultV1(true, cmd, eventful ? "events" : "timeout"));
+			}
+
+			if (!jobElement.TryGetInt32(out var job))
+				return Error(cmd, "job must be an integer");
+
 			try
 			{
-				return Serialize(AgentOrderJobs.Wait(job, timeoutMs));
+				var reply = Serialize(AgentOrderJobs.Wait(job, timeoutMs));
+				return string.Concat("{\"result\":\"job\",", reply.AsSpan(1));
 			}
 			catch (Exception e)
 			{

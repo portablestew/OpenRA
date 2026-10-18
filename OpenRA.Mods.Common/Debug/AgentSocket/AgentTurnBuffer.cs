@@ -36,12 +36,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>How many events of each type a flush returns in full.</summary>
 		public const int FullPerType = 3;
 
+		/// <summary>How long a parked wait sleeps before it checks the clock and the buffer again, in milliseconds.</summary>
+		const int PollMs = 5;
+
 		static readonly string[] NeverAggregated = ["killed", "defeated", "game_over"];
 
 		// Every event DTO has an Event string and a Tick, as its first two fields. Read them once per DTO type.
 		static readonly Dictionary<Type, (PropertyInfo Event, PropertyInfo Tick)> Accessors = [];
 
-		readonly Lock gate = new();
+		readonly object gate = new();
 		readonly Queue<(string Type, int Tick, object Dto)> events = new();
 		int dropped;
 
@@ -65,6 +68,30 @@ namespace OpenRA.Mods.Common.AgentSocket
 				}
 
 				events.Enqueue((type, tick, dto));
+				Monitor.PulseAll(gate);
+			}
+		}
+
+		/// <summary>
+		/// Waits until the buffer holds an event, or timeoutMs has passed on clock (P3.4). Returns true when an event is waiting,
+		/// and false at the timeout. The wait releases the buffer's lock while it sleeps, so Add on the game thread never waits
+		/// for it.
+		/// </summary>
+		public bool WaitForEvents(long timeoutMs, Func<long> clock)
+		{
+			var deadline = clock() + timeoutMs;
+			lock (gate)
+			{
+				while (events.Count == 0)
+				{
+					var remaining = deadline - clock();
+					if (remaining <= 0)
+						return false;
+
+					Monitor.Wait(gate, (int)Math.Min(remaining, PollMs));
+				}
+
+				return true;
 			}
 		}
 

@@ -52,6 +52,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The deploy outcome when the transform did not finish. Reason says why (P1.8).</summary>
 		public const string Canceled = "canceled";
 
+		/// <summary>
+		/// The clock the event long-poll reads, in milliseconds (P3.4). The wall clock by default. A test sets a fake clock, so a
+		/// wait times out on the test's ticks and not on real time. The job wait keeps its own limit.
+		/// </summary>
+		public static Func<long> Clock { get; set; } = () => Environment.TickCount64;
+
 		static readonly Lock Gate = new();
 		static readonly List<AgentOrderAwait> Pending = [];
 		static readonly List<AgentOrderAwait> Settling = [];
