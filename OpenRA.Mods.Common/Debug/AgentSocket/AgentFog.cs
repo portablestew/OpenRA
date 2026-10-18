@@ -61,5 +61,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			return actor.TraitsImplementing<IVisibilityModifier>().All(m => m.IsVisible(actor, observer));
 		}
+
+		/// <summary>
+		/// True when the agent reports actor to observer: the observer's own actors always, and any other actor only when Known.
+		/// This one rule covers the state's units and every event that names an actor (P2.3, 8.4). Without an observer nothing is reported.
+		/// </summary>
+		public static bool Reported(Actor actor, Player observer)
+		{
+			return observer != null && (actor.Owner == observer || Known(actor, observer));
+		}
 	}
 }

@@ -232,6 +232,9 @@ namespace OpenRA.Test
 			var captured = w.CreateActor("e1", cell, w.EnemyPlayer);
 			var captor = w.CreateActor("e1", cell + new CVec(Separation, 0), w.LocalPlayer);
 
+			// CaptureActor changes the owner before it raises captured, so the captured actor is the local player's when the event is built.
+			captured.ChangeOwnerSync(w.LocalPlayer);
+
 			EnableHub();
 			ModType("AgentPlayerEventObserver").GetMethod("Captured")
 				.Invoke(null, [captured, captor, w.EnemyPlayer, w.LocalPlayer]);

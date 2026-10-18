@@ -26,12 +26,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record KilledV1(string Event, int Tick, uint Actor, string Type, string Owner, uint? Attacker,
 		string AttackerType, string AttackerOwner, int Cost);
 
-	public sealed record CapturedV1(string Event, int Tick, uint Actor, string Type, string From, string To, uint Captor);
+	// Captor is null when the local player does not know the captor (AgentFog), so the event carries no id it cannot see.
+	public sealed record CapturedV1(string Event, int Tick, uint Actor, string Type, string From, string To, uint? Captor);
 
 	public sealed record OrderEventV1(string Event, int Tick, int EffectTick, bool Valid, int Client, string Order, uint Actor,
 		string Type, string Owner, int[] Cell, uint? TargetActor, bool Queued);
 
-	public sealed record ProducedV1(string Event, int Tick, uint Actor, string Type, string Owner, uint Producer, string ProducerType);
+	// Producer is null when the local player does not know the producer (AgentFog).
+	public sealed record ProducedV1(string Event, int Tick, uint Actor, string Type, string Owner, uint? Producer, string ProducerType);
 
 	public sealed record StanceV1(string Event, int Tick, uint Actor, string Type, string Owner, string From, string To);
 

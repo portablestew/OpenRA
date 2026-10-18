@@ -27,7 +27,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			AgentOrderAwait.Activity(self, kind, state, reason);
 
-			if (!AgentEvents.Enabled)
+			if (!AgentEvents.Enabled || !AgentFog.Reported(self, self.World.LocalPlayer))
 				return;
 
 			AgentEvents.Raise(new ActivityV1("activity", self.World.WorldTick,

@@ -73,6 +73,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			// A socket await for this Move takes the path whether or not a connection is open. An empty list means no path was found.
 			AgentOrderAwait.CapturePath(self, cells);
 
+			// The actor's path is sent only when the local player reports the actor (AgentFog). The await above takes it regardless.
+			if (!AgentFog.Reported(self, self.World.LocalPlayer))
+				return;
+
 			AgentEvents.Raise(new PathV1("path", self.World.WorldTick, self.ActorID,
 				self.Info.Name, self.Owner.PlayerName, from, [to.X, to.Y], check.ToString(), repath, result, cells, metrics));
 		}

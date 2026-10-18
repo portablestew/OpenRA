@@ -40,7 +40,7 @@ namespace OpenRA.Mods.Common
 
 		static void DamagedEvent(Actor self, AttackInfo e)
 		{
-			if (!AgentEvents.Enabled)
+			if (!AgentEvents.Enabled || !AgentFog.Reported(self, self.World.LocalPlayer))
 				return;
 
 			var health = self.TraitOrDefault<Health>();
@@ -62,18 +62,24 @@ namespace OpenRA.Mods.Common
 
 		void INotifyKilled.Killed(Actor self, AttackInfo e)
 		{
-			if (!AgentEvents.Enabled)
+			// A kill is sent when the local player reported the victim before it died (AgentFog), which includes its own units. The
+			// attacker is named only when the local player reports it too.
+			var observer = self.World.LocalPlayer;
+			if (!AgentEvents.Enabled || !AgentFog.Reported(self, observer))
 				return;
 
+			var attacker = e.Attacker;
+			// A removed attacker has no live state to check, so it is not named.
+			var attackerKnown = attacker != null && attacker.IsInWorld && AgentFog.Reported(attacker, observer);
 			var cost = self.Info.TraitInfoOrDefault<ValuedInfo>()?.Cost ?? 0;
 			AgentEvents.Raise(new KilledV1("killed", self.World.WorldTick, self.ActorID,
-				self.Info.Name, self.Owner.PlayerName, e.Attacker?.ActorID, e.Attacker?.Info.Name, e.Attacker?.Owner.PlayerName,
-				cost));
+				self.Info.Name, self.Owner.PlayerName, attackerKnown ? attacker.ActorID : null,
+				attackerKnown ? attacker.Info.Name : null, attackerKnown ? attacker.Owner.PlayerName : null, cost));
 		}
 
 		void INotifyBuildingPlaced.BuildingPlaced(Actor self, Actor building)
 		{
-			if (!AgentEvents.Enabled)
+			if (!AgentEvents.Enabled || !AgentFog.Reported(building, building.World.LocalPlayer))
 				return;
 
 			AgentEvents.Raise(new PlacedV1("placed", building.World.WorldTick,
@@ -120,8 +126,14 @@ namespace OpenRA.Mods.Common
 		/// <summary>Raises a captured event for an actor that changed owner. Called from CaptureActor behind the same guard.</summary>
 		public static void Captured(Actor captured, Actor captor, Player oldOwner, Player newOwner)
 		{
+			// The captured actor must be one the local player reports (AgentFog); the captor is named only when it is too.
+			var observer = captured.World.LocalPlayer;
+			if (!AgentFog.Reported(captured, observer))
+				return;
+
 			AgentEvents.Raise(new CapturedV1("captured", captured.World.WorldTick,
-				captured.ActorID, captured.Info.Name, oldOwner.PlayerName, newOwner.PlayerName, captor.ActorID));
+				captured.ActorID, captured.Info.Name, oldOwner.PlayerName, newOwner.PlayerName,
+				AgentFog.Reported(captor, observer) ? captor.ActorID : null));
 		}
 	}
 }

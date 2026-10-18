@@ -139,7 +139,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		static bool IsInState(Actor a, Player observer)
 		{
-			return observer != null && (a.Owner == observer || AgentFog.Known(a, observer));
+			return AgentFog.Reported(a, observer);
 		}
 
 		static bool IsOwnStructure(Actor a, Player observer)
