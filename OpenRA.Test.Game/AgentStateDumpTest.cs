@@ -151,7 +151,8 @@ namespace OpenRA.Test
 
 			var players = root.GetProperty("players");
 			Assert.That(players.GetArrayLength(), Is.GreaterThan(0));
-			Assert.That(Keys(players[0]), Is.EquivalentTo(["name", "faction", "cash", "resources", "resource_capacity", "dead", "power", "known_counts"]));
+			Assert.That(Keys(players[0]), Is.EquivalentTo(["name", "faction", "cash", "resources", "resource_capacity",
+				"dead", "power", "known_counts", "bot", "handicap"]));
 			Assert.That(Keys(LocalPlayer(root).GetProperty("power")), Is.EquivalentTo(PowerKeys));
 
 			var units = root.GetProperty("units");
@@ -253,14 +254,14 @@ namespace OpenRA.Test
 			Assert.That(Keys(maps[0]), Is.EquivalentTo(["uid", "title"]));
 		}
 
-		[TestCase(TestName = "An unknown load_map returns an error envelope and leaves the running world in place")]
-		public void LoadMapUnknownKeepsWorld()
+		[TestCase(TestName = "An unknown load_skirmish map returns an error envelope and leaves the running world in place")]
+		public void LoadSkirmishUnknownKeepsWorld()
 		{
 			using var hw = HeadlessWorld.Create(1);
 
-			using var load = Request("{\"cmd\":\"load_map\",\"map\":\"no such map\"}");
+			using var load = Request("{\"cmd\":\"load_skirmish\",\"map\":\"no such map\"}");
 			Assert.That(load.RootElement.GetProperty("ok").GetBoolean(), Is.False);
-			Assert.That(load.RootElement.GetProperty("cmd").GetString(), Is.EqualTo("load_map"));
+			Assert.That(load.RootElement.GetProperty("cmd").GetString(), Is.EqualTo("load_skirmish"));
 			Assert.That(load.RootElement.GetProperty("error").GetString(), Is.EqualTo("Unknown map 'no such map'"));
 
 			using var state = Request("{\"cmd\":\"state\"}");
@@ -268,10 +269,10 @@ namespace OpenRA.Test
 			Assert.That(state.RootElement.GetProperty("map").GetProperty("uid").GetString(), Is.EqualTo(hw.World.Map.Uid));
 		}
 
-		[TestCase(TestName = "A load_map whose map is not a string returns an error envelope")]
-		public void LoadMapRejectsNonStringMap()
+		[TestCase(TestName = "A load_skirmish whose map is not a string returns an error envelope")]
+		public void LoadSkirmishRejectsNonStringMap()
 		{
-			using var response = Request("{\"cmd\":\"load_map\",\"map\":5}");
+			using var response = Request("{\"cmd\":\"load_skirmish\",\"map\":5}");
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.False);
 			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo("map must be a string"));
 		}

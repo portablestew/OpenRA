@@ -18,7 +18,7 @@ using NUnit.Framework;
 namespace OpenRA.Test
 {
 	/// <summary>
-	/// An event raised in one world is never delivered after the world changes (8.8). A load_map, a restore or a new game swaps the
+	/// An event raised in one world is never delivered after the world changes (8.8). A load_skirmish, a restore or a new game swaps the
 	/// world, so events the old world buffered for a connection are dropped when the new world loads. Otherwise the next envelope
 	/// would report phantom events from a world that no longer exists (part 3 defect 2).
 	/// </summary>

@@ -48,7 +48,7 @@ namespace OpenRA.Mods.Common
 
 		public void WorldLoaded(World w, WorldRenderer wr)
 		{
-			// A load_map disposes the world it replaces. Its pending awaits get the restored error, as in WorldAdopted.
+			// A load_skirmish disposes the world it replaces. Its pending awaits get the restored error, as in WorldAdopted.
 			AgentOrderAwait.FailDisposedRestored();
 
 			// The events waiting for a turn belong to the world this replaces (8.8). The new world's own events come after this.

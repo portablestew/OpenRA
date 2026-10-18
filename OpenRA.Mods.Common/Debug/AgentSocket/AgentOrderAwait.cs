@@ -470,7 +470,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Fails the awaits on every disposed world with the restored error. WorldLoaded calls it: a load_map disposes the world it
+		/// Fails the awaits on every disposed world with the restored error. WorldLoaded calls it: a load_skirmish disposes the world it
 		/// replaces, so no pending order will resolve there. Awaits on a world that is still alive are left alone. Must run on the game thread.
 		/// </summary>
 		public static void FailDisposedRestored()

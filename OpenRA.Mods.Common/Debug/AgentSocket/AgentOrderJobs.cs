@@ -94,7 +94,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			{
 				if (!Open.TryGetValue(id, out job))
 					throw new InvalidOperationException($"unknown job {id}: jobs come from order with await:false, and a job ends once wait returns it"
-						+ " or load_map or undo replaces its world");
+						+ " or load_skirmish or undo replaces its world");
 			}
 
 			if (!job.Await.TryWait(timeoutMs))

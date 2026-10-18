@@ -33,6 +33,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (actor == null || observer == null)
 				return false;
 
+			// An actor with no IOccupySpace has no position, so neither the shroud nor the radar-dot rule can speak for it.
+			// The engine's own Player actor is one: bots order RepairBuilding and PlaceBuilding on it. Its owner still
+			// reports it through Reported, which checks ownership before this.
+			if (actor.OccupiesSpace == null)
+				return false;
+
 			if (observer.Shroud.IsVisible(actor.CenterPosition))
 				return true;
 

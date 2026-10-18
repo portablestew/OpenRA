@@ -36,6 +36,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " cell: player, cell [x, y]). Your own structures in units are id, type, cell and hp only."
 				+ " selection is the sorted ids of the actors your orders selected, empty when none."
 				+ " players[].known_counts is the count by type of the actors you know: all of your own, and another player's only where known."
+				+ " players[].bot is the AI type of a bot-owned player (null for a human), and players[].handicap its handicap percent."
 				+ " threats: the top 15 known enemy units by standoff (the engine's Enemy relationship: neutral civilians and allies are not listed; at most 3 per type; a recent attacker first), each with id, type, cell,"
 				+ " hp, attack_target (the friendly it hit recently, or null: only a recent attacker has one), heading (its facing, not a bearing),"
 				+ " bearing (from its closest friendly),"
@@ -43,8 +44,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"{\"cmd\":\"state\"}"),
 			("actors", "owner, type (optional filters) -> units", "{\"cmd\":\"actors\",\"type\":\"e1\"}"),
 			("maps", "-> maps", "{\"cmd\":\"maps\"}"),
-			("load_map", "map (string, uid or title) -> the state shape, once the new world is ready",
-				"{\"cmd\":\"load_map\",\"map\":\"<a uid from maps>\"}"),
+			("load_skirmish", "map (string: a uid or title from maps, or \"random\"; default random); speed (string: a game speed key, one of"
+				+ " slowest, slower, default, fast, faster, fastest; default default); opponents (array of objects, default one"
+				+ " {\"bot\":\"normal\",\"handicap\":70}; each is bot (string, an AI type the map defines) and handicap (int, 0 to 95 in steps"
+				+ " of 5); an empty array is a solo world)\n"
+				+ "                -> the state shape, plus skirmish (map, map_requested, speed, and opponents: each with player, bot, handicap"
+				+ " and slot), once the new world is ready",
+				"{\"cmd\":\"load_skirmish\"}"),
 			("order", "exactly one of actor (uint), actors ([uint]), or type (string: a regex matched against the whole type name of"
 				+ " each owned actor, so \"e1\" is e1 only and \"e.\" is every e-type); order (string); at most one of cell [x,y],"
 				+ " pos [x,y,z], target_actor (uint); optional queued (bool), item (string), extra_data (uint), extra_location [x,y],"
@@ -63,7 +69,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"{\"cmd\":\"order\",\"actor\":12,\"order\":\"AttackMove\",\"cell\":[40,50]}"),
 			("wait", "job (int), or no job; optional timeout_ms (non-negative int, default 10000)\n"
 				+ "                -> with job: the Move reply (cmd:wait, same keys as a Move order reply) with result:\"job\", once the job settles, or"
-				+ " status:\"pending\" at the timeout (the job stays open). An unknown job, or a job whose world load_map or undo replaced: ok:false, error."
+				+ " status:\"pending\" at the timeout (the job stays open). An unknown job, or a job whose world load_skirmish or undo replaced: ok:false, error."
 				+ " With no job: result:\"events\" when an event arrives (it is in this response's events), or result:\"timeout\"",
 				"{\"cmd\":\"wait\",\"timeout_ms\":5000}"),
 			("orders", "actor (uint) -> type, orders (the order names the actor accepts)", "{\"cmd\":\"orders\",\"actor\":12}"),

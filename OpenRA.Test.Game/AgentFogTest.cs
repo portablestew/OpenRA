@@ -70,6 +70,12 @@ namespace OpenRA.Test
 			return (bool)ModType("AgentSocket.AgentFog").GetMethod("Known").Invoke(null, [actor, observer]);
 		}
 
+		/// <summary>The reporting rule (AgentSocket.AgentFog.Reported), called through the mod's type.</summary>
+		static bool Reported(Actor actor, Player observer)
+		{
+			return (bool)ModType("AgentSocket.AgentFog").GetMethod("Reported").Invoke(null, [actor, observer]);
+		}
+
 		/// <summary>The player's GpsWatcher trait, read through the mod's type.</summary>
 		static object Watcher(Player player)
 		{
@@ -195,6 +201,25 @@ namespace OpenRA.Test
 			Assert.That(frozen, Is.Not.Null, "A seen structure should have a frozen last-known entry.");
 			Assert.That(frozen.IsValid, Is.True, "The frozen entry should be valid: it was refreshed while the target was seen.");
 			Assert.That(Known(target, local), Is.True, "A last-known enemy must stay known.");
+		}
+
+		[TestCase(TestName = "An actor with no position is not known, but its owner still reports it: the bot's order on the Player actor")]
+		public void PositionlessActorIsNotKnownButItsOwnerReportsIt()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			// The engine's Player actor has no IOccupySpace, so it has no CenterPosition. Bots order RepairBuilding
+			// (BuildingRepairBotModule) and PlaceBuilding (BaseBuilderQueueManager) on it, and the order event's fog
+			// check crashed on the null position before Known guarded it (found live with a load_skirmish bot).
+			var playerActor = local.PlayerActor;
+			Assert.That(playerActor.OccupiesSpace, Is.Null,
+				"The Player actor must have no IOccupySpace for this test to mean anything.");
+
+			Assert.That(Known(playerActor, local), Is.False, "A positionless actor has no shroud visibility.");
+			Assert.That(Reported(playerActor, local), Is.True, "Its owner still reports it.");
+			Assert.That(Reported(playerActor, hw.EnemyPlayer), Is.False, "Another player does not report it.");
 		}
 
 		[TestCase(TestName = "A unit that fogs after being seen is unknown in ra: FrozenUnderFog is on structures and walls, not infantry")]

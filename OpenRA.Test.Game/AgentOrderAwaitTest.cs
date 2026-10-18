@@ -397,7 +397,7 @@ namespace OpenRA.Test
 			Assert.That(PendingCount(hw.World), Is.EqualTo(0), "The failed Move left an await pending.");
 		}
 
-		[TestCase(TestName = "A load_map that replaces the world fails a Move in flight with restored, not the wall-clock timeout")]
+		[TestCase(TestName = "A load_skirmish that replaces the world fails a Move in flight with restored, not the wall-clock timeout")]
 		public void WorldLoadFailsMoveInFlightWithRestored()
 		{
 			using var hw = HeadlessWorld.Create(1);
@@ -406,7 +406,7 @@ namespace OpenRA.Test
 			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
 			var replaced = hw.World;
 
-			// The replaced world is disposed, then the new one loads through LoadComplete, as a load_map does.
+			// The replaced world is disposed, then the new one loads through LoadComplete, as a load_skirmish does.
 			using var response = MoveInFlightAcross(hw, unit, destination, () =>
 			{
 				replaced.Dispose();

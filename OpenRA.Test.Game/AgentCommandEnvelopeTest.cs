@@ -100,7 +100,7 @@ namespace OpenRA.Test
 			(string Line, string Cmd, string Error)[] invalid =
 			[
 				("{\"cmd\":\"order\"}", "order", "order must be a non-empty string"),
-				("{\"cmd\":\"load_map\"}", "load_map", "map must be a string"),
+				("{\"cmd\":\"load_skirmish\",\"speed\":5}", "load_skirmish", "speed must be a string"),
 				("{\"cmd\":\"build\"}", "build", "item must be a non-empty string"),
 				("{\"cmd\":\"build\",\"item\":\"powr\",\"count\":0}", "build", "count must be a positive integer"),
 				("{\"cmd\":\"place\"}", "place", "item must be a non-empty string"),

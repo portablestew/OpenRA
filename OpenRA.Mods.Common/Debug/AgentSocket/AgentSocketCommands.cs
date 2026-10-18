@@ -44,7 +44,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The command names the dispatcher answers. The banner lists the same names, and a headless test keeps them in step.</summary>
 		public static readonly string[] Names =
 		[
-			"ping", "help", "state", "actors", "maps", "load_map", "order", "orders", "wait",
+			"ping", "help", "state", "actors", "maps", "load_skirmish", "order", "orders", "wait",
 			"production", "build", "cancel", "place", "deploy", "screenshot", "undo", "look", "map_state",
 		];
 
@@ -167,7 +167,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"state" => Run(cmd, () => AgentStateDump.Snapshot(AgentWorldBridge.RequireWorld())),
 				"actors" => Actors(cmd, root),
 				"maps" => Run(cmd, AgentMaps.List),
-				"load_map" => LoadMap(cmd, root),
+				"load_skirmish" => LoadSkirmish(cmd, root),
 				"order" => IssueOrder(cmd, root, selection),
 				"orders" => Orders(cmd, root),
 				"wait" => Wait(cmd, root, connection),
@@ -198,15 +198,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return Run(cmd, () => AgentStateDump.Actors(AgentWorldBridge.RequireWorld(), owner, type));
 		}
 
-		/// <summary>Waits for the new world on the socket thread, so the game thread is never blocked for the 60 s load.</summary>
-		static string LoadMap(string cmd, JsonElement root)
+		/// <summary>Parses the request on the socket thread, then waits for the new world there, so the game thread is never blocked for the 60 s load.</summary>
+		static string LoadSkirmish(string cmd, JsonElement root)
 		{
-			if (!root.TryGetProperty("map", out var element) || element.ValueKind != JsonValueKind.String)
-				return Error(cmd, "map must be a string");
+			var error = AgentSkirmish.Parse(root, out var request);
+			if (error != null)
+				return Error(cmd, error);
 
 			try
 			{
-				return JsonSerializer.Serialize(AgentLoadMap.Load(element.GetString()), Json);
+				return JsonSerializer.Serialize(AgentLoadSkirmish.Load(request), Json);
 			}
 			catch (Exception e)
 			{

@@ -21,7 +21,7 @@ namespace OpenRA.Test
 	/// <summary>
 	/// The banner's examples (P1.21). Every example invocation the help banner prints is parsed from the banner text itself, and
 	/// each is sent through the socket. A request that dispatches to its own command echoes that command and is not an unknown
-	/// command. Read-only examples must answer ok:true. load_map and screenshot are not dispatched, for the reasons in Unexercised.
+	/// command. Read-only examples must answer ok:true. load_skirmish and screenshot are not dispatched, for the reasons in Unexercised.
 	/// </summary>
 	[TestFixture]
 	sealed class AgentBannerTest
@@ -31,7 +31,7 @@ namespace OpenRA.Test
 		/// <summary>Examples that are parsed and named, but not sent: each would change state the test cannot restore, with the reason.</summary>
 		static readonly Dictionary<string, string> Unexercised = new()
 		{
-			["load_map"] = "it replaces the running world with a new game, which a headless test cannot restore",
+			["load_skirmish"] = "it replaces the running world with a new game, which a headless test cannot restore",
 			["screenshot"] = "it writes a frame file to disk",
 			["map_state"] = "it writes map-state.png into the workspace, which the test does not own",
 		};

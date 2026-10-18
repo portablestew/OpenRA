@@ -16,7 +16,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	// Schema v1. Wire keys are snake_case (AgentSocketCommands.Json); the maps entries reuse MapV1 (uid, title).
 	public sealed record MapsV1(bool Ok, string Cmd, MapV1[] Maps);
 
-	/// <summary>Lists the maps a player can pick in the lobby, so a client can choose one for load_map.</summary>
+	/// <summary>Lists the maps a player can pick in the lobby, so a client can choose one for load_skirmish.</summary>
 	public static class AgentMaps
 	{
 		public static MapsV1 List()

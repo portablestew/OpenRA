@@ -165,7 +165,7 @@ namespace OpenRA.Test
 			Assert.That(accepted.RootElement.GetProperty("ok").GetBoolean(), Is.True, accepted.RootElement.ToString());
 		}
 
-		[TestCase(TestName = "A job whose world load_map replaces fails its wait with restored, and the job ends")]
+		[TestCase(TestName = "A job whose world load_skirmish replaces fails its wait with restored, and the job ends")]
 		public void JobOfReplacedWorldFailsWaitWithRestored()
 		{
 			using var hw = HeadlessWorld.Create(1);
@@ -177,7 +177,7 @@ namespace OpenRA.Test
 			using var issued = AgentStateDumpTest.Request(MoveLine(unit, destination, ",\"await\":false"));
 			var job = issued.RootElement.GetProperty("job").GetInt32();
 
-			// The replaced world is disposed, then the new one loads through LoadComplete, as a load_map does.
+			// The replaced world is disposed, then the new one loads through LoadComplete, as a load_skirmish does.
 			replaced.Dispose();
 			using var next = HeadlessWorld.Create(2);
 

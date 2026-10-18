@@ -38,10 +38,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>
 	/// Resources are 0 for a player without a PlayerResources trait. Dead means WinState.Lost. Power is null without a PowerManager
 	/// trait. KnownCounts is the number of each type the local player knows of this player's units (P2.5): all of them for the local
-	/// player, and for another player only those AgentFog says are known. Null when there is no local player.
+	/// player, and for another player only those AgentFog says are known. Null when there is no local player. Bot is the AI type of
+	/// a bot-owned player and null for a human, so a later envelope proves which opponents load_skirmish started. Handicap is the
+	/// player's handicap percent (Player.Handicap, 0 for a player without one).
 	/// </summary>
 	public sealed record PlayerV1(string Name, string Faction, int Cash, int Resources, int ResourceCapacity, bool Dead, PowerV1 Power,
-		Dictionary<string, int> KnownCounts);
+		Dictionary<string, int> KnownCounts, string Bot, int Handicap);
 
 	/// <summary>
 	/// Provided and Drained are the PowerManager totals. Excess is Provided - Drained. State is the PowerState name:
@@ -199,7 +201,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return new PlayerV1(p.PlayerName, p.Faction?.InternalName,
 				resources?.Cash ?? 0, resources?.Resources ?? 0, resources?.ResourceCapacity ?? 0,
 				p.WinState == WinState.Lost,
-				Power(power), KnownCounts(p, observer));
+				Power(power), KnownCounts(p, observer), p.BotType, p.Handicap);
 		}
 
 		/// <summary>The PowerManager totals and state, or null for a player without a PowerManager.</summary>
