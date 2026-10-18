@@ -52,7 +52,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return [];
 
 			var threats = world.Actors
-				.Where(a => a.OccupiesSpace != null && !a.IsDead && a.Owner != null && !observer.IsAlliedWith(a.Owner)
+				.Where(a => a.OccupiesSpace != null && !a.IsDead && a.Owner != null
+					&& observer.RelationshipWith(a.Owner) == PlayerRelationship.Enemy
 					&& !AgentStateDump.IsScenery(a) && AgentFog.Known(a, observer))
 				.ToArray();
 

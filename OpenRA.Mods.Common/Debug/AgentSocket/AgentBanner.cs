@@ -36,7 +36,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " cell: player, cell [x, y]). Your own structures in units are id, type, cell and hp only."
 				+ " selection is the sorted ids of the actors your orders selected, empty when none."
 				+ " players[].known_counts is the count by type of the actors you know: all of your own, and another player's only where known."
-				+ " threats: the top 15 known enemies by standoff (at most 3 per type; a recent attacker first), each with id, type, cell,"
+				+ " threats: the top 15 known enemy units by standoff (the engine's Enemy relationship: neutral civilians and allies are not listed; at most 3 per type; a recent attacker first), each with id, type, cell,"
 				+ " hp, attack_target (the friendly it hit recently, or null: only a recent attacker has one), heading (its facing, not a bearing),"
 				+ " bearing (from its closest friendly),"
 				+ " friendly_id and distance (world units, 1024 per cell) of that friendly.",

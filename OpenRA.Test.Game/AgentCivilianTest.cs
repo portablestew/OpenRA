@@ -77,6 +77,40 @@ namespace OpenRA.Test
 			return look.RootElement.GetProperty("actors").EnumerateArray().Select(a => a.GetProperty("id").GetUInt32()).ToArray();
 		}
 
+		/// <summary>The ids of the state's threats, read through a fresh state request.</summary>
+		static uint[] ThreatIds()
+		{
+			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			return state.RootElement.GetProperty("threats").EnumerateArray().Select(t => t.GetProperty("id").GetUInt32()).ToArray();
+		}
+
+		[TestCase(TestName = "state.threats lists known enemy units only: a known neutral civilian is in the state units but not in the threats")]
+		public void ThreatsListOnlyEnemies()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			var neutral = hw.World.Players.First(p => p.PlayerReference.OwnsWorld);
+			var ours = hw.CreateActor(Infantry, hw.FindClearArea(local.HomeLocation, 3, 3), local);
+			var civilian = hw.CreateActor(Civilian, hw.FindClearArea(ours.Location + new CVec(2, 0), 1, 1, 4), neutral);
+			var enemy = hw.CreateActor(Infantry, hw.FindClearArea(ours.Location + new CVec(0, 2), 1, 1, 4), hw.EnemyPlayer);
+			hw.Tick(SettleTicks);
+
+			// The engine's stance decides who a threat is: the enemy is an Enemy to us, and the neutral civilian is not.
+			Assert.That(local.RelationshipWith(hw.EnemyPlayer), Is.EqualTo(PlayerRelationship.Enemy), "Premise: the enemy player is an enemy.");
+			Assert.That(local.RelationshipWith(neutral), Is.Not.EqualTo(PlayerRelationship.Enemy), "Premise: the neutral player is not an enemy.");
+			Assert.That(Known(enemy, local), Is.True, "Premise: the enemy is known.");
+			Assert.That(Known(civilian, local), Is.True, "Premise: the civilian is known.");
+
+			Assert.That(ThreatIds(), Does.Contain(enemy.ActorID), "A known enemy unit must be in the threats.");
+			Assert.That(ThreatIds(), Does.Not.Contain(civilian.ActorID), "A known neutral civilian must not be in the threats.");
+
+			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			var units = state.RootElement.GetProperty("units").EnumerateArray().Select(u => u.GetProperty("id").GetUInt32()).ToArray();
+			Assert.That(units, Does.Contain(civilian.ActorID), "The known neutral civilian must still be in the state units.");
+		}
+
 		[TestCase(TestName = "A neutral civilian is in look and the state units once known, absent while unknown; neutral scenery is absent from both")]
 		public void CivilianIsReportedOnlyWhenKnown()
 		{
