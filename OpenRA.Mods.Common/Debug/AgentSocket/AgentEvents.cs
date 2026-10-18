@@ -140,8 +140,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 		// Each subscribed group keeps the owner filter it was subscribed with, or null when every owner's events pass.
 		readonly Dictionary<string, string> groups = [];
 		readonly Queue<object> queue = new();
+
 		int dropped;
 		bool closed;
+
+		/// <summary>
+		/// The connection's turn buffer: the events it has seen since its last flush (P3.2). It takes the same events as the
+		/// queue. Nothing reads it until P3.3 flushes it into the envelope.
+		/// </summary>
+		internal AgentTurnBuffer Turn { get; } = new();
 
 		/// <summary>Events waiting to be taken. Test use.</summary>
 		public int Pending
@@ -225,6 +232,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				}
 
 				queue.Enqueue(dto);
+				Turn.Add(dto);
 				Monitor.Pulse(gate);
 			}
 		}
