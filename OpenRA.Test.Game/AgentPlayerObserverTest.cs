@@ -166,7 +166,7 @@ namespace OpenRA.Test
 
 			var resolvedAt = w.TickUntil(() =>
 			{
-				// Read every tick, so no turn holds more than three damaged events and each one reaches the test in full.
+				// Read every tick, so no turn holds more than two damaged events and each one reaches the test in full.
 				Pending("damaged", "killed");
 				return mine.IsDead || theirs.IsDead;
 			}, CombatTimeoutTicks);

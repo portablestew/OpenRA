@@ -26,7 +26,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>
 		/// Raises a path event for one path evaluation. pathTargetToSource is the list EvalPath returned, with the
 		/// destination first and the source excluded. An empty list with atDestination set is the zero-length case. An
-		/// empty list without it is no_path. The cells on the wire run source to target, starting at the source cell.
+		/// empty list without it is no_path. The cells go to the order's await, not into the event.
 		/// </summary>
 		public static void Path(Actor self, Locomotor locomotor, CPos src, CPos requested, BlockedByActor check, bool repath,
 			bool atDestination, IReadOnlyList<CPos> pathTargetToSource)
@@ -78,7 +78,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return;
 
 			AgentEvents.Raise(new PathV1("path", self.World.WorldTick, self.ActorID,
-				self.Info.Name, self.Owner.PlayerName, from, [to.X, to.Y], check.ToString(), repath, result, cells, metrics));
+				self.Info.Name, self.Owner.PlayerName, from, [to.X, to.Y], check.ToString(), repath, result, metrics));
 		}
 
 		/// <summary>

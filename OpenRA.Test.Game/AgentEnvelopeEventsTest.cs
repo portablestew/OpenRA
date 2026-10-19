@@ -161,8 +161,29 @@ namespace OpenRA.Test
 			Assert.That(Names(responses[0]), Does.Contain("path"), "A connection should get the path in its envelope.");
 		}
 
-		[TestCase(TestName = "More than three events of one type in one turn come back as three in full and one aggregated marker")]
-		public void MoreThanThreeOfATypeAggregate()
+		[TestCase(TestName = "A path event carries from, to, check, result and metrics, and no cells key")]
+		public void PathEventHasNoCellsKey()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			var unit = hw.CreateActor(Infantry, hw.FindClearArea(local.HomeLocation, 3, 3), local);
+			hw.Tick(SettleTicks);
+			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+
+			var output = Serve(hw, $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}\n");
+			var path = Responses(output)[0].GetProperty("events").EnumerateArray()
+				.Single(e => e.GetProperty("event").GetString() == "path");
+
+			Assert.That(path.TryGetProperty("cells", out _), Is.False, "A path event should not carry the planned cells.");
+			Assert.That(path.TryGetProperty("from", out _), Is.True);
+			Assert.That(path.TryGetProperty("to", out _), Is.True);
+			Assert.That(path.GetProperty("result").GetString(), Is.EqualTo("found"));
+		}
+
+		[TestCase(TestName = "More than two events of one type in one turn come back as two in full and one aggregated marker")]
+		public void MoreThanTwoOfATypeAggregate()
 		{
 			using var hw = HeadlessWorld.Create(Seed);
 			hw.Tick(SettleTicks);
@@ -178,11 +199,11 @@ namespace OpenRA.Test
 			var fullPaths = events.Where(e => e.GetProperty("event").GetString() == "path" && !e.TryGetProperty("aggregated", out _)).ToList();
 			var markers = events.Where(e => e.TryGetProperty("aggregated", out _) && e.GetProperty("event").GetString() == "path").ToList();
 
-			Assert.That(fullPaths, Has.Count.EqualTo(3), "The first three path events should be in full.");
+			Assert.That(fullPaths, Has.Count.EqualTo(2), "The first two path events should be in full.");
 			Assert.That(markers, Has.Count.EqualTo(1), "The rest of the path events should be one aggregated marker.");
 			Assert.That(markers[0].GetProperty("event").GetString(), Is.EqualTo("path"));
 			Assert.That(markers[0].GetProperty("aggregated").GetInt32(), Is.GreaterThanOrEqualTo(2),
-				"The marker should count the path events past the first three.");
+				"The marker should count the path events past the first two.");
 		}
 	}
 }

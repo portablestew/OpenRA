@@ -16,7 +16,7 @@ using OpenRA.Mods.Common.AgentSocket;
 namespace OpenRA.Test
 {
 	/// <summary>
-	/// The turn buffer's flush (P3.2): the first three of each type in full, one aggregated marker for the rest, never
+	/// The turn buffer's flush (P3.2): the first two of each type in full, one aggregated marker for the rest, never
 	/// aggregating killed, defeated, or game_over, the overflow marker surviving a flush, and a stable order. The events are
 	/// synthetic records with the Event and Tick fields every event DTO has.
 	/// </summary>
@@ -29,7 +29,23 @@ namespace OpenRA.Test
 
 		static Fake Killed(int tick, int id) => new("killed", tick, id);
 
-		[TestCase(TestName = "Five events of one type flush as three in full and one aggregated marker with the rest's ticks")]
+		[TestCase(TestName = "The third event of one type flushes as an aggregated marker, not in full")]
+		public void ThirdEventAggregates()
+		{
+			var buffer = new AgentTurnBuffer();
+			var threes = Enumerable.Range(1, 3).Select(i => Damaged(9 + i, i)).ToList();
+			foreach (var e in threes)
+				buffer.Add(e);
+
+			var batch = buffer.Flush();
+
+			Assert.That(batch, Has.Count.EqualTo(3), "Two in full, then one marker for the third.");
+			Assert.That(batch.Take(2), Is.EqualTo(threes.Take(2)), "The first two should flush in full, in arrival order.");
+			Assert.That(batch[2], Is.EqualTo(new AggregatedV1("damaged", 1, 12, 12)),
+				"The marker should count the third event and cover its tick, 12.");
+		}
+
+		[TestCase(TestName = "Five events of one type flush as two in full and one aggregated marker with the rest's ticks")]
 		public void FifthAndFourthAggregate()
 		{
 			var buffer = new AgentTurnBuffer();
@@ -39,10 +55,10 @@ namespace OpenRA.Test
 
 			var batch = buffer.Flush();
 
-			Assert.That(batch, Has.Count.EqualTo(4), "Three in full, then one marker for the two suppressed.");
-			Assert.That(batch.Take(3), Is.EqualTo(fives.Take(3)), "The first three should flush in full, in arrival order.");
-			Assert.That(batch[3], Is.EqualTo(new AggregatedV1("damaged", 2, 13, 14)),
-				"The marker should count the two suppressed events and cover their ticks, 13 to 14.");
+			Assert.That(batch, Has.Count.EqualTo(3), "Two in full, then one marker for the three suppressed.");
+			Assert.That(batch.Take(2), Is.EqualTo(fives.Take(2)), "The first two should flush in full, in arrival order.");
+			Assert.That(batch[2], Is.EqualTo(new AggregatedV1("damaged", 3, 12, 14)),
+				"The marker should count the three suppressed events and cover their ticks, 12 to 14.");
 		}
 
 		[TestCase(TestName = "Ten killed events flush as ten, and none is aggregated")]
@@ -92,9 +108,9 @@ namespace OpenRA.Test
 
 			var batch = buffer.Flush();
 
-			var expected = new object[] { d1, k1, d2, d3, new AggregatedV1("damaged", 2, 12, 13), p1, k2 };
+			var expected = new object[] { d1, k1, d2, new AggregatedV1("damaged", 3, 11, 13), p1, k2 };
 			Assert.That(batch, Is.EqualTo(expected),
-				"The turn should flush in arrival order, with the damaged marker where d4 arrived.");
+				"The turn should flush in arrival order, with the damaged marker where d3 arrived.");
 			Assert.That(buffer.Pending, Is.Zero, "A flush should empty the buffer.");
 			Assert.That(buffer.Flush(), Is.Empty, "A second flush with nothing added should be empty.");
 		}

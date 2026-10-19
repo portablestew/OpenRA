@@ -37,9 +37,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	public sealed record StanceV1(string Event, int Tick, uint Actor, string Type, string Owner, string From, string To);
 
-	// Metrics is null for no_path, and when getPath returned input the metrics function rejects.
+	// Metrics is null for no_path, and when getPath returned input the metrics function rejects. The planned cells are not sent: the
+	// order reply's path carries them.
 	public sealed record PathV1(string Event, int Tick, uint Actor, string Type, string Owner, int[] From, int[] To, string Check,
-		bool Repath, string Result, int[][] Cells, PathMetrics Metrics);
+		bool Repath, string Result, PathMetrics Metrics);
 
 	// Kind is move, transform or attack. State is started, completed or canceled. Reason says how an activity ended, or null.
 	public sealed record ActivityV1(string Event, int Tick, uint Actor, string Type, string Owner, string Kind, string State,

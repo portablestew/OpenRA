@@ -163,13 +163,11 @@ namespace OpenRA.Test
 			Assert.That(Field<int[]>(path, "From"), Is.EqualTo(new[] { origin.X, origin.Y }));
 			Assert.That(Field<int[]>(path, "To"), Is.EqualTo(new[] { destination.X, destination.Y }));
 
-			var cells = Field<int[][]>(path, "Cells");
-			Assert.That(cells[0], Is.EqualTo(new[] { origin.X, origin.Y }), "Cells start at the source.");
-			Assert.That(cells[^1], Is.EqualTo(new[] { destination.X, destination.Y }), "Cells end at the destination.");
+			Assert.That(path.GetType().GetProperty("Cells"), Is.Null, "A path event carries no cells.");
 
 			var metrics = Field<object>(path, "Metrics");
 			Assert.That(metrics, Is.Not.Null);
-			Assert.That(Field<int>(metrics, "PathLenCells"), Is.EqualTo(cells.Length - 1));
+			Assert.That(Field<int>(metrics, "PathLenCells"), Is.GreaterThan(0));
 			Assert.That(Field<double>(metrics, "DetourRatio"), Is.GreaterThanOrEqualTo(1.0));
 
 			var result = events[2];
@@ -195,7 +193,6 @@ namespace OpenRA.Test
 			var path = events[1];
 			Assert.That(Field<string>(path, "Result"), Is.EqualTo("found"));
 			Assert.That(Field<bool>(path, "Repath"), Is.False);
-			Assert.That(Field<int[][]>(path, "Cells"), Has.Length.EqualTo(1));
 			Assert.That(Field<int[]>(path, "To"), Is.EqualTo(new[] { origin.X, origin.Y }));
 
 			var metrics = Field<object>(path, "Metrics");
@@ -206,7 +203,7 @@ namespace OpenRA.Test
 			Assert.That(Field<string>(events[2], "Reason"), Is.EqualTo("reached"));
 		}
 
-		[TestCase(TestName = "An empty path reports no_path with no cells and null metrics, then blocked")]
+		[TestCase(TestName = "An empty path reports no_path with null metrics, then blocked")]
 		public void EmptyPathReportsNoPathThenBlocked()
 		{
 			using var hw = HeadlessWorld.Create(1);
@@ -221,7 +218,6 @@ namespace OpenRA.Test
 
 			var path = events[1];
 			Assert.That(Field<string>(path, "Result"), Is.EqualTo("no_path"));
-			Assert.That(Field<int[][]>(path, "Cells"), Has.Length.EqualTo(0));
 			Assert.That(Field<object>(path, "Metrics"), Is.Null);
 
 			Assert.That(Field<string>(events[2], "Reason"), Is.EqualTo("blocked"));
@@ -249,7 +245,6 @@ namespace OpenRA.Test
 			Assert.That(Field<bool>(first, "Repath"), Is.False);
 			Assert.That(Field<string>(first, "Result"), Is.EqualTo("found"));
 			Assert.That(Field<object>(first, "Metrics"), Is.Null);
-			Assert.That(Field<int[][]>(first, "Cells"), Has.Length.EqualTo(3));
 
 			Assert.That(Field<bool>(events[2], "Repath"), Is.True);
 			Assert.That(Field<object>(events[2], "Metrics"), Is.Null);

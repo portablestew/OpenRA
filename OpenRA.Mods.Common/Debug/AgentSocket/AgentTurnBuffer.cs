@@ -34,7 +34,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public const int Capacity = 4096;
 
 		/// <summary>How many events of each type a flush returns in full.</summary>
-		public const int FullPerType = 3;
+		public const int FullPerType = 2;
 
 		/// <summary>How long a parked wait sleeps before it checks the clock and the buffer again, in milliseconds.</summary>
 		const int PollMs = 5;
