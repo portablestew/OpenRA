@@ -78,6 +78,33 @@ namespace OpenRA.Test
 			Assert.That(hw.World.Selection.Actors, Is.EquivalentTo([a, b]));
 		}
 
+		[TestCase(TestName = "A group of an order name with no richer shape reports per-actor valid and effect_tick, with no path")]
+		public void GroupOfUntrackedOrderReportsPerActorValidity()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var a = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			var b = hw.CreateActor("e1", hw.FindClearArea(new CPos(60, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+
+			var line = $"{{\"cmd\":\"order\",\"actors\":[{a.ActorID},{b.ActorID}],\"order\":\"Stop\"}}";
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, line);
+			var root = response.RootElement;
+
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+			Assert.That(OrderedIds(root), Is.EquivalentTo([a.ActorID, b.ActorID]));
+			Assert.That(root.GetProperty("matched").GetInt32(), Is.EqualTo(2));
+
+			var results = root.GetProperty("results").EnumerateArray().ToArray();
+			Assert.That(results.Length, Is.EqualTo(2));
+			foreach (var result in results)
+			{
+				Assert.That(result.GetProperty("settled").GetBoolean(), Is.True, result.ToString());
+				Assert.That(result.GetProperty("valid").GetBoolean(), Is.True, result.ToString());
+				Assert.That(result.GetProperty("effect_tick").GetInt32(), Is.GreaterThan(0));
+				Assert.That(result.TryGetProperty("path", out _), Is.False, "Stop plans no path, so no result carries one.");
+			}
+		}
+
 		[TestCase(TestName = "The state's selection is the ordered actors, and a request with no order leaves it unchanged")]
 		public void SelectionIsTheOrderedActors()
 		{

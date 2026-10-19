@@ -129,7 +129,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public bool NoPath => IsAttackMove && Path is { Length: 0 } && !startedAtDestination;
 
 		/// <summary>True for a Move, or an AttackMove whose move the order starts (P3.0a): both plan a path the await reports.</summary>
-		bool IsMoveOrder => order is "Move" or "AttackMove";
+		public bool IsMoveOrder => order is "Move" or "AttackMove";
 
 		/// <summary>True for a DeployTransform await. Its outcome is set by the transform activity's end, or by a refusal (P1.8).</summary>
 		public bool IsDeploy => order == "DeployTransform";
@@ -145,6 +145,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// that was not checked. Set by AgentDeploy before the transform can start.
 		/// </summary>
 		public CPos? ExpectedCell { get; set; }
+
+		/// <summary>
+		/// True when the place command issued this PlaceBuilding await, so its reply needs the new building's id (F6). An
+		/// `order` PlaceBuilding leaves it false, so that reply reports the resolution like any other order name (9.2) and does
+		/// not wait for the building.
+		/// </summary>
+		public bool AwaitPlacedActor { get; set; }
 
 		/// <summary>
 		/// The top-left cell the transform ended on (P1.14), where the actor deployed or stopped. Null until the transform ends. The
@@ -257,8 +264,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 					return;
 				}
 
-				// A valid PlaceBuilding stays Pending: the placed notify ends it with the new building's id (F6). A refused one places nothing.
-				if (await.IsPlace)
+				// A valid PlaceBuilding the place command issued stays Pending: the placed notify ends it with the new building's
+				// id (F6). A refused one places nothing, and one an `order` issued resolves like any other order name (9.2).
+				if (await.IsPlace && await.AwaitPlacedActor)
 				{
 					if (!valid)
 						Fail(await, new InvalidOperationException(AgentOrder.ValidatorRejected));
@@ -338,7 +346,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 						else if (world.WorldTick - p.registeredTick >= ResolveBudgetTicks)
 							Finish(p, NoValidTarget, AttackRefusal(p.subject, p.target));
 					}
-					else if (p.IsPlace && p.Resolved)
+					else if (p.IsPlace && p.AwaitPlacedActor && p.Resolved)
 					{
 						// The placed notify ends a place. A dead subject can place nothing, and a subject that has not placed for the
 						// resolve budget has stalled, so both fail here (F6).

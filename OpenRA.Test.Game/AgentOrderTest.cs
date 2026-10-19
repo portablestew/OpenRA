@@ -107,16 +107,27 @@ namespace OpenRA.Test
 			Assert.That(response.RootElement.GetProperty("cmd").GetString(), Is.EqualTo("order"));
 		}
 
-		[TestCase(TestName = "An order with no target is accepted and returns the ack")]
-		public void UntargetedOrderIsAccepted()
+		[TestCase(TestName = "An order name with no richer shape reports its resolution: valid, effect_tick and settled")]
+		public void UntargetedOrderReportsItsResolution()
 		{
 			using var hw = HeadlessWorld.Create(1);
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
+			var before = hw.World.WorldTick;
 
-			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Stop\"}}");
-			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
-			Assert.That(response.RootElement.GetProperty("min_effect_tick").GetInt32(), Is.EqualTo(hw.World.WorldTick + 1));
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Stop\"}}");
+			var root = response.RootElement;
+
+			// 9.2: a name outside Move, Attack, AttackMove and DeployTransform reports the same resolution signal, and nothing
+			// waits for the order to finish.
+			Assert.That(Keys(root), Is.EquivalentTo(["ok", "cmd", "tick", "min_effect_tick", "valid", "effect_tick", "settled", "settled_ticks"]));
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+			Assert.That(root.GetProperty("valid").GetBoolean(), Is.True, root.ToString());
+			Assert.That(root.GetProperty("settled").GetBoolean(), Is.True, root.ToString());
+			Assert.That(root.GetProperty("settled_ticks").GetInt32(), Is.EqualTo(3));
+			Assert.That(root.GetProperty("effect_tick").GetInt32(), Is.GreaterThan(before));
+			Assert.That(root.TryGetProperty("path", out _), Is.False, "Stop plans no path, so the reply must not carry one.");
+			Assert.That(root.TryGetProperty("reason", out _), Is.False, "A valid order carries no reason.");
 		}
 
 		[TestCase(TestName = "An order for an unknown actor returns the unknown-actor error")]
@@ -202,7 +213,7 @@ namespace OpenRA.Test
 			hw.Tick(1);
 
 			var line = $"{{\"cmd\":\"order\",\"actor\":{hw.LocalPlayer.PlayerActor.ActorID},\"order\":\"StartProduction\",\"item\":\"powr\",\"extra_data\":2}}";
-			using (var response = AgentStateDumpTest.Request(line))
+			using (var response = AgentStateDumpTest.RequestWithTicks(hw, line))
 				Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
 
 			hw.Tick(5);

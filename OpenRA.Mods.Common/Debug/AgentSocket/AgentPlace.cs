@@ -135,6 +135,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			// The await is registered before the order is issued, so the placed notify finds it (F6). It ends when the building
 			// exists, so the reply can name the actor without a second call.
 			var await = AgentOrderAwait.Register(order, 0);
+			await.AwaitPlacedActor = true;
 			world.IssueOrder(order);
 			selection.Ordered(world, actor);
 

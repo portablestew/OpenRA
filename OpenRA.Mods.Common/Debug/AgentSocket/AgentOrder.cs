@@ -23,6 +23,18 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record OrderV1(bool Ok, string Cmd, int Tick, int MinEffectTick);
 
 	/// <summary>
+	/// The reply to an order name with no richer shape of its own (9.2): the resolution signal, so the socket never blocks for
+	/// the order to finish. Valid and EffectTick are the validator result and the tick the order resolved on, and SettledTicks is
+	/// the settle window the reply then held, so trailing events land in the same digest. Reason and Orders (P1.5) are set only on
+	/// a refusal, and are omitted from every other reply. Valid and EffectTick are null, and Settled false, when the game was
+	/// paused and the reply did not wait.
+	/// </summary>
+	public sealed record OrderOutcomeV1(bool Ok, string Cmd, int Tick, int MinEffectTick, bool? Valid, int? EffectTick, bool Settled,
+		int SettledTicks,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Orders = null);
+
+	/// <summary>
 	/// A parsed order. At most one of Cell, Pos and TargetActor is set. None of them means an untargeted order, such as Stop.
 	/// Item, ExtraData and ExtraLocation become the order's TargetString, ExtraData and ExtraLocation. Null means absent.
 	/// A group (P1.14) sets Actors (the actor list) or Type and TypePattern (the type regex). Actor is 0 then, and unused.
@@ -58,8 +70,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record GroupedOrderV1(bool Ok, string Cmd, int Tick, int MinEffectTick, uint[] Ordered, int Matched, GroupResultV1[] Results);
 
 	/// <summary>
-	/// What IssueGroup returns on the game thread. Awaits is null for an order no reply waits for. Otherwise it has one await per
-	/// ordered actor, in the same order as Ordered. Paused is true when the game is paused, so nothing will tick the awaits.
+	/// What IssueGroup returns on the game thread. Awaits has one await per ordered actor, in the same order as Ordered, one for
+	/// every order name (9.2). Paused is true when the game is paused, so nothing will tick the awaits.
 	/// </summary>
 	public sealed record GroupIssued(OrderV1 Ack, uint[] Ordered, AgentOrderAwait[] Awaits, bool Paused);
 
@@ -100,8 +112,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Orders = null);
 
 	/// <summary>
-	/// What Issue returns on the game thread. Move is true for a Move order. Await is the wait for a Move or an Attack, and null
-	/// for any other order. Paused is true for a Move or an Attack in a paused game, which never ticks, so Settle does not wait for it (Q1).
+	/// What Issue returns on the game thread. Await is the wait for the order's resolution: every order name gets one (9.2), and
+	/// the richer verbs add their own outcome on top of it. Paused is true when the game is paused, which never ticks the await,
+	/// so Settle does not wait for it (Q1).
 	/// </summary>
 	public sealed record Issued(OrderV1 Ack, bool Move, bool Paused, AgentOrderAwait Await);
 
@@ -296,15 +309,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			var order = ToOrder(world, request);
 			var move = order.OrderString is "Move" or "AttackMove";
-			var attack = order.OrderString == "Attack";
-			var deploy = order.OrderString == "DeployTransform";
-			var await = AgentOrderAwait.Register(order, move ? request.SettleTicks ?? AgentOrderAwait.DefaultSettleTicks : 0);
+
+			// Every order name registers an await (9.2), so the reply reports the resolution outcome and returns at that plus the
+			// settle window, never waiting for the order to finish. Only Move and AttackMove may set their own window.
+			var settleTicks = move && request.SettleTicks is { } given ? given : AgentOrderAwait.DefaultSettleTicks;
+			var await = AgentOrderAwait.Register(order, settleTicks);
 			world.IssueOrder(order);
 			selection.Ordered(world, order.Subject);
 
-			// A paused game never ticks, so Settle does not wait for a Move, an Attack or a DeployTransform there (Q1), and drops the await it will never settle.
+			// A paused game never ticks, so Settle does not wait there (Q1), and drops the await it will never settle.
 			var ack = new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
-			return new Issued(ack, move, world.Paused, move || attack || deploy ? await : null);
+			return new Issued(ack, move, world.Paused, await);
 		}
 
 		/// <summary>The Move reply for an await that has finished. Cmd names the request that asked for it.</summary>
@@ -316,9 +331,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Builds the Move or Attack reply once the order has settled or its outcome is known. Parks the calling socket thread in
-		/// Wait, so the game thread keeps ticking. Throws when the await fails: restored, a resolve timeout, a dead subject, or the
-		/// wall-clock backstop. Must not run on the game thread.
+		/// Builds the reply once the order's await has settled or its outcome is known (9.2): the richer verbs report their own
+		/// outcome, and every other order name reports its resolution signal. Parks the calling socket thread in Wait, so the game
+		/// thread keeps ticking, and returns at the resolution plus the settle window, never at the order's completion. Throws when
+		/// the await fails: restored, a resolve timeout, a dead subject, or the wall-clock backstop. Must not run on the game thread.
 		/// </summary>
 		public static object Settle(Issued issued)
 		{
@@ -337,11 +353,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 				if (await is { IsAttackMove: true })
 					return new AttackMoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0);
 
-				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
-			}
+				if (await is { IsMoveOrder: true })
+					return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
 
-			if (await == null)
-				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
+				return Outcome("order", ack, null);
+			}
 
 			await.Wait();
 			if (await.IsAttack)
@@ -356,7 +372,24 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (await.IsDeploy)
 				return new DeployV1(await.Outcome == AgentOrderAwait.Completed, "order", ack.Tick, ack.MinEffectTick, true, await.Outcome, await.Reason);
 
-			return Reply("order", ack, await);
+			if (await.IsMoveOrder)
+				return Reply("order", ack, await);
+
+			return Outcome("order", ack, await);
+		}
+
+		/// <summary>
+		/// The reply to an order name with no richer shape of its own (9.2): valid and effect_tick, with reason and orders on a
+		/// refusal. A null await is a paused game, which never waits. Must not run on the game thread.
+		/// </summary>
+		static OrderOutcomeV1 Outcome(string cmd, OrderV1 ack, AgentOrderAwait await)
+		{
+			if (await == null)
+				return new OrderOutcomeV1(true, cmd, ack.Tick, ack.MinEffectTick, null, null, false, 0);
+
+			var refused = !await.Valid;
+			return new OrderOutcomeV1(true, cmd, ack.Tick, ack.MinEffectTick, await.Valid, await.ResolvedTick, true, await.SettleTicks,
+				refused ? ValidatorRejected : null, refused ? await.Orders : null);
 		}
 
 		/// <summary>
@@ -370,13 +403,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var actors = GroupActors(world, request);
 			var order = ToGroupOrder(world, request, actors);
 			var move = order.OrderString is "Move" or "AttackMove";
-			var tracked = move || order.OrderString is "Attack" or "DeployTransform";
 
-			// Each await is registered on the copy of the order that the engine resolves for its actor, so Resolve matches it by subject.
-			var settleTicks = move ? request.SettleTicks ?? AgentOrderAwait.DefaultSettleTicks : 0;
-			var awaits = tracked
-				? actors.Select(a => AgentOrderAwait.Register(Order.FromGroupedOrder(order, a), settleTicks)).ToArray()
-				: null;
+			// Each await is registered on the copy of the order that the engine resolves for its actor, so Resolve matches it by
+			// subject. Every order name gets one (9.2), as the single-actor reply does.
+			var settleTicks = move && request.SettleTicks is { } given ? given : AgentOrderAwait.DefaultSettleTicks;
+			var awaits = actors.Select(a => AgentOrderAwait.Register(Order.FromGroupedOrder(order, a), settleTicks)).ToArray();
 			world.IssueOrder(order);
 			foreach (var actor in actors)
 				selection.Ordered(world, actor);
@@ -395,12 +426,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var ack = issued.Ack;
 			var ids = issued.Ordered;
 			var awaits = issued.Awaits;
-			if (awaits == null || issued.Paused)
+			if (issued.Paused)
 			{
 				// Nothing ticks the awaits in a paused game, so drop them here, or they stay in the registry until the world is disposed.
-				if (awaits != null)
-					foreach (var await in awaits)
-						await.Abandon();
+				foreach (var await in awaits)
+					await.Abandon();
 
 				return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, ids.Length, ids.Select(id => new GroupResultV1(id, false)).ToArray());
 			}
@@ -465,7 +495,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			var refused = !await.Valid;
 			return new GroupResultV1(id, true, Valid: await.Valid, EffectTick: await.ResolvedTick, SettledTicks: await.SettleTicks,
-				Path: await.Path ?? [], Reason: refused ? ValidatorRejected : null, Orders: refused ? await.Orders : null);
+				Path: await.IsMoveOrder ? await.Path ?? [] : null, Reason: refused ? ValidatorRejected : null, Orders: refused ? await.Orders : null);
 		}
 
 		/// <summary>

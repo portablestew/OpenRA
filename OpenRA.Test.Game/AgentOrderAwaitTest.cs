@@ -338,6 +338,43 @@ namespace OpenRA.Test
 			Assert.That(unit.Location, Is.EqualTo(start), "A refused Move moved the unit.");
 		}
 
+		[TestCase(TestName = "An order name with no richer shape the validators refuse replies valid:false with the reason and the actor's order names")]
+		public void RefusedUntrackedOrderReplyCarriesReasonAndOrders()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+
+			// As above: the socket's Accept refuses any order the actor would not take, so the shipped ValidateOrder cannot refuse
+			// a socket order. The world's validators are swapped for one that refuses everything, then restored.
+			var validators = hw.World.OrderValidators;
+			var saved = validators.ToArray();
+			Assert.That(saved, Is.Not.Empty, "The world has no validators to swap.");
+			for (var i = 0; i < validators.Length; i++)
+				validators[i] = new RefuseEveryOrder();
+
+			try
+			{
+				// Stop has no richer shape of its own, so 9.2's generic reply is what reports the refusal.
+				using var response = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Stop\"}}");
+				var root = response.RootElement;
+
+				Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+				Assert.That(root.GetProperty("valid").GetBoolean(), Is.False, root.ToString());
+				Assert.That(root.GetProperty("settled").GetBoolean(), Is.True, root.ToString());
+				Assert.That(root.GetProperty("reason").GetString(), Is.EqualTo("rejected by order validator"));
+
+				var orders = root.GetProperty("orders").EnumerateArray().Select(e => e.GetString()).ToArray();
+				Assert.That(orders, Is.Not.Empty, "The refusal listed no order names.");
+				Assert.That(orders, Does.Contain("Stop"), "The actor accepts Stop, so the refusal should list it.");
+			}
+			finally
+			{
+				for (var i = 0; i < saved.Length; i++)
+					validators[i] = saved[i];
+			}
+		}
+
 		/// <summary>A validator that refuses every order. It stands in for the shipped one, which the socket cannot reach.</summary>
 		sealed class RefuseEveryOrder : IValidateOrder
 		{

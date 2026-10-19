@@ -140,7 +140,7 @@ namespace OpenRA.Test
 
 			var value = Convert.ToUInt32(to, CultureInfo.InvariantCulture);
 			var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"SetUnitStance\",\"extra_data\":{value}}}";
-			using (var response = AgentStateDumpTest.Request(line))
+			using (var response = AgentStateDumpTest.RequestWithTicks(hw, line))
 				Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
 
 			hw.Tick(5);
