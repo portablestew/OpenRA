@@ -45,7 +45,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static readonly string[] Names =
 		[
 			"ping", "help", "state", "actors", "maps", "load_skirmish", "order", "orders", "wait",
-			"production", "build", "cancel", "place", "deploy", "screenshot", "undo", "look", "map_state",
+			"production", "production_tree", "build", "cancel", "place", "deploy", "screenshot", "undo", "look", "map_state",
 		];
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
@@ -172,6 +172,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"orders" => Orders(cmd, root),
 				"wait" => Wait(cmd, root, connection),
 				"production" => Run(cmd, () => AgentProduction.List(AgentWorldBridge.RequireWorld())),
+				"production_tree" => Run(cmd, () => AgentProduction.Tree(AgentWorldBridge.RequireWorld())),
 				"build" => StartBuild(cmd, root, selection),
 				"cancel" => StartCancel(cmd, root),
 				"place" => StartPlace(cmd, root, selection),

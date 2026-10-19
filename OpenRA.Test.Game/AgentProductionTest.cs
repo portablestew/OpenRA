@@ -72,6 +72,37 @@ namespace OpenRA.Test
 			Assert.That(Keys(queue.GetProperty("items")[0]), Is.EquivalentTo(ItemKeys));
 		}
 
+		[TestCase(TestName = "production_tree returns the full option records for every queue, and the banner lists the command")]
+		public void ProductionTreeReturnsFullOptionsAndIsInTheBanner()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using var tree = AgentStateDumpTest.Request("{\"cmd\":\"production_tree\"}");
+			var root = tree.RootElement;
+			Assert.That(root.GetProperty("cmd").GetString(), Is.EqualTo("production_tree"));
+			Assert.That(Keys(root), Is.EquivalentTo(ProductionKeys));
+
+			var queue = QueueOf(root, "Building");
+			var options = queue.GetProperty("options").EnumerateArray().ToArray();
+			Assert.That(options.Length, Is.GreaterThan(1), "The Building queue should list more than one option.");
+			foreach (var option in options)
+				Assert.That(Keys(option), Is.EquivalentTo(OptionKeys));
+
+			var powr = Option(queue, "powr");
+			Assert.That(powr.GetProperty("buildable").GetBoolean(), Is.True);
+			Assert.That(powr.GetProperty("cost").GetInt32(), Is.GreaterThan(0));
+
+			// The catalog is the production reply's queues, byte for byte, until production goes compact.
+			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
+			Assert.That(root.GetProperty("queues").GetRawText(), Is.EqualTo(production.RootElement.GetProperty("queues").GetRawText()));
+
+			var commands = (string[])HeadlessMod.ModData.ObjectCreator.FindType("AgentSocket.AgentBanner")
+				.GetProperty("CommandNames").GetValue(null);
+			Assert.That(commands, Does.Contain("production_tree"), "The banner should list production_tree.");
+		}
+
 		[TestCase(TestName = "POWR is buildable from a Construction Yard, with its cost, power amount and prerequisites")]
 		public void PowerPlantIsBuildableFromAConstructionYard()
 		{

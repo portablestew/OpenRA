@@ -48,7 +48,22 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>Builds the production response. Must run on the game thread: it reads live world state.</summary>
 	public static class AgentProduction
 	{
+		/// <summary>The production command's reply: the local player's queues, with every option listed in full.</summary>
 		public static ProductionV1 List(World world)
+		{
+			return Build(world, "production");
+		}
+
+		/// <summary>
+		/// The production_tree reply: the full catalog, with every option of every queue in full. It is the same reply as
+		/// production today, and production will go compact in a later step while this one stays full.
+		/// </summary>
+		public static ProductionV1 Tree(World world)
+		{
+			return Build(world, "production_tree");
+		}
+
+		static ProductionV1 Build(World world, string cmd)
 		{
 			var player = world.LocalPlayer ?? throw new InvalidOperationException("There is no local player");
 			var resources = player.PlayerActor.TraitOrDefault<PlayerResources>();
@@ -64,7 +79,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				.Where(q => q.Producers.Length > 0)
 				.ToArray();
 
-			return new ProductionV1(true, "production", player.PlayerName, resources?.Cash ?? 0, resources?.Resources ?? 0,
+			return new ProductionV1(true, cmd, player.PlayerName, resources?.Cash ?? 0, resources?.Resources ?? 0,
 				AgentStateDump.Power(player.PlayerActor.TraitOrDefault<PowerManager>()), queues);
 		}
 

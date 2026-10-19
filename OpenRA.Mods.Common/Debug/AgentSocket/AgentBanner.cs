@@ -83,6 +83,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"{\"cmd\":\"wait\",\"timeout_ms\":5000}"),
 			("orders", "actor (uint) -> type, orders (the order names the actor accepts)", "{\"cmd\":\"orders\",\"actor\":12}"),
 			("production", "-> player, cash, resources, power, queues (the local player's queues; see Production keys)", "{\"cmd\":\"production\"}"),
+			("production_tree", "-> the same keys as production: the full catalog, with every option of every queue in full", "{\"cmd\":\"production_tree\"}"),
 			("build", "item (string); optional count (positive int, default 1)\n"
 				+ "                -> ok, actor, queue_type, item, count, tick, min_effect_tick, ready, eta_ticks, blocked_by. Not buildable now: ok:false, error,"
 				+ " available (the items build accepts now: buildable and affordable), missing_prerequisites (every unmet prerequisite;"
