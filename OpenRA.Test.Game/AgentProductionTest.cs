@@ -12,7 +12,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -246,8 +245,9 @@ namespace OpenRA.Test
 			using (var second = ConnectionRequest(connection, "{\"cmd\":\"production\"}"))
 				Assert.That(QueueOf(second.RootElement, "Building").GetProperty("changed").GetBoolean(), Is.False);
 
-			// A world load and an undo both reach this through WorldLoaded and WorldAdopted.
-			DiscardWaitingEvents();
+			// An undo runs the real WorldAdopted hook, so this proves the hook clears the seen options, not only DiscardWaiting.
+			var bridgeType = ModType("AgentWorldBridge");
+			bridgeType.GetMethod("WorldAdopted").Invoke(Activator.CreateInstance(bridgeType), [hw.World, null]);
 
 			using var after = ConnectionRequest(connection, "{\"cmd\":\"production\"}");
 			var queue = QueueOf(after.RootElement, "Building");
@@ -324,11 +324,6 @@ namespace OpenRA.Test
 		}
 
 		/// <summary>The world-change path: AgentEvents.DiscardWaiting, which every open connection's Discard runs.</summary>
-		static void DiscardWaitingEvents()
-		{
-			ModType("AgentSocket.AgentEvents").GetMethod("DiscardWaiting", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, null);
-		}
-
 		static Type ModType(string name) => HeadlessMod.ModData.ObjectCreator.FindType(name);
 
 		[TearDown]
