@@ -129,12 +129,19 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " black, explored but unseen darkened. Overlays: blips in owner colour (actors you know); selected units get a green"
 				+ " crosshair, a yellow path ending in a red X, and a red line to their attack target. Writes a file",
 				"{\"cmd\":\"map_state\"}"),
-			("look", "at [x, y] or points [[x, y], ...] (at most 16), and an optional k (1 to 100, default 20)\n"
-				+ "                -> cells (per cell: cell, terrain, buildable, and resource and density when the cell has them) and actors"
-				+ " (the k nearest you know, of any owner: id, type, owner, cell, hp). With points, each actor also has dist (world units,"
-				+ " 1024 per cell) and pt, the point it is nearest to, and the k is shared so each point gets a fair share. Scenery (trees, husks, map props, spawn markers) is left"
-				+ " out. buildable means a construction yard could stand on the cell. An empty or invalid selector is ok:false, error",
-				"{\"cmd\":\"look\",\"points\":[[40,50]],\"k\":5}"),
+			("look", "at [x, y] or points [[x, y], ...] (at most 16), an optional k (1 to 100, default 20), and an optional radius (1 to 20\n"
+				+ "                cells, default 10) for the class summary\n"
+				+ "                -> cells (per cell: cell, terrain, buildable, and resource and density when the cell has them), actors (the k\n"
+				+ " nearest you know, of any owner: id, type, owner, cell, hp), and summary (one entry per point: pt, radius, cells, classes).\n"
+				+ " With points, each actor also has dist (world units, 1024 per cell) and pt, the point it is nearest to, and the k is shared\n"
+				+ " so each point gets a fair share. Scenery (trees, husks, map props, spawn markers) is left out. buildable means a construction\n"
+				+ " yard could stand on the cell. Each summary class names kind (terrain, resource or blocking), the engine's own class, count\n"
+				+ " (cells) and nearest (cell and distance in world units); cells is how many on-map cells within radius the counts cover, so a\n"
+				+ " summary is a neighbourhood, not a survey. terrain is the tileset's type (RA: Clear, Road, Rock, Water, River, Beach, Bridge,\n"
+				+ " Rough, Tree, Wall, Ore, Gems), resource is the mod's type (RA: Ore, Gems, at any density), and blocking is the map-editor\n"
+				+ " category the occupying actor's rules declare (RA trees are Tree), counted only for actors you know, so an unseen doodad is\n"
+				+ " not counted. An empty or invalid selector is ok:false, error",
+				"{\"cmd\":\"look\",\"points\":[[40,50]],\"k\":5,\"radius\":10}"),
 		];
 
 		/// <summary>Each event group, the event type it carries, and the record that defines the payload.</summary>

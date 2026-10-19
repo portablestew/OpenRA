@@ -28,7 +28,7 @@ namespace OpenRA.Test
 		static readonly string[] HelpKeys = ["ok", "cmd", "banner"];
 		static readonly string[] ActorsKeys = ["ok", "cmd", "units"];
 		static readonly string[] MapsKeys = ["ok", "cmd", "maps"];
-		static readonly string[] LookKeys = ["ok", "cmd", "cells", "actors"];
+		static readonly string[] LookKeys = ["ok", "cmd", "cells", "actors", "summary"];
 		static readonly string[] OrdersKeys = ["ok", "cmd", "actor", "type", "orders"];
 		static readonly string[] ProductionKeys = ["ok", "cmd", "player", "cash", "resources", "power", "queues"];
 		static readonly string[] ErrorKeys = ["ok", "cmd", "error", "hint"];

@@ -19,10 +19,11 @@ using OpenRA.Traits;
 namespace OpenRA.Mods.Common.AgentSocket
 {
 	/// <summary>
-	/// A parsed look request (P2.8). Points are the cells looked at. Reference is true for the points form, which names reference
-	/// points, so each record carries dist and pt. The at form is a single cell with no reference points.
+	/// A parsed look request (P2.8, 9.4). Points are the cells looked at. Reference is true for the points form, which names reference
+	/// points, so each record carries dist and pt. The at form is a single cell with no reference points. Radius is how far the class
+	/// summary reaches around each point.
 	/// </summary>
-	public sealed record LookRequest(CPos[] Points, bool Reference, int K);
+	public sealed record LookRequest(CPos[] Points, bool Reference, int K, int Radius);
 
 	/// <summary>A looked-at cell with no resource: its top-left cell, terrain type and whether a construction yard can stand there.</summary>
 	public sealed record LookCellV1(int[] Cell, string Terrain, bool Buildable);
@@ -36,14 +37,35 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>A looked-at actor, for the points form: dist is its distance (world units, 1024 per cell) from the reference point pt.</summary>
 	public sealed record LookNearActorV1(uint Id, string Type, string Owner, int[] Cell, int? Hp, int Dist, int[] Pt);
 
-	/// <summary>The look response (P2.8). Cells has one entry per looked-at cell; Actors holds the k nearest the observer knows.</summary>
-	public sealed record LookV1(bool Ok, string Cmd, object[] Cells, object[] Actors);
+	/// <summary>The nearest occurrence of a class: its cell, and its distance from the reference point (world units, 1024 per cell).</summary>
+	public sealed record LookNearestV1(int[] Cell, int Distance);
 
 	/// <summary>
-	/// The look command (P2.8). It returns the k nearest actors to each reference point, regardless of owner, under the fog policy
+	/// One class the summary found near a reference point (9.4). Kind is terrain, resource or blocking. Class is the engine's own
+	/// name for it: the tileset's terrain type, the mod's resource type, or the map-editor category the occupying actor's rules
+	/// declare. Count is how many cells of that class are within the radius, and Nearest is the closest of them.
+	/// </summary>
+	public sealed record LookClassV1(string Kind, string Class, int Count, LookNearestV1 Nearest);
+
+	/// <summary>
+	/// The class summary for one reference point (9.4): the classes within Radius of Pt, so an agent planning a placement or a
+	/// deploy sees what is around a cell without asking cell by cell. Cells is how many on-map cells the counts cover, so the
+	/// summary is a neighbourhood and never a whole-map survey: a point near the map edge covers fewer cells than the full disc.
+	/// </summary>
+	public sealed record LookSummaryV1(int[] Pt, int Radius, int Cells, LookClassV1[] Classes);
+
+	/// <summary>
+	/// The look response (P2.8, 9.4). Cells has one entry per looked-at cell, Actors holds the k nearest the observer knows, and
+	/// Summary has one entry per requested point, in request order.
+	/// </summary>
+	public sealed record LookV1(bool Ok, string Cmd, object[] Cells, object[] Actors, LookSummaryV1[] Summary);
+
+	/// <summary>
+	/// The look command (P2.8, 9.4). It returns the k nearest actors to each reference point, regardless of owner, under the fog policy
 	/// (AgentFog.Known; the observer's own actors always count). Points share the k: each takes its nearest unclaimed actor in turn, so
 	/// every point gets a fair share and no actor is listed twice. Scenery is left out, as in the state. Each looked-at cell reports its
-	/// terrain type and whether a construction yard can stand on it, and a resource cell adds its resource and density.
+	/// terrain type and whether a construction yard can stand on it, and a resource cell adds its resource and density. Each point also
+	/// gets a class summary: the classes within radius of it, with a count and the nearest occurrence, from the engine's own class names.
 	/// </summary>
 	public static class AgentLook
 	{
@@ -55,6 +77,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>The most points one look takes.</summary>
 		public const int MaxPoints = 16;
+
+		/// <summary>The default reach, in cells, of the class summary around each point.</summary>
+		public const int DefaultRadius = 10;
+
+		/// <summary>The largest summary radius a look accepts.</summary>
+		public const int MaxRadius = 20;
 
 		/// <summary>Parses the request on the socket thread. Returns an error message, or null when the request is valid.</summary>
 		public static string Parse(JsonElement root, out LookRequest request)
@@ -68,6 +96,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var k = DefaultK;
 			if (AgentOrder.IsPresent(root, "k") && (!root.GetProperty("k").TryGetInt32(out k) || k < 1 || k > MaxK))
 				return $"k must be an integer from 1 to {MaxK}";
+
+			var radius = DefaultRadius;
+			if (AgentOrder.IsPresent(root, "radius") && (!root.GetProperty("radius").TryGetInt32(out radius) || radius < 1 || radius > MaxRadius))
+				return $"radius must be an integer from 1 to {MaxRadius}";
 
 			CPos[] points;
 			if (hasAt)
@@ -95,7 +127,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				points = found.ToArray();
 			}
 
-			request = new LookRequest(points, hasPoints, k);
+			request = new LookRequest(points, hasPoints, k, radius);
 			return null;
 		}
 
@@ -152,8 +184,110 @@ namespace OpenRA.Mods.Common.AgentSocket
 				.ToArray();
 
 			var cells = request.Points.Select(p => Cell(world, p)).ToArray();
-			return new LookV1(true, "look", cells, actors);
+			var summary = request.Points.Select(p => Summary(world, observer, p, request.Radius)).ToArray();
+			return new LookV1(true, "look", cells, actors, summary);
 		}
+
+		/// <summary>
+		/// The class summary for one point (9.4). Every on-map cell within radius is counted once per axis: its terrain type, its
+		/// resource type when it has one, and — for a cell an actor occupies — the class of that actor. The classes are the engine's
+		/// own names, so nothing here guesses at a class the rules do not declare. Must run on the game thread.
+		/// </summary>
+		static LookSummaryV1 Summary(World world, Player observer, CPos point, int radius)
+		{
+			var terrain = new Dictionary<string, Counted>();
+			var resource = new Dictionary<string, Counted>();
+			var blocking = new Dictionary<string, Counted>();
+			var blocked = new HashSet<(CPos Cell, string Class)>();
+
+			var origin = world.Map.CenterOfCell(point);
+			var reach = radius * 1024;
+			var layer = world.WorldActor.TraitOrDefault<IResourceLayer>();
+			var cells = 0;
+			for (var y = point.Y - radius; y <= point.Y + radius; y++)
+			{
+				for (var x = point.X - radius; x <= point.X + radius; x++)
+				{
+					var cell = new CPos(x, y);
+					if (!world.Map.Contains(cell))
+						continue;
+
+					var distance = (world.Map.CenterOfCell(cell) - origin).Length;
+					if (distance > reach)
+						continue;
+
+					cells++;
+					Add(terrain, world.Map.GetTerrainInfo(cell).Type, cell, distance);
+
+					var contents = layer?.GetResource(cell) ?? default;
+					if (!string.IsNullOrEmpty(contents.Type))
+						Add(resource, contents.Type, cell, distance);
+				}
+			}
+
+			// A cell is blocking when an actor the observer knows occupies it, and the class is the rules' own category for that
+			// actor, so RA trees count as Tree. The cells are the engine's own occupancy, so a multi-cell footprint blocks all of them.
+			foreach (var a in world.Actors)
+			{
+				if (a.OccupiesSpace == null || a.IsDead || !AgentFog.Reported(a, observer))
+					continue;
+
+				var cls = Class(a);
+				foreach (var occupied in a.OccupiesSpace.OccupiedCells())
+				{
+					var cell = occupied.Cell;
+					if (!world.Map.Contains(cell) || !blocked.Add((cell, cls)))
+						continue;
+
+					var distance = (world.Map.CenterOfCell(cell) - origin).Length;
+					if (distance <= reach)
+						Add(blocking, cls, cell, distance);
+				}
+			}
+
+			// Kinds stay in order (terrain, resource, blocking) because the sort is stable, and classes sort within each kind.
+			var classes = terrain.Select(e => ClassOf("terrain", e))
+				.Concat(resource.Select(e => ClassOf("resource", e)))
+				.Concat(blocking.Select(e => ClassOf("blocking", e)))
+				.OrderBy(c => c.Class, StringComparer.Ordinal)
+				.ToArray();
+
+			return new LookSummaryV1([point.X, point.Y], radius, cells, classes);
+		}
+
+		/// <summary>Adds one cell to a class's count, keeping the nearest occurrence. A tie goes to the smaller cell, so the reply is deterministic.</summary>
+		static void Add(Dictionary<string, Counted> counts, string cls, CPos cell, int distance)
+		{
+			if (!counts.TryGetValue(cls, out var counted))
+			{
+				counts[cls] = new Counted(1, cell, distance);
+				return;
+			}
+
+			var nearer = distance < counted.Distance
+				|| (distance == counted.Distance && (cell.Y, cell.X).CompareTo((counted.Cell.Y, counted.Cell.X)) < 0);
+			counts[cls] = new Counted(counted.Count + 1, nearer ? cell : counted.Cell, nearer ? distance : counted.Distance);
+		}
+
+		static LookClassV1 ClassOf(string kind, KeyValuePair<string, Counted> entry)
+		{
+			return new LookClassV1(kind, entry.Key, entry.Value.Count,
+				new LookNearestV1([entry.Value.Cell.X, entry.Value.Cell.Y], entry.Value.Distance));
+		}
+
+		/// <summary>
+		/// The engine's class for an occupying actor (9.4): the map-editor category its rules declare, so RA trees are Tree and
+		/// buildings are Building. An actor whose rules declare none is grouped as "occupant". Never the actor type: a class, not
+		/// an entity, which is what the owner asked for.
+		/// </summary>
+		static string Class(Actor a)
+		{
+			var categories = a.Info.TraitInfos<MapEditorDataInfo>().SelectMany(i => i.Categories).ToArray();
+			return categories.Length > 0 ? categories[0] : "occupant";
+		}
+
+		/// <summary>A class's running total: how many cells, and the nearest one.</summary>
+		sealed record Counted(int Count, CPos Cell, int Distance);
 
 		/// <summary>One looked-at cell: its terrain and buildability, and its resource when it has one.</summary>
 		static object Cell(World world, CPos cell)

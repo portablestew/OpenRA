@@ -233,30 +233,179 @@ namespace OpenRA.Test
 			}
 
 			// Find a resource cell near the home by asking the socket about blocks of cells, 16 points at a time.
-			CPos? resource = null;
-			for (var y = home.Y - 20; y < home.Y + 20 && resource == null; y += 4)
-			{
-				var block = new List<CPos>();
-				for (var x = home.X - 20; x < home.X + 20; x++)
-					block.Add(new CPos(x, y));
-
-				for (var offset = 0; offset < block.Count && resource == null; offset += 16)
-				{
-					using var response = Look(Points(block.Skip(offset).Take(16).Where(hw.World.Map.Contains).ToArray()));
-					foreach (var cell in response.RootElement.GetProperty("cells").EnumerateArray())
-						if (cell.TryGetProperty("resource", out var type) && type.GetString().Length > 0)
-						{
-							resource = new CPos(cell.GetProperty("cell")[0].GetInt32(), cell.GetProperty("cell")[1].GetInt32());
-							break;
-						}
-				}
-			}
+			var resource = FindResourceNear(hw, home);
 
 			Assert.That(resource, Is.Not.Null, "The test map should have a resource cell near the home.");
 			using var found = Look($"\"at\":[{resource.Value.X},{resource.Value.Y}]");
 			var resourceCell = found.RootElement.GetProperty("cells")[0];
 			Assert.That(resourceCell.GetProperty("resource").GetString(), Is.Not.Empty, "A resource cell should name its resource.");
 			Assert.That(resourceCell.GetProperty("density").GetInt32(), Is.GreaterThan(0), "A resource cell should report its density.");
+		}
+
+		/// <summary>A resource cell near a point, found by asking the socket about blocks of cells, 16 points at a time.</summary>
+		static CPos? FindResourceNear(HeadlessWorld hw, CPos home)
+		{
+			for (var y = home.Y - 20; y < home.Y + 20; y += 4)
+			{
+				var block = new List<CPos>();
+				for (var x = home.X - 20; x < home.X + 20; x++)
+					block.Add(new CPos(x, y));
+
+				for (var offset = 0; offset < block.Count; offset += 16)
+				{
+					using var response = Look(Points(block.Skip(offset).Take(16).Where(hw.World.Map.Contains).ToArray()));
+					foreach (var cell in response.RootElement.GetProperty("cells").EnumerateArray())
+						if (cell.TryGetProperty("resource", out var type) && type.GetString().Length > 0)
+							return new CPos(cell.GetProperty("cell")[0].GetInt32(), cell.GetProperty("cell")[1].GetInt32());
+				}
+			}
+
+			return null;
+		}
+
+		[TestCase(TestName = "The summary names the resource at a resource cell, counted at any density")]
+		public void SummaryNamesResourceClasses()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			hw.Tick(SettleTicks);
+			var home = hw.LocalPlayer.HomeLocation;
+
+			var resource = FindResourceNear(hw, home);
+			Assert.That(resource, Is.Not.Null, "The test map should have a resource cell near the home.");
+
+			using var response = Look($"\"at\":[{resource.Value.X},{resource.Value.Y}],\"radius\":6");
+			var summary = Summary(response.RootElement);
+			var resources = summary.GetProperty("classes").EnumerateArray()
+				.Where(c => c.GetProperty("kind").GetString() == "resource").ToArray();
+
+			Assert.That(resources, Is.Not.Empty, "The summary around a resource cell should name its resource: " + summary.ToString());
+			Assert.That(resources.Sum(c => c.GetProperty("count").GetInt32()), Is.GreaterThanOrEqualTo(1),
+				"At least the point itself has the resource.");
+
+			// The nearest occurrence of the point's own resource is the point itself, at distance zero.
+			var here = resources.Where(c => c.GetProperty("nearest").GetProperty("distance").GetInt32() == 0).ToArray();
+			Assert.That(here, Is.Not.Empty, "The point's own resource class should be at distance zero.");
+			Assert.That(here.Single().GetProperty("nearest").GetProperty("cell")[0].GetInt32(), Is.EqualTo(resource.Value.X));
+			Assert.That(here.Single().GetProperty("nearest").GetProperty("cell")[1].GetInt32(), Is.EqualTo(resource.Value.Y));
+		}
+
+		/// <summary>The cells a summary covers for a point: the on-map cells whose centre is within radius of it (world units, 1024 per cell).</summary>
+		static IEnumerable<CPos> Covered(HeadlessWorld hw, CPos point, int radius)
+		{
+			var origin = hw.World.Map.CenterOfCell(point);
+			for (var y = point.Y - radius; y <= point.Y + radius; y++)
+				for (var x = point.X - radius; x <= point.X + radius; x++)
+				{
+					var cell = new CPos(x, y);
+					if (hw.World.Map.Contains(cell) && (hw.World.Map.CenterOfCell(cell) - origin).Length <= radius * 1024)
+						yield return cell;
+				}
+		}
+
+		/// <summary>The summary entry for the only point of an at-form look.</summary>
+		static JsonElement Summary(JsonElement response)
+		{
+			return response.GetProperty("summary").EnumerateArray().Single();
+		}
+
+		[TestCase(TestName = "The summary counts the classes within radius of a point, and its scope says how many cells it covers")]
+		public void SummaryCountsClassesWithinRadius()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			hw.Tick(SettleTicks);
+			var home = hw.LocalPlayer.HomeLocation;
+
+			using var response = Look($"\"at\":[{home.X},{home.Y}],\"radius\":6");
+			var summary = Summary(response.RootElement);
+
+			Assert.That(summary.GetProperty("pt")[0].GetInt32(), Is.EqualTo(home.X));
+			Assert.That(summary.GetProperty("pt")[1].GetInt32(), Is.EqualTo(home.Y));
+			Assert.That(summary.GetProperty("radius").GetInt32(), Is.EqualTo(6));
+			Assert.That(summary.GetProperty("cells").GetInt32(), Is.EqualTo(Covered(hw, home, 6).Count()),
+				"The scope should say how many on-map cells the counts cover.");
+
+			var cells = summary.GetProperty("cells").GetInt32();
+			var classes = summary.GetProperty("classes").EnumerateArray().ToArray();
+			Assert.That(classes, Is.Not.Empty, "The test map should have terrain to count.");
+			Assert.That(classes.Select(c => c.GetProperty("kind").GetString()).Distinct(),
+				Is.SubsetOf(["terrain", "resource", "blocking"]), "Every class names one of the three kinds.");
+
+			// Every counted cell has exactly one terrain type, so the terrain classes partition the covered cells.
+			var terrain = classes.Where(c => c.GetProperty("kind").GetString() == "terrain").ToArray();
+			Assert.That(terrain.Sum(c => c.GetProperty("count").GetInt32()), Is.EqualTo(cells),
+				"The terrain counts should partition the cells the summary covers.");
+
+			// Each terrain class names the nearest cell of that class, at the smallest distance in the covered disc.
+			var origin = hw.World.Map.CenterOfCell(home);
+			foreach (var cls in terrain)
+			{
+				var type = cls.GetProperty("class").GetString();
+				var expected = Covered(hw, home, 6)
+					.Where(c => hw.World.Map.GetTerrainInfo(c).Type == type)
+					.Min(c => (hw.World.Map.CenterOfCell(c) - origin).Length);
+
+				var nearest = cls.GetProperty("nearest");
+				var named = new CPos(nearest.GetProperty("cell")[0].GetInt32(), nearest.GetProperty("cell")[1].GetInt32());
+
+				Assert.That(nearest.GetProperty("distance").GetInt32(), Is.EqualTo(expected), $"The nearest {type} should be the closest one.");
+				Assert.That((hw.World.Map.CenterOfCell(named) - origin).Length, Is.EqualTo(expected), "The named cell should be at the nearest distance.");
+				Assert.That(hw.World.Map.GetTerrainInfo(named).Type, Is.EqualTo(type), "The named cell should be of that class.");
+			}
+		}
+
+		[TestCase(TestName = "The summary names a blocking class from the occupying actor's rules, and counts the cells it occupies")]
+		public void SummaryNamesBlockingClassFromRules()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			hw.Tick(SettleTicks);
+			var neutral = hw.World.Players.First(p => p.PlayerReference.OwnsWorld);
+
+			// A tree near the home, where the base already sees it, so the summary can count it.
+			var cell = hw.FindClearArea(hw.LocalPlayer.HomeLocation, 2, 2, 3);
+			var tree = hw.CreateActor("T01", cell, neutral);
+			hw.Tick(SettleTicks);
+
+			using var response = Look($"\"at\":[{cell.X},{cell.Y}],\"radius\":3");
+			var summary = Summary(response.RootElement);
+			var blocking = summary.GetProperty("classes").EnumerateArray()
+				.Where(c => c.GetProperty("kind").GetString() == "blocking").ToArray();
+
+			Assert.That(blocking, Is.Not.Empty, "The tree should be counted as a blocking class: " + summary.ToString());
+			var counted = blocking.Single(c => c.GetProperty("class").GetString() == "Tree");
+
+			// The count is the cells the tree occupies within the radius, by the engine's own occupancy.
+			var covered = Covered(hw, cell, 3).ToHashSet();
+			var expected = tree.OccupiesSpace.OccupiedCells().Select(o => o.Cell).Distinct().Count(covered.Contains);
+			Assert.That(counted.GetProperty("count").GetInt32(), Is.EqualTo(expected),
+				"The count should be the cells the tree occupies inside the radius: " + counted.ToString());
+			Assert.That(expected, Is.GreaterThanOrEqualTo(1), "The tree should occupy at least one cell.");
+			Assert.That(counted.GetProperty("nearest").GetProperty("distance").GetInt32(), Is.LessThanOrEqualTo(3 * 1024),
+				"The nearest blocked cell should be within the radius.");
+		}
+
+		[TestCase(TestName = "A radius outside 1 to 20 is refused, and the default radius is ten")]
+		public void RadiusIsBounded()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			hw.Tick(SettleTicks);
+			var home = hw.LocalPlayer.HomeLocation;
+
+			foreach (var bad in (int[])[0, 21, -1])
+			{
+				using var refused = Look($"\"at\":[{home.X},{home.Y}],\"radius\":{bad}");
+				Assert.That(refused.RootElement.GetProperty("ok").GetBoolean(), Is.False, $"radius {bad} should be refused.");
+				Assert.That(refused.RootElement.GetProperty("error").GetString(), Is.EqualTo("radius must be an integer from 1 to 20"));
+			}
+
+			using (var byDefault = Look($"\"at\":[{home.X},{home.Y}]"))
+				Assert.That(Summary(byDefault.RootElement).GetProperty("radius").GetInt32(), Is.EqualTo(10),
+					"Without a radius, the summary covers ten cells.");
+
+			using var one = Look($"\"at\":[{home.X},{home.Y}],\"radius\":1");
+			var summary = Summary(one.RootElement);
+			Assert.That(summary.GetProperty("radius").GetInt32(), Is.EqualTo(1));
+			Assert.That(summary.GetProperty("cells").GetInt32(), Is.EqualTo(Covered(hw, home, 1).Count()),
+				"A radius of one covers the point and its orthogonal neighbours.");
 		}
 	}
 }

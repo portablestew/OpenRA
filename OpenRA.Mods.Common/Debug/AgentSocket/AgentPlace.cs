@@ -211,7 +211,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				.Where(world.Map.Contains)
 				.ToArray();
 
-			var look = AgentLook.Build(world, world.LocalPlayer, new LookRequest(points, true, AgentLook.DefaultK));
+			var look = AgentLook.Build(world, world.LocalPlayer, new LookRequest(points, true, AgentLook.DefaultK, AgentLook.DefaultRadius));
 			return refusal with { Look = look };
 		}
 
