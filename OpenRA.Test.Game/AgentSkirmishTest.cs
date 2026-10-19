@@ -170,7 +170,7 @@ namespace OpenRA.Test
 				Assert.That(root.GetProperty("hint").GetString(), Is.EqualTo("see {\"cmd\":\"help\"}"), line);
 			}
 
-			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			using var state = AgentStateDumpTest.State();
 			Assert.That(state.RootElement.GetProperty("map").GetProperty("uid").GetString(), Is.EqualTo(hw.World.Map.Uid),
 				"A refused request must leave the running world in place.");
 		}
@@ -191,7 +191,7 @@ namespace OpenRA.Test
 			using var unknownBot = AgentStateDumpTest.Request($"{{\"cmd\":\"load_skirmish\",\"map\":\"{uid}\",\"opponents\":[{{\"bot\":\"hard\"}}]}}");
 			Assert.That(unknownBot.RootElement.GetProperty("error").GetString(), Does.StartWith("unknown bot 'hard'; use one of: "));
 
-			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			using var state = AgentStateDumpTest.State();
 			Assert.That(state.RootElement.GetProperty("map").GetProperty("uid").GetString(), Is.EqualTo(hw.World.Map.Uid));
 		}
 
@@ -331,7 +331,7 @@ namespace OpenRA.Test
 			using var hw = HeadlessWorld.Create(1);
 			Assume.That(hw.EnemyPlayer, Is.Not.Null, "The test map has no second playable slot.");
 
-			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			using var state = AgentStateDumpTest.State();
 			var players = state.RootElement.GetProperty("players").EnumerateArray().ToList();
 
 			var human = players.Single(p => p.GetProperty("name").GetString() == "TestPlayer");

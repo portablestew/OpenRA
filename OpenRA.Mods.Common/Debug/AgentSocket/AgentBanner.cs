@@ -31,7 +31,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 		[
 			("ping", "-> tick", "{\"cmd\":\"ping\"}"),
 			("help", "-> banner (this text, as one string)", "{\"cmd\":\"help\"}"),
-			("state", "-> tick, net_frame, map, paused, game_over, local_player, players, units, selection\n"
+			("state", "-> tick, ok, cmd: a refresh ack, so this result carries no digest\n"
+				+ "                -> the digest is the envelope's state: tick, net_frame, map, paused, game_over, local_player, players, units, selection\n"
 				+ "                -> map is uid, title, bounds ([x, y, width, height], Map.Bounds in cells) and spawns (one per player with a home"
 				+ " cell: player, cell [x, y]). Your own buildings in units are id, type, cell and hp only."
 				+ " selection is the sorted ids of the actors your orders selected, empty when none."
@@ -58,7 +59,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					+ "                -> tick, min_effect_tick, settled, valid, effect_tick, settled_ticks, and the order's resolution"
 					+ " outcome. Every order name reports the outcome and returns as soon as it is decided plus the settle window;"
 					+ " nothing waits for travel or completion, which are events, except a DeployTransform, which waits for the"
-+ " transform to end. valid:false adds reason and orders (the names the actor accepts)."
+					+ " transform to end. valid:false adds reason and orders (the names the actor accepts)."
 					+ " A Move adds path, the cells it planned."
 					+ " An Attack replaces valid and effect_tick with outcome (started | no_valid_target; null when unsettled), with"
 					+ " reason when it did not start."
@@ -214,8 +215,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("  A > line is not a response and not an event; skip lines that are just >.\n");
 			text.Append("  An array is one request: the items run in order and results is one JSON array, one result per item.\n");
 			text.Append("  The envelope: results (the request's result, or the array), events (the turn's events, each once: the first 3 of a type in full,"
-				+ " then {event, aggregated, tick_from, tick_to}), state (the digest, as the state\n");
-			text.Append("    command returns it), tick (the game clock after the request). The map image: map_state_png (its workspace path, or\n");
+				+ " then {event, aggregated, tick_from, tick_to}), state (the digest: the fields the state\n"
+				+ "    row lists), tick (the game clock after the request). The map image: map_state_png (its workspace path, or\n");
 			text.Append("    null), map_state_tick (the tick it was rendered at, equal to tick after a world-changing request), map_state_render\n");
 			text.Append("    (ok or unavailable), and map_px_per_cell, map_origin, map_size (its geometry).\n"
 				+ "    A connection's first envelope has initial:true, its state in full, and no events from before its first request.\n"

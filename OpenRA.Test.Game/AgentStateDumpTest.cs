@@ -33,6 +33,7 @@ namespace OpenRA.Test
 	sealed class AgentStateDumpTest
 	{
 		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "paused", "game_over", "local_player", "players", "units", "threats", "selection"];
+		static readonly string[] StateAckKeys = ["ok", "cmd", "tick"];
 		static readonly string[] UnitKeys = ["id", "type", "owner", "cell", "pos", "facing", "hp", "max_hp", "damage", "idle", "activity"];
 		static readonly string[] PowerKeys = ["provided", "drained", "excess", "state"];
 
@@ -98,6 +99,16 @@ namespace OpenRA.Test
 		}
 
 		/// <summary>
+		/// The state digest of a state request. Since 9.3 the command's own results is a refresh ack and the digest is the
+		/// envelope's state, so this is where a caller reads it. The caller disposes the result; RawRequest gives the envelope.
+		/// </summary>
+		internal static JsonDocument State()
+		{
+			using var envelope = RawRequest("{\"cmd\":\"state\"}");
+			return JsonDocument.Parse(envelope.RootElement.GetProperty("state").GetRawText());
+		}
+
+		/// <summary>
 		/// Like <see cref="Request"/>, but the test thread also advances the world each loop, so a request that waits
 		/// for world ticks (every await) can complete. Each loop ticks before it performs delayed actions, so a request
 		/// handled on the game thread always sees at least one tick since it was issued.
@@ -136,12 +147,18 @@ namespace OpenRA.Test
 			return element.EnumerateObject().Select(p => p.Name);
 		}
 
-		[TestCase(TestName = "The state line carries exactly the schema v1 keys, with the nested map, player and unit keys")]
+		[TestCase(TestName = "A state request answers the ack in results, and the schema v1 digest in the envelope's state")]
 		public void StateLineMatchesSchema()
 		{
 			using var hw = HeadlessWorld.Create(1);
-			using var response = Request("{\"cmd\":\"state\"}");
-			var root = response.RootElement;
+			using var envelope = RawRequest("{\"cmd\":\"state\"}");
+			var ack = envelope.RootElement.GetProperty("results");
+			var root = envelope.RootElement.GetProperty("state");
+
+			// 9.3: the command's own result is the refresh ack, and the digest is the envelope's state.
+			Assert.That(Keys(ack), Is.EquivalentTo(StateAckKeys));
+			Assert.That(ack.GetProperty("ok").GetBoolean(), Is.True);
+			Assert.That(ack.GetProperty("cmd").GetString(), Is.EqualTo("state"));
 
 			Assert.That(Keys(root), Is.EquivalentTo(StateKeys));
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True);
@@ -192,7 +209,7 @@ namespace OpenRA.Test
 
 		static PowerReading Power()
 		{
-			using var state = Request("{\"cmd\":\"state\"}");
+			using var state = State();
 			var power = LocalPlayer(state.RootElement).GetProperty("power");
 			return new PowerReading(power.GetProperty("provided").GetInt32(), power.GetProperty("drained").GetInt32(),
 				power.GetProperty("excess").GetInt32(), power.GetProperty("state").GetString());
@@ -203,7 +220,7 @@ namespace OpenRA.Test
 		{
 			using var hw = HeadlessWorld.Create(1);
 
-			using var state = Request("{\"cmd\":\"state\"}");
+			using var state = State();
 			var units = state.RootElement.GetProperty("units").EnumerateArray().ToList();
 			var type = units[0].GetProperty("type").GetString();
 			var owner = units[0].GetProperty("owner").GetString();
@@ -264,7 +281,7 @@ namespace OpenRA.Test
 			Assert.That(load.RootElement.GetProperty("cmd").GetString(), Is.EqualTo("load_skirmish"));
 			Assert.That(load.RootElement.GetProperty("error").GetString(), Is.EqualTo("Unknown map 'no such map'"));
 
-			using var state = Request("{\"cmd\":\"state\"}");
+			using var state = State();
 			Assert.That(state.RootElement.GetProperty("ok").GetBoolean(), Is.True);
 			Assert.That(state.RootElement.GetProperty("map").GetProperty("uid").GetString(), Is.EqualTo(hw.World.Map.Uid));
 		}

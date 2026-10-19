@@ -94,7 +94,7 @@ namespace OpenRA.Test
 		/// <summary>The state's threats, read through a fresh state request.</summary>
 		static List<Entry> Threats()
 		{
-			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			using var state = AgentStateDumpTest.State();
 			return state.RootElement.GetProperty("threats").EnumerateArray()
 				.Select(t => new Entry(
 					t.GetProperty("id").GetUInt32(),
@@ -210,7 +210,7 @@ namespace OpenRA.Test
 			LaunchSatellite(hw, local);
 			hw.Tick(SettleTicks);
 
-			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			using var state = AgentStateDumpTest.State();
 			var entry = state.RootElement.GetProperty("threats").EnumerateArray().Single(t => t.GetProperty("id").GetUInt32() == threat.ActorID);
 
 			Assert.That(entry.EnumerateObject().Select(p => p.Name), Is.EquivalentTo(

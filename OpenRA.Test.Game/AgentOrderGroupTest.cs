@@ -113,7 +113,7 @@ namespace OpenRA.Test
 			var b = hw.CreateActor("e1", hw.FindClearArea(new CPos(60, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
-			using (var before = AgentStateDumpTest.Request("{\"cmd\":\"state\"}"))
+			using (var before = AgentStateDumpTest.State())
 				Assert.That(Selection(before.RootElement), Is.Empty, "Nothing is selected before any order");
 
 			var destination = hw.FindClearArea(new CPos(50, 56), 1, 1, 4);
@@ -126,7 +126,7 @@ namespace OpenRA.Test
 			using (var ping = AgentStateDumpTest.RawRequest("{\"cmd\":\"ping\"}"))
 				Assert.That(Selection(ping.RootElement.GetProperty("state")), Is.EqualTo(ordered), "A request with no order changed the selection.");
 
-			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			using var state = AgentStateDumpTest.State();
 			Assert.That(Selection(state.RootElement), Is.EqualTo(ordered), "The state command's selection is the ordered ids.");
 		}
 

@@ -141,7 +141,7 @@ namespace OpenRA.Test
 			hw.Tick(10);
 
 			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
-			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			using var state = AgentStateDumpTest.State();
 			var item = QueueOf(production.RootElement, "Building").GetProperty("items")[0];
 
 			Assert.That(item.GetProperty("name").GetString(), Is.EqualTo("powr"));

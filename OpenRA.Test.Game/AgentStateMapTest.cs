@@ -60,7 +60,7 @@ namespace OpenRA.Test
 				.ToArray();
 			Assert.That(expectedSpawns.Length, Is.GreaterThan(1), "The test map should have at least two players with a home cell.");
 
-			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			using var state = AgentStateDumpTest.State();
 			var root = state.RootElement.GetProperty("map");
 
 			// bounds is Map.Bounds, as [x, y, width, height].

@@ -66,7 +66,7 @@ namespace OpenRA.Test
 		/// <summary>The ids of the state's units, read through a fresh state request.</summary>
 		static uint[] StateUnitIds()
 		{
-			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			using var state = AgentStateDumpTest.State();
 			return state.RootElement.GetProperty("units").EnumerateArray().Select(u => u.GetProperty("id").GetUInt32()).ToArray();
 		}
 
@@ -80,7 +80,7 @@ namespace OpenRA.Test
 		/// <summary>The ids of the state's threats, read through a fresh state request.</summary>
 		static uint[] ThreatIds()
 		{
-			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			using var state = AgentStateDumpTest.State();
 			return state.RootElement.GetProperty("threats").EnumerateArray().Select(t => t.GetProperty("id").GetUInt32()).ToArray();
 		}
 
@@ -106,7 +106,7 @@ namespace OpenRA.Test
 			Assert.That(ThreatIds(), Does.Contain(enemy.ActorID), "A known enemy unit must be in the threats.");
 			Assert.That(ThreatIds(), Does.Not.Contain(civilian.ActorID), "A known neutral civilian must not be in the threats.");
 
-			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			using var state = AgentStateDumpTest.State();
 			var units = state.RootElement.GetProperty("units").EnumerateArray().Select(u => u.GetProperty("id").GetUInt32()).ToArray();
 			Assert.That(units, Does.Contain(civilian.ActorID), "The known neutral civilian must still be in the state units.");
 		}

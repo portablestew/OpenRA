@@ -78,7 +78,7 @@ namespace OpenRA.Test
 				.Select(a => (Owner: a.Owner.PlayerName, Type: a.Info.Name, Id: a.ActorID))
 				.ToArray();
 
-			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			using var state = AgentStateDumpTest.State();
 			var units = state.RootElement.GetProperty("units").EnumerateArray()
 				.Select(u => (Owner: u.GetProperty("owner").GetString(), Type: u.GetProperty("type").GetString(), Id: u.GetProperty("id").GetUInt32()))
 				.ToArray();
@@ -149,7 +149,7 @@ namespace OpenRA.Test
 		/// <summary>Whether the state's units include the actor, read from a fresh state request.</summary>
 		static bool StateHas(Actor actor)
 		{
-			using var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			using var state = AgentStateDumpTest.State();
 			return state.RootElement.GetProperty("units").EnumerateArray().Any(u => u.GetProperty("id").GetUInt32() == actor.ActorID);
 		}
 

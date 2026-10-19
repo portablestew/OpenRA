@@ -164,7 +164,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			{
 				"ping" => Ping(cmd),
 				"help" => Serialize(new HelpV1(true, cmd, AgentSocketServer.Banner)),
-				"state" => Run(cmd, () => AgentStateDump.Snapshot(AgentWorldBridge.RequireWorld())),
+				"state" => Run(cmd, () => AgentStateDump.Ack(AgentWorldBridge.RequireWorld())),
 				"actors" => Actors(cmd, root),
 				"maps" => Run(cmd, AgentMaps.List),
 				"load_skirmish" => LoadSkirmish(cmd, root),

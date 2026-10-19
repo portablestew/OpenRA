@@ -9,6 +9,7 @@
  */
 #endregion
 
+using System;
 using System.Linq;
 using System.Text.Json;
 using NUnit.Framework;
@@ -26,8 +27,15 @@ namespace OpenRA.Test
 		static readonly string[] EnvelopeKeys = ["results", "events", "state", "tick", "map_state_png", "map_state_tick", "map_state_render",
 			"map_px_per_cell", "map_origin", "map_size"];
 		static readonly string[] PingKeys = ["ok", "cmd", "tick"];
+		static readonly string[] StateAckKeys = ["ok", "cmd", "tick"];
 		static readonly string[] HelpKeys = ["ok", "cmd", "banner"];
 		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "paused", "game_over", "local_player", "players", "units", "threats", "selection"];
+
+		/// <summary>
+		/// The digest keys that belong to no other part of a state reply: the ack carries ok, cmd and tick, and the
+		/// envelope carries tick and the map keys, so each of these must appear exactly once (9.3).
+		/// </summary>
+		static readonly string[] DigestOnlyKeys = ["net_frame", "map", "paused", "game_over", "local_player", "players", "units", "threats", "selection"];
 
 		bool savedAgentSocket;
 
@@ -82,7 +90,7 @@ namespace OpenRA.Test
 			var results = root.GetProperty("results").EnumerateArray().ToArray();
 			Assert.That(results.Length, Is.EqualTo(2));
 			Assert.That(Keys(results[0]), Is.EquivalentTo(PingKeys));
-			Assert.That(Keys(results[1]), Is.EquivalentTo(StateKeys));
+			Assert.That(Keys(results[1]), Is.EquivalentTo(StateAckKeys));
 			Assert.That(Keys(root.GetProperty("state")), Is.EquivalentTo(StateKeys));
 		}
 
@@ -114,8 +122,34 @@ namespace OpenRA.Test
 
 			using var state = AgentStateDumpTest.RawRequest("{\"cmd\":\"state\"}");
 			Assert.That(Keys(state.RootElement), Is.EqualTo(EnvelopeKeys));
-			Assert.That(Keys(state.RootElement.GetProperty("results")), Is.EquivalentTo(StateKeys));
+			Assert.That(Keys(state.RootElement.GetProperty("results")), Is.EquivalentTo(StateAckKeys));
 			Assert.That(Keys(state.RootElement.GetProperty("state")), Is.EquivalentTo(StateKeys));
+		}
+
+		[TestCase(TestName = "A state request reports the digest once, as the envelope's state, and answers the refresh ack")]
+		public void StateReportsTheDigestOnce()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			using var response = AgentStateDumpTest.RawRequest("{\"cmd\":\"state\"}");
+			var root = response.RootElement;
+
+			// 9.3: the command's own result is the ack, so the digest is serialized once, as the envelope's state.
+			Assert.That(Keys(root.GetProperty("results")), Is.EquivalentTo(StateAckKeys));
+			Assert.That(Keys(root.GetProperty("state")), Is.EquivalentTo(StateKeys));
+
+			var text = root.GetRawText();
+			foreach (var key in DigestOnlyKeys)
+				Assert.That(CountOf(text, $"\"{key}\":"), Is.EqualTo(1), $"The digest key {key} should appear exactly once in the reply.");
+		}
+
+		/// <summary>The number of times needle occurs in text.</summary>
+		static int CountOf(string text, string needle)
+		{
+			var count = 0;
+			for (var i = text.IndexOf(needle, StringComparison.Ordinal); i >= 0; i = text.IndexOf(needle, i + needle.Length, StringComparison.Ordinal))
+				count++;
+
+			return count;
 		}
 
 		[TestCase(TestName = "With no world loaded the envelope carries a null tick and state, and its results still answer")]

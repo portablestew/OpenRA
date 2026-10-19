@@ -22,6 +22,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record StateV1(bool Ok, string Cmd, int Tick, int NetFrame, StateMapV1 Map, bool Paused, bool GameOver,
 		string LocalPlayer, PlayerV1[] Players, object[] Units, ThreatV1[] Threats, uint[] Selection);
 
+	/// <summary>
+	/// The state command's own reply (9.3): a refresh ack. The digest is the envelope's state, which every non-help reply
+	/// carries, so this result does not repeat it. Tick is the game clock, as in every other ack.
+	/// </summary>
+	public sealed record StateAckV1(bool Ok, string Cmd, int Tick);
+
 	public sealed record ActorsV1(bool Ok, string Cmd, UnitV1[] Units);
 
 	public sealed record MapV1(string Uid, string Title);
@@ -73,6 +79,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 				StateMap(world), world.Paused, world.IsGameOver,
 				world.LocalPlayer?.PlayerName, world.Players.Select(p => PlayerState(p, world.LocalPlayer)).ToArray(),
 				StateUnits(world), AgentThreats.Build(world, world.LocalPlayer), Selected(world));
+		}
+
+		/// <summary>
+		/// The state command's ack (9.3). The digest follows in the envelope's state, so the reply carries it once, not
+		/// twice. Must run on the game thread: it reads the game clock.
+		/// </summary>
+		public static StateAckV1 Ack(World world)
+		{
+			return new StateAckV1(true, "state", world.WorldTick);
 		}
 
 		/// <summary>The ids of the actors the world has selected, in ActorID order. Empty when nothing is selected.</summary>

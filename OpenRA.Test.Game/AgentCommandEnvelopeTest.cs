@@ -24,8 +24,8 @@ namespace OpenRA.Test
 	sealed class AgentCommandEnvelopeTest
 	{
 		static readonly string[] PingKeys = ["ok", "cmd", "tick"];
+		static readonly string[] StateAckKeys = ["ok", "cmd", "tick"];
 		static readonly string[] HelpKeys = ["ok", "cmd", "banner"];
-		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "paused", "game_over", "local_player", "players", "units", "threats", "selection"];
 		static readonly string[] ActorsKeys = ["ok", "cmd", "units"];
 		static readonly string[] MapsKeys = ["ok", "cmd", "maps"];
 		static readonly string[] LookKeys = ["ok", "cmd", "cells", "actors"];
@@ -74,7 +74,7 @@ namespace OpenRA.Test
 			}
 
 			using (var state = AgentStateDumpTest.Request("{\"cmd\":\"state\"}"))
-				Assert.That(Keys(state.RootElement), Is.EquivalentTo(StateKeys));
+				Assert.That(Keys(state.RootElement), Is.EquivalentTo(StateAckKeys));
 
 			using (var actors = AgentStateDumpTest.Request("{\"cmd\":\"actors\"}"))
 				Assert.That(Keys(actors.RootElement), Is.EquivalentTo(ActorsKeys));

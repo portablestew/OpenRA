@@ -133,7 +133,7 @@ namespace OpenRA.Test
 			Assert.That(Known(far, local), Is.False, "Precondition: the far enemy should be unknown before the launch.");
 
 			// Before the launch.
-			using var before = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			using var before = AgentStateDumpTest.State();
 			var units = before.RootElement.GetProperty("units").EnumerateArray().ToArray();
 
 			var slim = units.Single(u => u.GetProperty("id").GetUInt32() == structure.ActorID);
@@ -159,7 +159,7 @@ namespace OpenRA.Test
 			hw.Tick(SettleTicks);
 			Assert.That(Known(far, local), Is.True, "After the GPS launch, the far enemy should be known.");
 
-			using var after = AgentStateDumpTest.Request("{\"cmd\":\"state\"}");
+			using var after = AgentStateDumpTest.State();
 			var afterEnemy = KnownCountsOf(after.RootElement, enemy.PlayerName);
 			Assert.That(afterEnemy, Is.EqualTo(Expected(hw, enemy, local)),
 				"After the launch, the enemy's known counts should equal the enemy actors now known, by type.");
