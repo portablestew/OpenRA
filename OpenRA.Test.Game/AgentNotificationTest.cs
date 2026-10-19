@@ -32,6 +32,9 @@ namespace OpenRA.Test
 		/// <summary>The mcv's NoTransformNotification in ra (vehicles.yaml, MCV), named by the event.</summary>
 		const string RefusalNotification = "BuildingCannotPlaceAudio";
 
+		/// <summary>The notification PlaceBuilding plays when a player's buildable options change, named by the event.</summary>
+		const string NewOptionsNotification = "NewOptions";
+
 		/// <summary>Ticks to let the map settle, and the refused order run.</summary>
 		const int SettleTicks = 5;
 
@@ -143,6 +146,61 @@ namespace OpenRA.Test
 			Assert.That(refusals, Has.Count.EqualTo(1), "The enemy's refused deploy should emit its notification.");
 			Assert.That(Field<string>(refusals[0], "Owner"), Is.EqualTo(enemy.PlayerName),
 				"The notification should name the enemy as owner, not the local player.");
+		}
+
+		[TestCase(TestName = "A NewOptions notification for the local player lists the options it newly made buildable, and not the ones already buildable")]
+		public void NewOptionsListsTheNewlyBuildableOptions()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			// A fact makes powr buildable, and a powr makes proc buildable (proc needs anypower). The first NewOptions sets the baseline.
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), local);
+			hw.Tick(1);
+			PlayNewOptions(hw, local);
+			TakeNotifications();
+
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(60, 60), 2, 2), local);
+			hw.Tick(1);
+			PlayNewOptions(hw, local);
+			var note = TakeNotifications().Single(n => Field<string>(n, "Name") == NewOptionsNotification);
+
+			var options = ((IEnumerable)Field<object>(note, "Options")).Cast<object>().ToList();
+			var names = options.Select(o => Field<string>(o, "Name")).ToList();
+			Assert.That(names, Does.Contain("proc"), "A powr should make proc newly buildable, so the notification should list it.");
+			Assert.That(names, Does.Not.Contain("powr"), "powr was buildable before the powr was built, so it is not newly available.");
+
+			var proc = options.Single(o => Field<string>(o, "Name") == "proc");
+			Assert.That(Field<bool>(proc, "Buildable"), Is.True);
+			Assert.That(Field<string[]>(proc, "Prerequisites"), Does.Contain("anypower"));
+		}
+
+		[TestCase(TestName = "A NewOptions notification for an enemy carries no options, so the enemy's tech progress does not leak")]
+		public void NewOptionsOfAnEnemyCarriesNoOptions()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var enemy = hw.EnemyPlayer;
+			hw.Tick(SettleTicks);
+
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), enemy);
+			hw.Tick(1);
+			PlayNewOptions(hw, enemy);
+			TakeNotifications();
+
+			// The same unlock as the local test, so the enemy's notification would list proc if it were reported.
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(60, 60), 2, 2), enemy);
+			hw.Tick(1);
+			PlayNewOptions(hw, enemy);
+			var note = TakeNotifications().Single(n => Field<string>(n, "Name") == NewOptionsNotification);
+
+			Assert.That(Field<string>(note, "Owner"), Is.EqualTo(enemy.PlayerName));
+			Assert.That(Field<object>(note, "Options"), Is.Null, "An enemy's NewOptions should carry no option records.");
+		}
+
+		static void PlayNewOptions(HeadlessWorld hw, Player owner)
+		{
+			Game.Sound.PlayNotification(hw.World.Map.Rules, owner, "Speech", NewOptionsNotification, owner.Faction.InternalName);
 		}
 
 		/// <summary>The events of the named types, in the order they were raised. The connection carries every event; a test looks at its own.</summary>

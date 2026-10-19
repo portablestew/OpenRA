@@ -72,6 +72,44 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return Build(world, "production_tree", null);
 		}
 
+		/// <summary>
+		/// The options the player can build now, one per name, in palette order. Only queues with a producer count, as in the
+		/// production reply. Must run on the game thread.
+		/// </summary>
+		internal static ProductionOptionV1[] Buildable(Player player)
+		{
+			var resources = player.PlayerActor.TraitOrDefault<PlayerResources>();
+			var cash = resources == null ? 0 : resources.GetCashAndResources();
+
+			var found = new Dictionary<string, (ActorInfo Info, ProductionOptionV1 Option)>();
+			var queues = player.World.ActorsWithTrait<ProductionQueue>()
+				.Where(t => t.Actor.Owner == player && t.Actor.IsInWorld && !t.Actor.IsDead && ProducersOf(player.World, player, t.Trait).Length > 0);
+
+			foreach (var queue in queues)
+			{
+				var buildable = queue.Trait.BuildableItems().ToArray();
+				var names = buildable.Select(b => b.Name).ToHashSet();
+				foreach (var info in buildable)
+					found.TryAdd(info.Name, (info, OptionOf(queue.Trait, info, names, cash)));
+			}
+
+			return found.Values
+				.OrderBy(f => f.Info.TraitInfo<BuildableInfo>().BuildPaletteOrder)
+				.ThenBy(f => f.Info.Name, StringComparer.Ordinal)
+				.Select(f => f.Option)
+				.ToArray();
+		}
+
+		// The ids of the player's owned producers that build the queue's type, in ascending order. Empty when there is none.
+		static uint[] ProducersOf(World world, Player player, ProductionQueue queue)
+		{
+			return world.ActorsWithTrait<Production>()
+				.Where(t => t.Actor.Owner == player && t.Actor.IsInWorld && !t.Actor.IsDead && t.Trait.Info.Produces.Contains(queue.Info.Type))
+				.Select(t => t.Actor.ActorID)
+				.Order()
+				.ToArray();
+		}
+
 		// seen holds the option signature each queue last reported on its connection. Null lists every queue's options.
 		static ProductionV1 Build(World world, string cmd, Dictionary<(uint Actor, string QueueType), string[]> seen)
 		{
@@ -106,12 +144,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		static ProductionQueueV1 QueueOf(World world, Player player, Actor actor, ProductionQueue queue, int cash,
 			Dictionary<(uint Actor, string QueueType), string[]> seen, Dictionary<(uint Actor, string QueueType), string[]> reported)
 		{
-			var producers = world.ActorsWithTrait<Production>()
-				.Where(t => t.Actor.Owner == player && t.Actor.IsInWorld && !t.Actor.IsDead && t.Trait.Info.Produces.Contains(queue.Info.Type))
-				.Select(t => t.Actor.ActorID)
-				.Order()
-				.ToArray();
-
+			var producers = ProducersOf(world, player, queue);
 			if (producers.Length == 0)
 				return null;
 

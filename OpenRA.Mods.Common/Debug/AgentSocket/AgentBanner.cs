@@ -192,6 +192,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    The same rule holds for events: damaged, killed, captured, order, produced, placed, stance, path and activity are sent only\n");
 			text.Append("    for your own actors and known ones. A captor, producer, attacker or order target is named only when known, else null.\n");
 			text.Append("    power, notification, defeated, game_over and overflow name no actor, so they are always sent.\n");
+			text.Append("    A NewOptions notification lists options only for your side or an ally's: those newly buildable since its last one.\n");
 			text.Append("  Null and omitted: a null key is present with no value (an unknown value, or an optional request key left out).\n");
 			text.Append("    A key that does not apply is omitted:\n");
 			text.Append("    dist and pt in look actors without reference points, and look on a refusal with no local player.\n");
