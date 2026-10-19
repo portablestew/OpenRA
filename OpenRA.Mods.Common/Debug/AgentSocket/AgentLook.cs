@@ -245,7 +245,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				}
 			}
 
-			// Kinds stay in order (terrain, resource, blocking) because the sort is stable, and classes sort within each kind.
+			// Classes sort by name alone, so the kinds interleave. A name that appears under more than one kind (RA's Ore is
+			// both a terrain type and a resource) keeps the order above, terrain then resource then blocking: the sort is stable.
 			var classes = terrain.Select(e => ClassOf("terrain", e))
 				.Concat(resource.Select(e => ClassOf("resource", e)))
 				.Concat(blocking.Select(e => ClassOf("blocking", e)))
