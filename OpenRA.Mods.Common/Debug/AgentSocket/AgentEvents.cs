@@ -130,15 +130,25 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The events raised since this connection's last response.</summary>
 		internal AgentTurnBuffer Turn { get; } = new();
 
+		/// <summary>
+		/// The option signature each production queue last reported on this connection, keyed by actor and queue type (D-3).
+		/// Only the game thread reads or writes it, and a world change clears it, so the next production read lists every queue again.
+		/// </summary>
+		internal Dictionary<(uint Actor, string QueueType), string[]> SeenOptions { get; } = new();
+
 		public AgentConnection()
 		{
 			AgentEvents.Register(this);
 		}
 
-		/// <summary>Drops the events waiting for this connection's next turn (a world change, 8.8).</summary>
+		/// <summary>
+		/// Drops the events waiting for this connection's next turn (a world change, 8.8), and the production options it has seen,
+		/// since the world they describe is gone.
+		/// </summary>
 		internal void Discard()
 		{
 			Turn.Discard();
+			SeenOptions.Clear();
 		}
 
 		internal void Receive(object dto)

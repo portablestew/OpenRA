@@ -52,7 +52,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>Finds the queue that holds the item and issues the cancel order to it. Must run on the game thread.</summary>
 		public static CancelV1 Start(World world, CancelRequest request)
 		{
-			var production = AgentProduction.List(world);
+			var production = AgentProduction.Tree(world);
 			var item = request.Item;
 
 			foreach (var queue in production.Queues)

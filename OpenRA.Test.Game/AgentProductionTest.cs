@@ -9,9 +9,13 @@
  */
 #endregion
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 
 namespace OpenRA.Test
@@ -26,11 +30,12 @@ namespace OpenRA.Test
 	sealed class AgentProductionTest
 	{
 		static readonly string[] ProductionKeys = ["ok", "cmd", "player", "cash", "resources", "power", "queues"];
-		static readonly string[] QueueKeys = ["actor", "producers", "queue_type", "enabled", "options", "items", "blocker"];
+		static readonly string[] QueueKeys = ["actor", "producers", "queue_type", "enabled", "options", "changed", "items", "blocker"];
 		static readonly string[] OptionKeys = ["name", "cost", "power_amount", "prerequisites", "buildable", "can_afford"];
 		static readonly string[] ItemKeys = ["name", "cost", "remaining_cost", "progress", "state"];
 		static readonly string[] PowerKeys = ["provided", "drained", "excess", "state"];
 
+		readonly List<object> connections = [];
 		bool savedAgentSocket;
 
 		[OneTimeSetUp]
@@ -94,7 +99,7 @@ namespace OpenRA.Test
 			Assert.That(powr.GetProperty("buildable").GetBoolean(), Is.True);
 			Assert.That(powr.GetProperty("cost").GetInt32(), Is.GreaterThan(0));
 
-			// The catalog is the production reply's queues, byte for byte, until production goes compact.
+			// With no connection, production lists every option, so its queues match production_tree's byte for byte.
 			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
 			Assert.That(root.GetProperty("queues").GetRawText(), Is.EqualTo(production.RootElement.GetProperty("queues").GetRawText()));
 
@@ -185,6 +190,154 @@ namespace OpenRA.Test
 			Assert.That(production.RootElement.GetProperty("cash").GetInt32(), Is.EqualTo(local.GetProperty("cash").GetInt32()));
 			Assert.That(production.RootElement.GetProperty("power").GetProperty("provided").GetInt32(),
 				Is.EqualTo(local.GetProperty("power").GetProperty("provided").GetInt32()));
+		}
+
+		[TestCase(TestName = "A connection's first production read lists every queue's options, and an immediate second read lists none")]
+		public void SecondReadOmitsUnchangedOptions()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+			var connection = NewConnection();
+
+			using var first = ConnectionRequest(connection, "{\"cmd\":\"production\"}");
+			var building = QueueOf(first.RootElement, "Building");
+			Assert.That(building.GetProperty("changed").GetBoolean(), Is.True);
+			Assert.That(building.GetProperty("options").GetArrayLength(), Is.GreaterThan(1));
+
+			using var second = ConnectionRequest(connection, "{\"cmd\":\"production\"}");
+			var again = QueueOf(second.RootElement, "Building");
+			Assert.That(again.GetProperty("changed").GetBoolean(), Is.False);
+			Assert.That(again.TryGetProperty("options", out _), Is.False, "An unchanged queue leaves its options out.");
+			Assert.That(Keys(again), Is.EquivalentTo(QueueKeys.Where(k => k != "options")));
+		}
+
+		[TestCase(TestName = "Once a prerequisite is met the option set changes, so the options come back with changed true")]
+		public void OptionsReturnWhenAPrerequisiteIsMet()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+			var connection = NewConnection();
+
+			using var before = ConnectionRequest(connection, "{\"cmd\":\"production\"}");
+			Assert.That(Option(QueueOf(before.RootElement, "Building"), "proc").GetProperty("buildable").GetBoolean(), Is.False);
+
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(60, 60), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using var after = ConnectionRequest(connection, "{\"cmd\":\"production\"}");
+			var queue = QueueOf(after.RootElement, "Building");
+			Assert.That(queue.GetProperty("changed").GetBoolean(), Is.True);
+			Assert.That(Option(queue, "proc").GetProperty("buildable").GetBoolean(), Is.True);
+		}
+
+		[TestCase(TestName = "A world change clears a connection's seen options, so the next production read lists every queue again")]
+		public void WorldChangeClearsTheSeenOptions()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+			var connection = NewConnection();
+
+			using (var first = ConnectionRequest(connection, "{\"cmd\":\"production\"}"))
+				Assert.That(QueueOf(first.RootElement, "Building").GetProperty("changed").GetBoolean(), Is.True);
+
+			using (var second = ConnectionRequest(connection, "{\"cmd\":\"production\"}"))
+				Assert.That(QueueOf(second.RootElement, "Building").GetProperty("changed").GetBoolean(), Is.False);
+
+			// A world load and an undo both reach this through WorldLoaded and WorldAdopted.
+			DiscardWaitingEvents();
+
+			using var after = ConnectionRequest(connection, "{\"cmd\":\"production\"}");
+			var queue = QueueOf(after.RootElement, "Building");
+			Assert.That(queue.GetProperty("changed").GetBoolean(), Is.True);
+			Assert.That(queue.TryGetProperty("options", out _), Is.True);
+		}
+
+		[TestCase(TestName = "A change in can_afford alone does not list the options again")]
+		public void CanAffordAloneIsNotAChange()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+			SetLocalCash(hw, 0);
+			var connection = NewConnection();
+
+			using var first = ConnectionRequest(connection, "{\"cmd\":\"production\"}");
+			Assert.That(Option(QueueOf(first.RootElement, "Building"), "powr").GetProperty("can_afford").GetBoolean(), Is.False);
+
+			SetLocalCash(hw, 10000);
+			using var second = ConnectionRequest(connection, "{\"cmd\":\"production\"}");
+			Assert.That(QueueOf(second.RootElement, "Building").GetProperty("changed").GetBoolean(), Is.False,
+				"can_afford is not part of the option set, so cash moving does not list the options again.");
+
+			// The cash did move: the full catalog now reports powr as affordable.
+			using var tree = AgentStateDumpTest.Request("{\"cmd\":\"production_tree\"}");
+			Assert.That(Option(QueueOf(tree.RootElement, "Building"), "powr").GetProperty("can_afford").GetBoolean(), Is.True);
+		}
+
+		[TestCase(TestName = "production_tree lists every option and leaves a connection's seen options as they were")]
+		public void TreeDoesNotChangeTheSeenOptions()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+			var connection = NewConnection();
+
+			using (var first = ConnectionRequest(connection, "{\"cmd\":\"production\"}"))
+				Assert.That(QueueOf(first.RootElement, "Building").GetProperty("changed").GetBoolean(), Is.True);
+
+			using (var tree = ConnectionRequest(connection, "{\"cmd\":\"production_tree\"}"))
+				Assert.That(QueueOf(tree.RootElement, "Building").GetProperty("changed").GetBoolean(), Is.True);
+
+			using var second = ConnectionRequest(connection, "{\"cmd\":\"production\"}");
+			Assert.That(QueueOf(second.RootElement, "Building").GetProperty("changed").GetBoolean(), Is.False);
+		}
+
+		/// <summary>A connection as the socket makes one. Every connection a test makes is closed in TearDown.</summary>
+		object NewConnection()
+		{
+			var connection = ModType("AgentSocket.AgentConnection").GetConstructor(Type.EmptyTypes).Invoke(null);
+			connections.Add(connection);
+			return connection;
+		}
+
+		/// <summary>
+		/// Runs one request line on a connection, as the socket does, and returns the envelope's results. The game thread is
+		/// pumped while the request waits, as RawRequest does. The caller disposes the result.
+		/// </summary>
+		static JsonDocument ConnectionRequest(object connection, string line)
+		{
+			var handle = ModType("AgentSocket.AgentSocketCommands").GetMethod("Handle", [typeof(string), connection.GetType()]);
+			var request = Task.Run(() => (string)handle.Invoke(null, [line, connection]));
+
+			var deadline = DateTime.UtcNow.AddSeconds(10);
+			while (!request.IsCompleted && DateTime.UtcNow < deadline)
+			{
+				Game.PerformDelayedActions();
+				Thread.Sleep(1);
+			}
+
+			using var envelope = JsonDocument.Parse(request.GetAwaiter().GetResult());
+			return AgentStateDumpTest.Results(envelope);
+		}
+
+		/// <summary>The world-change path: AgentEvents.DiscardWaiting, which every open connection's Discard runs.</summary>
+		static void DiscardWaitingEvents()
+		{
+			ModType("AgentSocket.AgentEvents").GetMethod("DiscardWaiting", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, null);
+		}
+
+		static Type ModType(string name) => HeadlessMod.ModData.ObjectCreator.FindType(name);
+
+		[TearDown]
+		public void CloseConnections()
+		{
+			foreach (var connection in connections)
+				connection.GetType().GetMethod("Close").Invoke(connection, null);
+
+			connections.Clear();
 		}
 
 		internal static IEnumerable<string> Keys(JsonElement element)

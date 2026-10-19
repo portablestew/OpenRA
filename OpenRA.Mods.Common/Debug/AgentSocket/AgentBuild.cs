@@ -82,7 +82,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>Validates the request against the production list, then issues it. Must run on the game thread.</summary>
 		public static BuildV1 Start(World world, BuildRequest request, AgentSelection selection)
 		{
-			var production = AgentProduction.List(world);
+			var production = AgentProduction.Tree(world);
 			var item = request.Item;
 
 			if (!world.Map.Rules.Actors.TryGetValue(item, out var info))

@@ -171,7 +171,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"order" => IssueOrder(cmd, root, selection),
 				"orders" => Orders(cmd, root),
 				"wait" => Wait(cmd, root, connection),
-				"production" => Run(cmd, () => AgentProduction.List(AgentWorldBridge.RequireWorld())),
+				"production" => Run(cmd, () => AgentProduction.List(AgentWorldBridge.RequireWorld(), connection)),
 				"production_tree" => Run(cmd, () => AgentProduction.Tree(AgentWorldBridge.RequireWorld())),
 				"build" => StartBuild(cmd, root, selection),
 				"cancel" => StartCancel(cmd, root),

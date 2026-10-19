@@ -97,7 +97,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (building == null)
 				throw new InvalidOperationException($"'{item}' is not a building");
 
-			var queues = AgentProduction.List(world).Queues
+			var queues = AgentProduction.Tree(world).Queues
 				.Select(q => (Info: q, Trait: AgentBuild.QueueTrait(world, q)))
 				.Where(x => x.Trait.CanBuild(info))
 				.ToArray();
