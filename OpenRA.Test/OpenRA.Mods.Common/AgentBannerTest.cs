@@ -124,6 +124,15 @@ namespace OpenRA.Test
 			Assert.That(banner, Does.Contain("An overflow event is sent before the events that follow it"));
 		}
 
+		[TestCase(TestName = "The banner says the static data rides with the first state of a connection and after a world change")]
+		public void BannerDocumentsTheStaticData()
+		{
+			var banner = AgentSocketServer.Banner;
+
+			Assert.That(banner, Does.Contain("The static data (state.map, and players' faction, bot and handicap) rides with the state"));
+			Assert.That(banner, Does.Contain("a reconnect; in the envelopes between, those keys are null."));
+		}
+
 		[TestCase(TestName = "The banner has one blank line, at its end, so a client can read up to the blank line")]
 		public void BannerEndsWithTheOnlyBlankLine()
 		{

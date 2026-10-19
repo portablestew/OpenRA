@@ -348,7 +348,7 @@ namespace OpenRA.Test
 		{
 			using var hw = HeadlessWorld.Create(1);
 
-			var snapshot = ModType("AgentSocket.AgentStateDump").GetMethod("Snapshot", Static).Invoke(null, [hw.World]);
+			var snapshot = ModType("AgentSocket.AgentStateDump").GetMethod("Snapshot", Static).Invoke(null, [hw.World, true]);
 			var opponentType = ModType("AgentSocket.SkirmishOpponentV1");
 			var opponents = Array.CreateInstance(opponentType, 1);
 			opponents.SetValue(Activator.CreateInstance(opponentType, ["Normal AI", "normal", 70, "Multi1"]), 0);

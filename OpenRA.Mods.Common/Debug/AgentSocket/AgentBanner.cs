@@ -232,6 +232,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    null), map_state_tick (the tick it was rendered at, equal to tick after a world-changing request), map_state_render\n");
 			text.Append("    (ok or unavailable), and map_px_per_cell, map_origin, map_size (its geometry).\n"
 				+ "    A connection's first envelope has initial:true, its state in full, and no events from before its first request.\n"
+				+ "    The static data (state.map, and players' faction, bot and handicap) rides with the state until a world change (an undo,\n"
+				+ "    a load_skirmish, a new world) or a reconnect; in the envelopes between, those keys are null.\n"
 				+ " With no world loaded, tick, state and\n");
 			text.Append("    the image are null, and render is unavailable.\n");
 			text.Append("  Add \"digest\":false to an object request to drop state and the map keys. An array drops them only when every item sets it.\n");

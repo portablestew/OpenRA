@@ -136,18 +136,25 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		internal Dictionary<(uint Actor, string QueueType), string[]> SeenOptions { get; } = new();
 
+		/// <summary>
+		/// Whether an envelope on this connection has carried the static data (the map, and each player's faction, bot and handicap)
+		/// since the last world change (C). A world change clears it, so the next state read sends the static data again.
+		/// </summary>
+		internal bool StaticsSent { get; set; }
+
 		public AgentConnection()
 		{
 			AgentEvents.Register(this);
 		}
 
 		/// <summary>
-		/// Drops the events waiting for this connection's next turn (a world change, 8.8), and the production options it has seen,
-		/// since the world they describe is gone.
+		/// Drops the events waiting for this connection's next turn (a world change, 8.8), the production options it has seen,
+		/// and the static data it has sent (C), since the world they describe is gone.
 		/// </summary>
 		internal void Discard()
 		{
 			Turn.Discard();
+			StaticsSent = false;
 			SeenOptions.Clear();
 		}
 

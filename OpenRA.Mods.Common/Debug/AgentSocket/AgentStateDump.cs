@@ -34,7 +34,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	/// <summary>
 	/// The state's map (P2.6). Bounds is Map.Bounds as [x, y, width, height]. Spawns has one entry per player that has a home cell.
-	/// The maps command keeps the uid and title only (MapV1).
+	/// The maps command keeps the uid and title only (MapV1). The map is static (C): null in an envelope that does not carry it.
 	/// </summary>
 	public sealed record StateMapV1(string Uid, string Title, int[] Bounds, SpawnV1[] Spawns);
 
@@ -48,9 +48,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// all of them for the local player, and for another player only those AgentFog says are known. Null when there is no local
 	/// player. Bot is the AI type of a bot-owned player and null for a human, so a later envelope proves which opponents
 	/// load_skirmish started. Handicap is the player's handicap percent (Player.Handicap, 0 for a player without one).
+	/// Faction, Bot and Handicap are static (C): null in an envelope that does not carry the static data, which is every envelope
+	/// after a connection's first one, until a world change. Name, the economy and the counts are always sent.
 	/// </summary>
 	public sealed record PlayerV1(string Name, string Faction, int? Cash, int? Resources, int? ResourceCapacity, bool Dead, PowerV1 Power,
-		Dictionary<string, int> KnownCounts, string Bot, int Handicap);
+		Dictionary<string, int> KnownCounts, string Bot, int? Handicap);
 
 	/// <summary>
 	/// Provided and Drained are the PowerManager totals. Excess is Provided - Drained. State is the PowerState name:
@@ -74,11 +76,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>Builds the schema v1 snapshot. Must run on the game thread: it reads live world state.</summary>
 	public static class AgentStateDump
 	{
-		public static StateV1 Snapshot(World world)
+		/// <summary>
+		/// The snapshot. statics is whether it carries the static data (C): the map, and each player's faction, bot and handicap.
+		/// Without it those come out null. A null connection always asks for them.
+		/// </summary>
+		public static StateV1 Snapshot(World world, bool statics = true)
 		{
 			return new StateV1(true, "state", world.WorldTick, world.NetFrameNumber,
-				StateMap(world), world.Paused, world.IsGameOver,
-				world.LocalPlayer?.PlayerName, world.Players.Select(p => PlayerState(p, world.LocalPlayer)).ToArray(),
+				statics ? StateMap(world) : null, world.Paused, world.IsGameOver,
+				world.LocalPlayer?.PlayerName, world.Players.Select(p => PlayerState(p, world.LocalPlayer, statics)).ToArray(),
 				StateUnits(world), AgentThreats.Build(world, world.LocalPlayer), Selected(world));
 		}
 
@@ -209,17 +215,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 				a.IsIdle, a.CurrentActivity?.GetType().Name);
 		}
 
-		static PlayerV1 PlayerState(Player p, Player observer)
+		static PlayerV1 PlayerState(Player p, Player observer, bool statics)
 		{
 			// The economy is hidden from every player who is not allied with the observer, and so is the power.
 			var own = observer != null && observer.IsAlliedWith(p);
 			var resources = own ? p.PlayerActor.TraitOrDefault<PlayerResources>() : null;
 			var power = own ? p.PlayerActor.TraitOrDefault<PowerManager>() : null;
 
-			return new PlayerV1(p.PlayerName, p.Faction?.InternalName,
+			return new PlayerV1(p.PlayerName, statics ? p.Faction?.InternalName : null,
 				own ? resources?.Cash ?? 0 : null, own ? resources?.Resources ?? 0 : null, own ? resources?.ResourceCapacity ?? 0 : null,
 				p.WinState == WinState.Lost,
-				Power(power), KnownCounts(p, observer), p.BotType, p.Handicap);
+				Power(power), KnownCounts(p, observer), statics ? p.BotType : null, statics ? p.Handicap : null);
 		}
 
 		/// <summary>The PowerManager totals and state, or null for a player without a PowerManager.</summary>

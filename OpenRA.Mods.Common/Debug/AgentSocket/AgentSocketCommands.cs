@@ -83,7 +83,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 			catch (JsonException)
 			{
-				return AgentEnvelope.Wrap(Error(null, "invalid json"), includeState: true, initial: TakeInitial(ref initial));
+				return AgentEnvelope.Wrap(Error(null, "invalid json"), includeState: true, initial: TakeInitial(ref initial), connection: connection);
 			}
 
 			using (doc)
@@ -97,7 +97,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					var items = root.EnumerateArray().ToArray();
 					var results = "[" + string.Join(",", items.Select((item, index) =>
 						UndoRefusal(item, index, items.Length) ?? HandleItem(item, connection, selection))) + "]";
-					return AgentEnvelope.Wrap(results, AgentEnvelope.WantsState(items), connection?.Turn.Flush(), first);
+					return AgentEnvelope.Wrap(results, AgentEnvelope.WantsState(items), connection?.Turn.Flush(), first, connection);
 				}
 
 				// help is documentation, not a turn: it answers with the banner alone, and leaves the first envelope to the next request.
@@ -106,7 +106,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					return HandleItem(root, connection, selection);
 
 				var initialTurn = StartTurn(ref initial, connection);
-				return AgentEnvelope.Wrap(HandleItem(root, connection, selection), AgentEnvelope.WantsState(root), connection?.Turn.Flush(), initialTurn);
+				return AgentEnvelope.Wrap(HandleItem(root, connection, selection), AgentEnvelope.WantsState(root), connection?.Turn.Flush(), initialTurn, connection);
 			}
 		}
 

@@ -242,5 +242,63 @@ namespace OpenRA.Test
 			Assert.That(IsInitial(second[0]), Is.True,
 				"A second connection's first envelope should be initial too.");
 		}
+
+		/// <summary>The state's player entry for a name.</summary>
+		static JsonElement PlayerEntry(JsonElement envelope, string name)
+		{
+			return envelope.GetProperty("state").GetProperty("players").EnumerateArray()
+				.Single(p => p.GetProperty("name").GetString() == name);
+		}
+
+		[TestCase(TestName = "A connection's first envelope carries the static data, and a later envelope on it leaves that data null")]
+		public void StaticsOnlyInFirstEnvelopeOfAConnection()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			var responses = Responses(Serve(hw, "{\"cmd\":\"ping\"}\n{\"cmd\":\"ping\"}\n"));
+			Assert.That(responses, Has.Count.EqualTo(2));
+
+			Assert.That(responses[0].GetProperty("state").GetProperty("map").ValueKind, Is.EqualTo(JsonValueKind.Object),
+				"The first envelope should carry the map.");
+			var firstPlayer = PlayerEntry(responses[0], local.PlayerName);
+			Assert.That(firstPlayer.GetProperty("faction").ValueKind, Is.EqualTo(JsonValueKind.String),
+				"The first envelope should carry the player's faction.");
+			Assert.That(firstPlayer.GetProperty("handicap").ValueKind, Is.EqualTo(JsonValueKind.Number),
+				"The first envelope should carry the player's handicap.");
+
+			Assert.That(responses[1].GetProperty("state").GetProperty("map").ValueKind, Is.EqualTo(JsonValueKind.Null),
+				"A later envelope on the connection should leave the map null.");
+			var laterPlayer = PlayerEntry(responses[1], local.PlayerName);
+			Assert.That(laterPlayer.GetProperty("faction").ValueKind, Is.EqualTo(JsonValueKind.Null),
+				"A later envelope should leave the faction null.");
+			Assert.That(laterPlayer.GetProperty("bot").ValueKind, Is.EqualTo(JsonValueKind.Null),
+				"A later envelope should leave the bot null.");
+			Assert.That(laterPlayer.GetProperty("handicap").ValueKind, Is.EqualTo(JsonValueKind.Null),
+				"A later envelope should leave the handicap null.");
+			Assert.That(laterPlayer.GetProperty("name").GetString(), Is.EqualTo(local.PlayerName),
+				"A later envelope should keep the player's name, the key its entry is found by.");
+		}
+
+		[TestCase(TestName = "A reconnect sends the static data again, in its first envelope")]
+		public void ReconnectResendsStatics()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			var first = Responses(Serve(hw, "{\"cmd\":\"ping\"}\n"));
+			Assert.That(first[0].GetProperty("state").GetProperty("map").ValueKind, Is.EqualTo(JsonValueKind.Object),
+				"Precondition: the first connection's first envelope should carry the map.");
+
+			var second = Responses(Serve(hw, "{\"cmd\":\"ping\"}\n{\"cmd\":\"ping\"}\n"));
+			Assert.That(second[0].GetProperty("state").GetProperty("map").ValueKind, Is.EqualTo(JsonValueKind.Object),
+				"A reconnect's first envelope should carry the map again.");
+			Assert.That(PlayerEntry(second[0], local.PlayerName).GetProperty("faction").ValueKind, Is.EqualTo(JsonValueKind.String),
+				"A reconnect's first envelope should carry the faction again.");
+			Assert.That(second[1].GetProperty("state").GetProperty("map").ValueKind, Is.EqualTo(JsonValueKind.Null),
+				"The reconnect's second envelope should leave the map null.");
+		}
 	}
 }

@@ -34,11 +34,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// reports map_state_render "unavailable" and does not fail the request either. events is the turn's events, already
 		/// flushed and aggregated by the caller; null, or no events, writes an empty array.
 		/// </summary>
-		public static string Wrap(string results, bool includeState, IReadOnlyList<object> events = null, bool initial = false)
+		public static string Wrap(string results, bool includeState, IReadOnlyList<object> events = null, bool initial = false,
+			AgentConnection connection = null)
 		{
 			// A connection's first envelope always carries the state in full, whatever digest the request set (P3.5).
 			includeState |= initial;
-			var (tick, state, map) = Read(includeState);
+
+			// The static data (C) rides with the state until the connection has been sent it. A null connection always gets it.
+			var statics = connection == null || !connection.StaticsSent;
+			var (tick, state, map) = Read(includeState, statics);
+			if (statics && state != null && connection != null)
+				connection.StaticsSent = true;
 
 			var text = new StringBuilder("{\"results\":").Append(results).Append(",\"events\":")
 				.Append(AgentSocketCommands.Serialize(events ?? []));
@@ -80,7 +86,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return items.Length == 0 || items.Any(WantsState);
 		}
 
-		static (int? Tick, string State, MapStateV1 Map) Read(bool includeState)
+		static (int? Tick, string State, MapStateV1 Map) Read(bool includeState, bool statics)
 		{
 			if (!AgentWorldBridge.Loaded)
 				return (null, null, null);
@@ -93,7 +99,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					if (world == null)
 						return ((int?)null, (string)null, (MapStateV1)null);
 
-					var state = includeState ? AgentSocketCommands.Serialize(AgentStateDump.Snapshot(world)) : null;
+					var state = includeState ? AgentSocketCommands.Serialize(AgentStateDump.Snapshot(world, statics)) : null;
 					return ((int?)world.WorldTick, state, includeState ? RefreshMap(world) : null);
 				});
 			}

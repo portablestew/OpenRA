@@ -9,8 +9,12 @@
  */
 #endregion
 
+using System;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 
 namespace OpenRA.Test
@@ -186,6 +190,51 @@ namespace OpenRA.Test
 
 			using var after = AgentStateDumpTest.RawRequest(Ping);
 			Assert.That(EnvelopeTick(after), Is.EqualTo(rewoundTick), "The next envelope did not keep the rewound tick.");
+		}
+
+		/// <summary>Runs the lines as one connection through AgentSocketServer.Serve, and returns its envelopes in order.</summary>
+		static JsonDocument[] ServeConnection(params string[] lines)
+		{
+			var serve = HeadlessMod.ModData.ObjectCreator.FindType("AgentSocket.AgentSocketServer")
+				.GetMethod("Serve", [typeof(TextReader), typeof(TextWriter)]);
+			var writer = new StringWriter();
+			var task = Task.Run(() => serve.Invoke(null, [new StringReader(string.Join("\n", lines) + "\n"), writer]));
+
+			var deadline = DateTime.UtcNow.AddSeconds(10);
+			while (!task.IsCompleted && DateTime.UtcNow < deadline)
+			{
+				Game.PerformDelayedActions();
+				Thread.Sleep(1);
+			}
+
+			task.Wait();
+			return writer.ToString().Split('\n')
+				.Where(line => line.StartsWith('{'))
+				.Select(line => JsonDocument.Parse(line))
+				.Where(doc => doc.RootElement.TryGetProperty("results", out _))
+				.ToArray();
+		}
+
+		[TestCase(TestName = "The static data comes back in the envelope after an undo, and stays out of the envelopes after that")]
+		public void StaticsResentAfterUndo()
+		{
+			using var hw = SeedWindow();
+			var envelopes = ServeConnection(Ping, UndoLine($"-{GapSeconds}"), Ping);
+			try
+			{
+				Assert.That(envelopes, Has.Length.EqualTo(3));
+				Assert.That(envelopes[0].RootElement.GetProperty("state").GetProperty("map").ValueKind, Is.EqualTo(JsonValueKind.Object),
+					"Precondition: the connection's first envelope should carry the map.");
+				Assert.That(envelopes[1].RootElement.GetProperty("state").GetProperty("map").ValueKind, Is.EqualTo(JsonValueKind.Object),
+					"The envelope after an undo should carry the map again.");
+				Assert.That(envelopes[2].RootElement.GetProperty("state").GetProperty("map").ValueKind, Is.EqualTo(JsonValueKind.Null),
+					"The envelope after the one that resent the map should leave it null.");
+			}
+			finally
+			{
+				foreach (var envelope in envelopes)
+					envelope.Dispose();
+			}
 		}
 	}
 }
