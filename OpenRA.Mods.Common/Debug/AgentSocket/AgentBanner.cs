@@ -133,7 +133,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " black, explored but unseen darkened. Overlays: blips in owner colour (actors you know); selected units get a green"
 				+ " crosshair, a yellow path ending in a red X, and a red line to their attack target. Writes a file",
 				"{\"cmd\":\"map_state\"}"),
-			("look", "at [x, y] or points [[x, y], ...] (at most 16), an optional k (1 to 100, default 20), and an optional radius (1 to 20\n"
+			("look", "at [x, y] or points [[x, y], ...] (at most 16), an optional k (0 to 100, default 20; 0 returns cells and summary, no actors), and an optional radius (1 to 20\n"
 				+ "                cells, default 10) for the class summary\n"
 				+ "                -> cells (per cell: cell, terrain, buildable, and resource and density when the cell has them), actors (the k\n"
 				+ " nearest you know, of any owner: id, type, owner, cell, hp), and summary (one entry per point: pt, radius, cells, classes).\n"

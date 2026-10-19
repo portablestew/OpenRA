@@ -383,6 +383,48 @@ namespace OpenRA.Test
 				"The nearest blocked cell should be within the radius.");
 		}
 
+		[TestCase(TestName = "k of zero returns cells and summary with no actors, k of one returns the nearest known actor, and k outside 0 to 100 is refused")]
+		public void KZeroIsSummaryOnly()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			// A row of three enemy infantry, one cell apart, starting one cell east of the point.
+			var point = hw.FindClearArea(hw.EnemyPlayer.HomeLocation, 3, 3, 30);
+			for (var i = 1; i <= 3; i++)
+				hw.CreateActor(Infantry, point + new CVec(i, 0), hw.EnemyPlayer);
+			hw.Tick(SettleTicks);
+			LaunchSatellite(hw, local);
+			hw.Tick(SettleTicks);
+
+			using (var none = Look("\"k\":0," + Points(point)))
+			{
+				var root = none.RootElement;
+				Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, "k of zero should be accepted.");
+				Assert.That(root.GetProperty("actors").GetArrayLength(), Is.Zero, "k of zero should return no actors.");
+				Assert.That(root.GetProperty("cells").GetArrayLength(), Is.EqualTo(1), "k of zero should still report the looked-at cell.");
+				Assert.That(Summary(root).GetProperty("classes").GetArrayLength(), Is.GreaterThan(0),
+					"k of zero should still report the class summary.");
+			}
+
+			using (var one = Look("\"k\":1," + Points(point)))
+			{
+				var root = one.RootElement;
+				var expected = NearestKnown(hw, point).Take(1).Select(a => a.ActorID).ToArray();
+				Assert.That(ActorIds(root), Is.EqualTo(expected), "k of one should return the nearest known actor.");
+				Assert.That(root.GetProperty("cells").GetArrayLength(), Is.EqualTo(1));
+				Assert.That(Summary(root).GetProperty("classes").GetArrayLength(), Is.GreaterThan(0));
+			}
+
+			foreach (var bad in (int[])[-1, 101])
+			{
+				using var refused = Look($"\"k\":{bad}," + Points(point));
+				Assert.That(refused.RootElement.GetProperty("ok").GetBoolean(), Is.False, $"k {bad} should be refused.");
+				Assert.That(refused.RootElement.GetProperty("error").GetString(), Is.EqualTo("k must be an integer from 0 to 100"));
+			}
+		}
+
 		[TestCase(TestName = "A radius outside 1 to 20 is refused, and the default radius is ten")]
 		public void RadiusIsBounded()
 		{

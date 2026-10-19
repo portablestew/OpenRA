@@ -72,7 +72,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The default number of actors a look returns.</summary>
 		public const int DefaultK = 20;
 
-		/// <summary>The largest k a look accepts.</summary>
+		/// <summary>The largest k a look accepts. A k of zero returns no actors, only the cells and the summary.</summary>
 		public const int MaxK = 100;
 
 		/// <summary>The most points one look takes.</summary>
@@ -94,8 +94,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return "look takes exactly one of at ([x, y]) or points ([[x, y], ...])";
 
 			var k = DefaultK;
-			if (AgentOrder.IsPresent(root, "k") && (!root.GetProperty("k").TryGetInt32(out k) || k < 1 || k > MaxK))
-				return $"k must be an integer from 1 to {MaxK}";
+			if (AgentOrder.IsPresent(root, "k") && (!root.GetProperty("k").TryGetInt32(out k) || k < 0 || k > MaxK))
+				return $"k must be an integer from 0 to {MaxK}";
 
 			var radius = DefaultRadius;
 			if (AgentOrder.IsPresent(root, "radius") && (!root.GetProperty("radius").TryGetInt32(out radius) || radius < 1 || radius > MaxRadius))
