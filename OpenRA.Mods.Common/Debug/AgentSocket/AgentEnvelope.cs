@@ -40,11 +40,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			// A connection's first envelope always carries the state in full, whatever digest the request set (P3.5).
 			includeState |= initial;
 
-			// The static data (C) rides with the state until the connection has been sent it. A null connection always gets it.
-			var statics = connection == null || !connection.StaticsSent;
-			var (tick, state, map) = Read(includeState, statics);
-			if (statics && state != null && connection != null)
-				connection.StaticsSent = true;
+			var (tick, state, map) = Read(includeState, connection);
 
 			var text = new StringBuilder("{\"results\":").Append(results).Append(",\"events\":")
 				.Append(AgentSocketCommands.Serialize(events ?? []));
@@ -86,7 +82,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return items.Length == 0 || items.Any(WantsState);
 		}
 
-		static (int? Tick, string State, MapStateV1 Map) Read(bool includeState, bool statics)
+		// The static data (C) rides with the state until the connection has been sent it. A null connection always gets it. The flag is
+		// read and set on the game thread with the snapshot, so a world change cannot interleave with it.
+		static (int? Tick, string State, MapStateV1 Map) Read(bool includeState, AgentConnection connection)
 		{
 			if (!AgentWorldBridge.Loaded)
 				return (null, null, null);
@@ -99,7 +97,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 					if (world == null)
 						return ((int?)null, (string)null, (MapStateV1)null);
 
+					var statics = connection == null || !connection.StaticsSent;
 					var state = includeState ? AgentSocketCommands.Serialize(AgentStateDump.Snapshot(world, statics)) : null;
+					if (statics && state != null && connection != null)
+						connection.StaticsSent = true;
 					return ((int?)world.WorldTick, state, includeState ? RefreshMap(world) : null);
 				});
 			}
