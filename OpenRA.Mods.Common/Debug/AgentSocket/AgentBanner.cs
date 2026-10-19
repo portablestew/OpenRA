@@ -101,7 +101,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"{\"cmd\":\"cancel\",\"item\":\"powr\",\"count\":1}"),
 			("place", "item (string); optional cell [x,y] (default: the producer's location)\n"
 				+ "                -> ok, item, requested_cell, search_from, cell, actor, settled, tick, min_effect_tick. The nearest"
-				+ " valid cell within 10 of search_from is used, and the reply waits for the building, so actor names what it placed"
+				+ " valid cell within 10 of search_from is used (cell is where it placed, not requested_cell), and the reply waits for the building, so actor names what it placed"
 				+ " (null when unsettled, in a paused game). Not done: ok:false, error. No valid cell: ok:false, error,"
 				+ " cells_checked, candidates (the nearest 8 cells, each with cell and reason), and look (the look command's reply over those"
 				+ " cells, so the blockers show). A successful place has no look. A refusal has one, empty with no candidates.",
