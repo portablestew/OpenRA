@@ -235,11 +235,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 				if (!request.Await)
 					return Serialize(AgentMarshal.ExecuteOnGameThread(() => AgentOrderJobs.Issue(AgentWorldBridge.RequireWorld(), request, selection)));
 
-				// The game thread issues the order. The socket thread then parks until a Move settles or an Attack has its outcome, so the game keeps ticking.
+				// The game thread issues the order. Every order name registers an await (9.2), so the socket thread then parks
+				// until that await resolves plus its settle window, and the game keeps ticking.
 				var issued = AgentMarshal.ExecuteOnGameThread(() => AgentOrder.Issue(AgentWorldBridge.RequireWorld(), request, selection));
-				if (issued.Await == null)
-					return Serialize(issued.Ack);
-
 				return Serialize(AgentOrder.Settle(issued));
 			}
 			catch (OrderRefusedException e)
