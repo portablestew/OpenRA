@@ -166,5 +166,35 @@ namespace OpenRA.Test
 			Assert.That(afterEnemy.GetValueOrDefault(Infantry), Is.GreaterThan(beforeE1),
 				"After the launch, the far enemy should be counted in the enemy's infantry.");
 		}
+
+		[TestCase(TestName = "A player not allied with the local player has no cash, resources, resource_capacity or power, but keeps known_counts")]
+		public void EnemyEconomyIsHiddenButKnownCountsRemain()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			var enemy = hw.EnemyPlayer;
+			hw.Tick(SettleTicks);
+
+			using var state = AgentStateDumpTest.State();
+			var root = state.RootElement;
+
+			var hidden = PlayerEntry(root, enemy.PlayerName);
+			foreach (var key in new[] { "cash", "resources", "resource_capacity", "power" })
+				Assert.That(hidden.GetProperty(key).ValueKind, Is.EqualTo(JsonValueKind.Null), $"The enemy's {key} should be null.");
+
+			Assert.That(hidden.GetProperty("known_counts").ValueKind, Is.EqualTo(JsonValueKind.Object),
+				"The enemy's known_counts should still be present.");
+			Assert.That(Keys(hidden), Is.SupersetOf(["name", "faction", "dead", "bot", "handicap", "known_counts"]));
+
+			var own = PlayerEntry(root, local.PlayerName);
+			Assert.That(own.GetProperty("cash").ValueKind, Is.EqualTo(JsonValueKind.Number), "The local player's cash should be an int.");
+
+			var ally = hw.World.Players.FirstOrDefault(p => p != local && p != enemy && local.IsAlliedWith(p));
+			if (ally == null)
+				Assert.Inconclusive("The headless world has no allied player, so an ally's economy cannot be checked here.");
+
+			var allied = PlayerEntry(root, ally.PlayerName);
+			Assert.That(allied.GetProperty("cash").ValueKind, Is.EqualTo(JsonValueKind.Number), "An allied player's cash should still be an int.");
+		}
 	}
 }
