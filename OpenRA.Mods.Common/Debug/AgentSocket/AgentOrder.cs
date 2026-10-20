@@ -14,6 +14,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using OpenRA.Mods.Common.Traits;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.AgentSocket
@@ -117,7 +118,20 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// the richer verbs add their own outcome on top of it. Paused is true when the game is paused, which never ticks the await,
 	/// so Settle does not wait for it (Q1).
 	/// </summary>
-	public sealed record Issued(OrderV1 Ack, bool Move, bool Paused, AgentOrderAwait Await);
+	public sealed record Issued(OrderV1 Ack, bool Move, bool Paused, AgentOrderAwait Await, ToggleIssue Toggle = null);
+
+	/// <summary>What a toggle order issued on the game thread: its subject and name, the state asked for, and whether that state already held.</summary>
+	public sealed record ToggleIssue(Actor Subject, string Order, bool On, bool Unchanged);
+
+	/// <summary>
+	/// The reply to a toggle order (3.3). State is "on" or "off": the state the engine left once the order settled, or the state
+	/// already held when Unchanged is true and nothing was issued. Valid, EffectTick, Settled and SettledTicks follow the Move
+	/// reply. Reason and Orders are set only on a refusal.
+	/// </summary>
+	public sealed record ToggleOrderV1(bool Ok, string Cmd, int Tick, int MinEffectTick, bool? Valid, int? EffectTick, bool Settled,
+		int SettledTicks, string State, bool Unchanged,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Orders = null);
 
 	/// <summary>The orders command: the order names an actor accepts. Schema v1, additive.</summary>
 	public sealed record OrdersV1(bool Ok, string Cmd, uint Actor, string Type, string[] Orders);
@@ -308,6 +322,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 				on = onElement.ValueKind == JsonValueKind.True;
 			}
 
+			// A toggle's on sets one actor's state. A group's actors may disagree, so each would need its own check, and it is refused.
+			if (on is not null && (actors != null || typePattern != null))
+				return "on applies to a single actor, not a group";
+
 			request = new OrderRequest(orderElement.GetString(), actor, cell, pos, targetActor, queued, item, extraData, extraLocation,
 				settleTicks, awaits, actors, type, typePattern, on);
 			return null;
@@ -320,6 +338,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static Issued Issue(World world, OrderRequest request, AgentSelection selection)
 		{
 			var order = ToOrder(world, request);
+			if (request.On is { } on)
+				return IssueToggle(world, order, on, selection);
+
 			var move = order.OrderString is "Move" or "AttackMove";
 
 			// Every order name registers an await (9.2), so the reply reports the resolution outcome and returns at that plus the
@@ -332,6 +353,83 @@ namespace OpenRA.Mods.Common.AgentSocket
 			// A paused game never ticks, so Settle does not wait there (Q1), and drops the await it will never settle.
 			var ack = new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
 			return new Issued(ack, move, world.Paused, await);
+		}
+
+		/// <summary>
+		/// Issues a toggle order as its desired state (3.3). It reads the toggle on the game thread, and issues one engine toggle
+		/// only when the state differs from on. When the state already matches, nothing is issued and the reply says unchanged.
+		/// Must run on the game thread: it reads live world state.
+		/// </summary>
+		static Issued IssueToggle(World world, Order order, bool on, AgentSelection selection)
+		{
+			var actor = order.Subject;
+
+			// A toggle still in flight has not flipped yet, so a read now would miss it and a second flip would undo the first.
+			if (AgentOrderAwait.Unresolved(actor, order.OrderString))
+				throw new ArgumentException($"'{order.OrderString}' on actor {actor.ActorID} is still in flight, so wait for it to settle before setting it again");
+
+			var unchanged = ToggleOn(actor, order.OrderString) == on;
+			var toggle = new ToggleIssue(actor, order.OrderString, on, unchanged);
+			selection.Ordered(world, actor);
+
+			var ack = new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
+			if (unchanged)
+				return new Issued(ack, false, world.Paused, null, toggle);
+
+			var await = AgentOrderAwait.Register(order, AgentOrderAwait.DefaultSettleTicks);
+			world.IssueOrder(order);
+			return new Issued(ack, false, world.Paused, await, toggle);
+		}
+
+		/// <summary>The state of the ToggleConditionOnOrder that takes the order name: true when on. Accept has checked the name. Must run on the game thread.</summary>
+		static bool ToggleOn(Actor actor, string order)
+		{
+			return actor.TraitsImplementing<ToggleConditionOnOrder>().First(t => t.Info.OrderName == order).Enabled;
+		}
+
+		static string StateName(bool on)
+		{
+			return on ? "on" : "off";
+		}
+
+		/// <summary>
+		/// The reply to a toggle order (3.3). State is read on the game thread after the order settles, so it is the state the engine
+		/// left, not the one requested. An unchanged request waited for nothing, so it is settled at once.
+		/// </summary>
+		static ToggleOrderV1 SettleToggle(OrderV1 ack, AgentOrderAwait await, bool paused, ToggleIssue toggle)
+		{
+			if (toggle.Unchanged)
+				return new ToggleOrderV1(true, "order", ack.Tick, ack.MinEffectTick, true, ack.Tick, true, 0, StateName(toggle.On), true);
+
+			if (paused)
+			{
+				// Nothing will tick the await in a paused game, so drop it here, or it stays in the registry until the world is disposed.
+				await.Abandon();
+				return ToggleUnsettled(ack, toggle);
+			}
+
+			try
+			{
+				await.Wait();
+			}
+			catch (AgentPausedException)
+			{
+				// The game paused while the wait was parked, so no tick will complete it. Drop it and report it unsettled.
+				await.Abandon();
+				return ToggleUnsettled(ack, toggle);
+			}
+
+			var state = AgentMarshal.ExecuteOnGameThread(() => ToggleOn(toggle.Subject, toggle.Order));
+			var refused = !await.Valid;
+			return new ToggleOrderV1(true, "order", ack.Tick, ack.MinEffectTick, await.Valid, await.ResolvedTick, true, await.SettleTicks,
+				StateName(state), false, refused ? ValidatorRejected : null, refused ? await.Orders : null);
+		}
+
+		/// <summary>The reply for a toggle a paused game left unsettled. The state is still read, since the game thread still runs.</summary>
+		static ToggleOrderV1 ToggleUnsettled(OrderV1 ack, ToggleIssue toggle)
+		{
+			var state = AgentMarshal.ExecuteOnGameThread(() => ToggleOn(toggle.Subject, toggle.Order));
+			return new ToggleOrderV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, StateName(state), false);
 		}
 
 		/// <summary>The Move reply for an await that has finished. Cmd names the request that asked for it.</summary>
@@ -352,6 +450,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			var ack = issued.Ack;
 			var await = issued.Await;
+			if (issued.Toggle is { } toggle)
+				return SettleToggle(ack, await, issued.Paused, toggle);
+
 			if (issued.Paused)
 			{
 				// Nothing will tick the await in a paused game, so drop it here, or it stays in the registry until the world is disposed.

@@ -195,6 +195,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return await;
 		}
 
+		/// <summary>True while an order the socket issued to subject with this name has not resolved yet. Must run on the game thread.</summary>
+		public static bool Unresolved(Actor subject, string order)
+		{
+			lock (Gate)
+				return Pending.Exists(p => ReferenceEquals(p.subject, subject) && p.order == order);
+		}
+
 		/// <summary>
 		/// Parks the calling thread until the await settles or fails, or until timeoutMs of wall-clock time passes. A failed
 		/// await throws its reason. Must not run on the game thread: the game thread is what completes it.
