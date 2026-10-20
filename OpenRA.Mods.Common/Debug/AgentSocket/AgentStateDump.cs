@@ -12,6 +12,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Traits;
 
@@ -70,8 +71,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>
 	/// An own structure in the state units (P2.5): only the keys the agent needs to address it and see its health. Cell is the
 	/// top-left cell. Hp is null for a structure without IHealth. The full UnitV1 entry is kept for every other unit.
+	/// Repairing is true while the local player is among the structure's repairers. PoweredDown is the state of its PowerDown
+	/// toggle, and is omitted (null) for a structure without one.
 	/// </summary>
-	public sealed record StructureV1(uint Id, string Type, int[] Cell, int? Hp);
+	public sealed record StructureV1(uint Id, string Type, int[] Cell, int? Hp, bool Repairing,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? PoweredDown = null);
 
 	/// <summary>Builds the schema v1 snapshot. Must run on the game thread: it reads live world state.</summary>
 	public static class AgentStateDump
@@ -162,7 +166,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return world.Actors
 				.Where(a => a.OccupiesSpace != null && !a.IsDead && !IsScenery(a) && IsInState(a, observer))
 				.OrderBy(a => a.ActorID)
-				.Select(a => IsOwnStructure(a, observer) ? (object)StructureState(a) : UnitState(a))
+				.Select(a => IsOwnStructure(a, observer) ? (object)StructureState(a, observer) : UnitState(a))
 				.ToArray();
 		}
 
@@ -180,9 +184,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return observer != null && a.Owner == observer && a.Info.HasTraitInfo<BuildingInfo>();
 		}
 
-		static StructureV1 StructureState(Actor a)
+		static StructureV1 StructureState(Actor a, Player observer)
 		{
-			return new StructureV1(a.ActorID, a.Info.Name, [a.Location.X, a.Location.Y], a.TraitOrDefault<IHealth>()?.HP);
+			var repairable = a.TraitOrDefault<RepairableBuilding>();
+			return new StructureV1(a.ActorID, a.Info.Name, [a.Location.X, a.Location.Y], a.TraitOrDefault<IHealth>()?.HP,
+				repairable != null && repairable.Repairers.Contains(observer), PowerDownState(a));
+		}
+
+		/// <summary>The state of the structure's PowerDown toggle, or null when it has none.</summary>
+		static bool? PowerDownState(Actor a)
+		{
+			return a.TraitsImplementing<ToggleConditionOnOrder>().FirstOrDefault(t => t.Info.OrderName == "PowerDown")?.Enabled;
 		}
 
 		/// <summary>

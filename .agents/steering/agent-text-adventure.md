@@ -26,3 +26,9 @@ description: How to get into an OpenRA game through the text_adventure tool, and
    `text_adventure(command='{"cmd":"wait","job":1,"timeout_ms":5000}')`
 8. `map_state` writes `map-state.png` to the workspace, the folder the game was started from. Screenshots go to a `screenshots` folder in the same place. Read the `path` the reply gives:
    `text_adventure(command='{"cmd":"map_state"}')`
+- `path.eta_ticks` is a floor.
+- Sell refunds `RefundPercent` of the cost (default 50), scaled by the building's health: repair before you sell.
+- Repair drains cash as it heals: check `cash` in state before you start.
+- Under low power, power down a building you do not need, such as a superweapon, to restore the grid. `power_restored` says when.
+- Check `powers` before you plan around a super weapon: a charging one is not ready, and `remaining_ticks` says when it will be.
+- A `healed` event marks a medic at work. A repair does not raise it.

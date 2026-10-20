@@ -35,7 +35,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ "                -> the digest is the envelope's state: ok, cmd, tick, net_frame, map, paused, game_over, local_player,"
 				+ " players, units, threats, selection\n"
 				+ "                -> map is uid, title, bounds ([x, y, width, height], Map.Bounds in cells) and spawns (one per player with a home"
-				+ " cell: player, cell [x, y]). Your own buildings in units are id, type, cell and hp only."
+				+ " cell: player, cell [x, y]). Your own buildings in units are id, type, cell and hp, plus repairing (true while you are among its repairers)"
+				+ " and powered_down (its PowerDown toggle's state; omitted for a building without one)."
 				+ " selection is the sorted ids of the actors your orders selected, empty when none."
 				+ " players[].known_counts is the count by type of the actors you know: all of your own, and another player's only where known."
 				+ " players[].bot is the AI type of a bot-owned player (null for a human), and players[].handicap its handicap percent."
@@ -57,7 +58,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("order", "exactly one of actor (uint), actors ([uint]), or type (string: a regex matched against the whole type name of"
 				+ " each owned actor, so \"e1\" is e1 only and \"e.\" is every e-type); order (string); at most one of cell [x,y],"
 				+ " pos [x,y,z], target_actor (uint); optional queued (bool), item (string), extra_data (uint), extra_location [x,y],"
-				+ " settle_ticks (Move and AttackMove), await (bool, default true; false is Move and AttackMove only, and single actor only)\n"
+				+ " on (bool; required by a toggle order such as PowerDown, and refused for any other name), settle_ticks (Move and AttackMove), await (bool, default true; false is Move and AttackMove only, and single actor only)\n"
 					+ "                -> tick, min_effect_tick, settled, plus the order's resolution. Every order name reports the"
 					+ " resolution, and nothing waits for travel or completion, which are events. Every name except an Attack and a"
 					+ " DeployTransform reports valid, effect_tick and settled_ticks, and holds the settle window so trailing events"
@@ -68,6 +69,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 					+ " An AttackMove adds outcome (started | no_path), with no path, since its travel is not awaited."
 					+ " A DeployTransform replaces valid, effect_tick and settled_ticks with outcome (completed | canceled; null when"
 					+ " unsettled) and waits for the transform to end, with reason when canceled."
+				+ " A toggle order adds state (on or off: the state it left once settled, or the state already held) and unchanged (true when that state already held, so nothing was issued)."
+				+ " Sell on a sellable structure replaces valid, effect_tick and settled_ticks with outcome (sold; null when unsettled), and a sold event follows."
 				+ " await:false returns job (the id for wait) with tick, min_effect_tick, and does not wait."
 				+ " A group returns ordered (the actor ids), matched, and results (one per actor: actor, valid, effect_tick, settled,"
 				+ " settled_ticks, path, outcome, reason, orders, error; an Attack or a DeployTransform actor carries only actor,"
@@ -81,7 +84,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " status:\"pending\" at the timeout (the job stays open). An unknown job, or a job whose world load_skirmish or undo replaced: ok:false, error."
 				+ " With no job: result:\"events\" when an event arrives (it is in this response's events), or result:\"timeout\"",
 				"{\"cmd\":\"wait\",\"timeout_ms\":5000}"),
-			("orders", "actor (uint) -> type, orders (the order names the actor accepts)", "{\"cmd\":\"orders\",\"actor\":12}"),
+			("orders", "actor (uint) -> type, orders (the order names the actor accepts: Sell on a sellable structure, a toggle's name such as PowerDown on a toggle building, and each support power's key on the player actor)", "{\"cmd\":\"orders\",\"actor\":12}"),
 			("production", "-> player, cash, resources, power, queues (the local player's queues; see Production keys). A queue's options are listed only when they changed since this connection last read them (changed says whether they were); the first read after connect, and the first read after a world change, lists them all", "{\"cmd\":\"production\"}"),
 			("production_tree", "-> the same keys as production: the full catalog, with every option of every queue in full", "{\"cmd\":\"production_tree\"}"),
 			("powers", "-> powers: each support power you can see, with its charge: order (the key an order names), owner, name, description,"
@@ -254,6 +257,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				.Append("    -> {\"ok\":true,\"cmd\":\"order\",\"job\":1,...}\n");
 			text.Append("  then {\"cmd\":\"wait\",\"job\":1,\"timeout_ms\":5000} -> the Move reply, or {\"status\":\"pending\"} after 5 s.\n");
 			text.Append("  An overflow event is sent before the events that follow it. dropped counts the events a full queue discarded.\n");
+			text.Append("  healed is any heal other than a repair: a medic's, for one. A repair, by a depot or a structure's own repair, raises neither damaged nor healed.\n");
+			text.Append("  The player actor is production.queues[].actor; each support power's key (see powers) is one of its orders.\n");
 			text.Append('\n');
 			return text.ToString();
 		}

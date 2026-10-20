@@ -149,6 +149,36 @@ namespace OpenRA.Test
 			Assert.That(AgentSocketServer.Banner, Does.Not.Contain("Game.AgentSocket"));
 		}
 
+		[TestCase(TestName = "The banner documents the structure state flags, and that powered_down is omitted without a PowerDown toggle")]
+		public void BannerDocumentsTheStructureFlags()
+		{
+			var banner = AgentSocketServer.Banner;
+
+			Assert.That(banner, Does.Contain("repairing (true while you are among its repairers)"));
+			Assert.That(banner, Does.Contain("powered_down (its PowerDown toggle's state; omitted for a building without one)"));
+		}
+
+		[TestCase(TestName = "The banner documents the on key, the toggle and Sell replies, and the healed rule")]
+		public void BannerDocumentsToggleSellAndHealed()
+		{
+			var banner = AgentSocketServer.Banner;
+
+			Assert.That(banner, Does.Contain("on (bool; required by a toggle order such as PowerDown, and refused for any other name)"));
+			Assert.That(banner, Does.Contain("state (on or off: the state it left once settled, or the state already held)"));
+			Assert.That(banner, Does.Contain("unchanged (true when that state already held, so nothing was issued)"));
+			Assert.That(banner, Does.Contain("Sell on a sellable structure replaces valid, effect_tick and settled_ticks with outcome (sold; null when unsettled)"));
+			Assert.That(banner, Does.Contain("healed is any heal other than a repair"));
+		}
+
+		[TestCase(TestName = "The banner lists Sell and the toggle names in orders, and says where the player actor's id is")]
+		public void BannerDocumentsTheOrdersAndPlayerActor()
+		{
+			var banner = AgentSocketServer.Banner;
+
+			Assert.That(banner, Does.Contain("Sell on a sellable structure, a toggle's name such as PowerDown on a toggle building"));
+			Assert.That(banner, Does.Contain("The player actor is production.queues[].actor"));
+		}
+
 		[TestCase(TestName = "help returns the banner as one string")]
 		public void HelpReturnsTheBanner()
 		{

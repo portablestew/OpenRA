@@ -294,6 +294,71 @@ namespace OpenRA.Test
 			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo("map must be a string"));
 		}
 
+		// The repairable and toggle traits live in OpenRA.Mods.Common, which this project reaches only by reflection.
+		static readonly Lazy<Type> RepairableType = new(() => HeadlessMod.ModData.ObjectCreator.FindType("Traits.RepairableBuilding"));
+		static readonly string[] OwnStructureKeys = ["id", "type", "cell", "hp", "repairing"];
+		static readonly string[] PoweredDownStructureKeys = ["id", "type", "cell", "hp", "repairing", "powered_down"];
+
+		static JsonElement OwnUnit(JsonElement state, uint id)
+		{
+			return state.GetProperty("units").EnumerateArray().Single(u => u.GetProperty("id").GetUInt32() == id);
+		}
+
+		static object ModTrait(Actor actor, Type type)
+		{
+			return actor.TraitsImplementing<object>().Single(t => t.GetType() == type);
+		}
+
+		[TestCase(TestName = "An own structure's state carries repairing, and powered_down only when it has a PowerDown toggle")]
+		public void OwnStructureStateCarriesRepairingAndPowerDown()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			var plant = hw.CreateActor("powr", hw.FindClearArea(new CPos(60, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using var state = State();
+			var domeState = OwnUnit(state.RootElement, dome.ActorID);
+			Assert.That(Keys(domeState), Is.EquivalentTo(PoweredDownStructureKeys));
+			Assert.That(domeState.GetProperty("repairing").GetBoolean(), Is.False);
+			Assert.That(domeState.GetProperty("powered_down").GetBoolean(), Is.False);
+
+			Assert.That(Keys(OwnUnit(state.RootElement, plant.ActorID)), Is.EquivalentTo(OwnStructureKeys));
+		}
+
+		[TestCase(TestName = "repairing is true while the local player is one of the structure's repairers")]
+		public void RepairingFollowsTheLocalPlayersRepairers()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			var repairable = ModTrait(dome, RepairableType.Value);
+			var repairers = (System.Collections.IList)repairable.GetType().GetField("Repairers").GetValue(repairable);
+
+			repairers.Add(hw.LocalPlayer);
+			using (var repairing = State())
+				Assert.That(OwnUnit(repairing.RootElement, dome.ActorID).GetProperty("repairing").GetBoolean(), Is.True);
+
+			repairers.Remove(hw.LocalPlayer);
+			using (var idle = State())
+				Assert.That(OwnUnit(idle.RootElement, dome.ActorID).GetProperty("repairing").GetBoolean(), Is.False);
+		}
+
+		[TestCase(TestName = "powered_down follows the PowerDown toggle once its on order settles")]
+		public void PoweredDownFollowsThePowerDownOrder()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using (var response = RequestWithTicks(hw, $"{{\"cmd\":\"order\",\"actor\":{dome.ActorID},\"order\":\"PowerDown\",\"on\":true}}"))
+				Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True, response.RootElement.ToString());
+
+			using var state = State();
+			Assert.That(OwnUnit(state.RootElement, dome.ActorID).GetProperty("powered_down").GetBoolean(), Is.True);
+		}
+
 		[TestCase(TestName = "A state or ping request with no live world returns an error envelope")]
 		public void NoWorldReturnsErrorEnvelope()
 		{
