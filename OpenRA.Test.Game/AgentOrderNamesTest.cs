@@ -138,5 +138,81 @@ namespace OpenRA.Test
 			Assert.That(deploy.RootElement.TryGetProperty("error", out _), Is.False, deploy.RootElement.ToString());
 			Assert.That(deploy.RootElement.GetProperty("settled").GetBoolean(), Is.True);
 		}
+
+		[TestCase(TestName = "The orders list gives Sell and the toggle name for a toggle building")]
+		public void OrdersListsSellAndTheToggleName()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"orders\",\"actor\":{dome.ActorID}}}");
+			Assert.That(Names(response.RootElement), Does.Contain("Sell"));
+			Assert.That(Names(response.RootElement), Does.Contain("PowerDown"));
+		}
+
+		[TestCase(TestName = "The orders list gives Sell but no toggle name for a structure with no toggle")]
+		public void OrdersListsSellButNoToggleForAPowerPlant()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var powr = hw.CreateActor("powr", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"orders\",\"actor\":{powr.ActorID}}}");
+			Assert.That(Names(response.RootElement), Does.Contain("Sell"));
+			Assert.That(Names(response.RootElement), Does.Not.Contain("PowerDown"));
+		}
+
+		[TestCase(TestName = "A toggle order with no on key is refused, and the refusal lists the toggle name")]
+		public void ToggleOrderWithoutOnIsRefused()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{dome.ActorID},\"order\":\"PowerDown\"}}");
+			var root = response.RootElement;
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False);
+			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo($"'PowerDown' is a toggle for actor {dome.ActorID}, so it needs on: true or on: false"));
+		}
+
+		[TestCase(TestName = "An on key on a non-toggle order is refused")]
+		public void OnIsRefusedForANonToggleOrder()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var powr = hw.CreateActor("powr", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{powr.ActorID},\"order\":\"Sell\",\"on\":true}}");
+			var root = response.RootElement;
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False);
+			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo($"on applies only to a toggle order, and 'Sell' is not one for actor {powr.ActorID}"));
+		}
+
+		// The toggle's own execution (desired state against current state) is a later step, so this asserts acceptance only.
+		[TestCase(true, TestName = "A toggle order with on: true is accepted")]
+		[TestCase(false, TestName = "A toggle order with on: false is accepted")]
+		public void ToggleOrderWithOnIsAccepted(bool on)
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"order\",\"actor\":{dome.ActorID},\"order\":\"PowerDown\",\"on\":{(on ? "true" : "false")}}}");
+			Assert.That(response.RootElement.TryGetProperty("error", out _), Is.False, response.RootElement.ToString());
+			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
+		}
+
+		[TestCase(TestName = "A Sell order with no on key is accepted for a sellable structure")]
+		public void SellIsAcceptedWithoutOn()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var powr = hw.CreateActor("powr", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"order\",\"actor\":{powr.ActorID},\"order\":\"Sell\"}}");
+			Assert.That(response.RootElement.TryGetProperty("error", out _), Is.False, response.RootElement.ToString());
+			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
+		}
 	}
 }

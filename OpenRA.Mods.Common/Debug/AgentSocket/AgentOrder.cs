@@ -587,7 +587,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// Finds the local-player actor and checks that it accepts the order name. A name outside the accepted set is refused
 		/// here, with no bypass, so nothing is issued for it. The one exception is Attack (P1.6): an actor with no attack trait is
 		/// still issued the order, ValidateOrder refuses it, and the attack reply says why. An on key is refused, since it only
-		/// applies to a toggle order and no order name is a toggle yet. Must run on the game thread.
+		/// applies to a toggle order, and a toggle order needs one: there is no bare toggle (desired state only). Must run on the
+		/// game thread.
 		/// </summary>
 		public static Actor Accept(World world, uint id, string order, bool? on = null)
 		{
@@ -596,7 +597,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (!available.Contains(order) && order != "Attack")
 				throw new OrderRefusedException(id, order, available);
 
-			if (on is not null)
+			var toggle = AgentOrderNames.IsToggle(actor, order);
+			if (toggle && on is null)
+				throw new ArgumentException($"'{order}' is a toggle for actor {id}, so it needs on: true or on: false");
+
+			if (!toggle && on is not null)
 				throw new ArgumentException($"on applies only to a toggle order, and '{order}' is not one for actor {id}");
 
 			return actor;

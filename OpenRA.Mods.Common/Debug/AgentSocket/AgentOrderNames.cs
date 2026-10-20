@@ -62,7 +62,20 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (actor.Info.HasTraitInfo<PlaceBuildingInfo>())
 				names.AddRange(["PlaceBuilding", "LineBuild", "PlacePlug"]);
 
+			// Sellable and ToggleConditionOnOrder resolve their names without a targeter, so they are listed here.
+			if (actor.Info.HasTraitInfo<SellableInfo>())
+				names.Add("Sell");
+
+			foreach (var toggle in actor.Info.TraitInfos<ToggleConditionOnOrderInfo>())
+				names.Add(toggle.OrderName);
+
 			return names.Distinct().Where(actor.AcceptsOrder).ToArray();
+		}
+
+		/// <summary>True when the order name is the OrderName of a ToggleConditionOnOrder on the actor. Such an order takes the on key.</summary>
+		public static bool IsToggle(Actor actor, string order)
+		{
+			return actor.Info.TraitInfos<ToggleConditionOnOrderInfo>().Any(t => t.OrderName == order);
 		}
 	}
 }
