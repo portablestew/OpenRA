@@ -46,6 +46,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			var tick = player?.World.WorldTick ?? AgentWorldBridge.Active?.WorldTick ?? 0;
 			var options = name == NewOptions && IsAlliedWithLocal(player) ? NewlyBuildable(player) : null;
+
+			// A nameless notification, such as the stop that RA's structures play, has no name an agent can match on.
+			if (name is null)
+				return;
+
 			AgentEvents.Raise(new NotificationV1("notification", tick, name, player?.PlayerName, options));
 		}
 

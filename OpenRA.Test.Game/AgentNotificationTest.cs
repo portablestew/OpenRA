@@ -203,6 +203,23 @@ namespace OpenRA.Test
 			Game.Sound.PlayNotification(hw.World.Map.Rules, owner, "Speech", NewOptionsNotification, owner.Faction.InternalName);
 		}
 
+		[TestCase(TestName = "A nameless notification is not sent, and a named one from the same player still is")]
+		public void NamelessNotificationIsNotSent()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			Game.Sound.PlayNotification(hw.World.Map.Rules, local, "Sounds", null, local.Faction.InternalName);
+			Game.Sound.PlayNotification(hw.World.Map.Rules, local, "Sounds", RefusalNotification, local.Faction.InternalName);
+			hw.Tick(1);
+			var notes = TakeNotifications();
+
+			Assert.That(notes.Where(n => Field<string>(n, "Name") == null), Is.Empty, "A nameless notification should not be sent.");
+			Assert.That(notes.Where(n => Field<string>(n, "Name") == RefusalNotification).ToList(), Has.Count.EqualTo(1),
+				"The named notification from the same player should still be sent.");
+		}
+
 		/// <summary>The events of the named types, in the order they were raised. The connection carries every event; a test looks at its own.</summary>
 		static IEnumerable<object> Only(IEnumerable<object> events, params string[] types)
 		{
