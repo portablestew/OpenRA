@@ -38,10 +38,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// A parsed order. At most one of Cell, Pos and TargetActor is set. None of them means an untargeted order, such as Stop.
 	/// Item, ExtraData and ExtraLocation become the order's TargetString, ExtraData and ExtraLocation. Null means absent.
 	/// A group (P1.14) sets Actors (the actor list) or Type and TypePattern (the type regex). Actor is 0 then, and unused.
+	/// On is the on key, the desired state of a toggle order; null when absent.
 	/// </summary>
 	public sealed record OrderRequest(string Order, uint Actor, CPos? Cell, WPos? Pos, uint? TargetActor, bool Queued,
 		string Item, uint? ExtraData, CPos? ExtraLocation, int? SettleTicks, bool Await, uint[] Actors = null, string Type = null,
-		Regex TypePattern = null)
+		Regex TypePattern = null, bool? On = null)
 	{
 		/// <summary>True for a group order (P1.14): the request names its actors by list or by type.</summary>
 		public bool Grouped => Actors != null || TypePattern != null;
@@ -296,8 +297,19 @@ namespace OpenRA.Mods.Common.AgentSocket
 				awaits = awaitElement.ValueKind == JsonValueKind.True;
 			}
 
+			// on is the desired state of a toggle order. Whether the order is a toggle depends on the actor, so Accept checks it at issue.
+			bool? on = null;
+			if (IsPresent(root, "on"))
+			{
+				var onElement = root.GetProperty("on");
+				if (onElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+					return "on must be a boolean";
+
+				on = onElement.ValueKind == JsonValueKind.True;
+			}
+
 			request = new OrderRequest(orderElement.GetString(), actor, cell, pos, targetActor, queued, item, extraData, extraLocation,
-				settleTicks, awaits, actors, type, typePattern);
+				settleTicks, awaits, actors, type, typePattern, on);
 			return null;
 		}
 
@@ -506,7 +518,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		static Actor[] GroupActors(World world, OrderRequest request)
 		{
 			if (request.Actors != null)
-				return request.Actors.Select(id => Accept(world, id, request.Order)).ToArray();
+				return request.Actors.Select(id => Accept(world, id, request.Order, request.On)).ToArray();
 
 			var matched = world.Actors
 				.Where(a => a.Owner == world.LocalPlayer && !a.IsDead && request.TypePattern.IsMatch(a.Info.Name))
@@ -514,7 +526,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (matched.Length == 0)
 				throw new ArgumentException($"no owned actor's type matches \"{request.Type}\"");
 
-			return matched.Select(a => Accept(world, a.ActorID, request.Order)).ToArray();
+			return matched.Select(a => Accept(world, a.ActorID, request.Order, request.On)).ToArray();
 		}
 
 		/// <summary>The Order a grouped request stands for. Its subject is null, as the engine's own grouped orders are: each actor's copy has its subject. Must run on the game thread.</summary>
@@ -534,7 +546,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		public static Order ToOrder(World world, OrderRequest request)
 		{
-			var actor = Accept(world, request.Actor, request.Order);
+			var actor = Accept(world, request.Actor, request.Order, request.On);
 
 			return new Order(request.Order, actor, TargetOf(world, request), request.Queued)
 			{
@@ -574,14 +586,18 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>
 		/// Finds the local-player actor and checks that it accepts the order name. A name outside the accepted set is refused
 		/// here, with no bypass, so nothing is issued for it. The one exception is Attack (P1.6): an actor with no attack trait is
-		/// still issued the order, ValidateOrder refuses it, and the attack reply says why. Must run on the game thread.
+		/// still issued the order, ValidateOrder refuses it, and the attack reply says why. An on key is refused, since it only
+		/// applies to a toggle order and no order name is a toggle yet. Must run on the game thread.
 		/// </summary>
-		public static Actor Accept(World world, uint id, string order)
+		public static Actor Accept(World world, uint id, string order, bool? on = null)
 		{
 			var actor = Owned(world, id);
 			var available = AgentOrderNames.For(actor);
 			if (!available.Contains(order) && order != "Attack")
 				throw new OrderRefusedException(id, order, available);
+
+			if (on is not null)
+				throw new ArgumentException($"on applies only to a toggle order, and '{order}' is not one for actor {id}");
 
 			return actor;
 		}
