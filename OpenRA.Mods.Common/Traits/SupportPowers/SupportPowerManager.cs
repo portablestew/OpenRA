@@ -218,6 +218,7 @@ namespace OpenRA.Mods.Common.Traits
 			{
 				power.Charged(power.Self, Key);
 				notifiedReady = true;
+				AgentPlayerEventObserver.PowerReady(Manager.Self.Owner, Info, Key, Name);
 			}
 		}
 

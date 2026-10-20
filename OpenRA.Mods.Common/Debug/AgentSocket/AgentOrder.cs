@@ -157,6 +157,21 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public string[] Available { get; }
 	}
 
+	/// <summary>The refusal for a support power that is not ready. Ready is false, and RemainingTicks is the time left (5).</summary>
+	public sealed record PowerRefusedV1(bool Ok, string Cmd, string Error, bool Ready, int RemainingTicks, string Hint);
+
+	/// <summary>Thrown on the game thread when a support power is ordered before its charge completes. Carries the time left.</summary>
+	public sealed class PowerRefusedException : Exception
+	{
+		public PowerRefusedException(uint actor, string order, int remainingTicks)
+			: base($"'{order}' on actor {actor} is not ready, with {remainingTicks} ticks left to charge")
+		{
+			RemainingTicks = remainingTicks;
+		}
+
+		public int RemainingTicks { get; }
+	}
+
 	/// <summary>
 	/// Issues an order for a local-player actor through World.IssueOrder, so it takes the same network and validation path
 	/// as a click (D11). The ack reports min_effect_tick = tick + 1, a lower bound: live, the order applied 4 ticks later
@@ -706,6 +721,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var available = AgentOrderNames.For(actor);
 			if (!available.Contains(order) && order != "Attack")
 				throw new OrderRefusedException(id, order, available);
+
+			// A support power is refused until it is ready. Its Activate silently does nothing while it charges, so the refusal names the time left.
+			if (actor.TraitOrDefault<SupportPowerManager>() is { } support && support.Powers.TryGetValue(order, out var power) && !power.Ready)
+				throw new PowerRefusedException(id, order, power.RemainingTicks);
 
 			var toggle = AgentOrderNames.IsToggle(actor, order);
 			if (toggle && on is null)

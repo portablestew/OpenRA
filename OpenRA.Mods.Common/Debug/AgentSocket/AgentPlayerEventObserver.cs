@@ -119,7 +119,9 @@ namespace OpenRA.Mods.Common
 			var attackerType = known ? attacker.Info.Name : null;
 			var attackerOwner = known ? attacker.Owner.PlayerName : null;
 			var shrouded = attacker != null && !known;
-			var bearing = attacker == null ? null : AgentBearing.Of(self.CenterPosition, attacker.CenterPosition);
+			// An actor with no position, such as a player actor that fires a nuke, has no bearing to read.
+			var bearing = attacker is { OccupiesSpace: not null } && self.OccupiesSpace != null
+				? AgentBearing.Of(self.CenterPosition, attacker.CenterPosition) : null;
 
 			AgentEvents.Raise(new DamagedV1("damaged", self.World.WorldTick, self.ActorID,
 				self.Info.Name, self.Owner.PlayerName, attackerId, attackerType, attackerOwner,
@@ -205,6 +207,19 @@ namespace OpenRA.Mods.Common
 
 			AgentEvents.Raise(new SoldV1("sold", sold.World.WorldTick,
 				sold.ActorID, sold.Info.Name, sold.Owner.PlayerName, [sold.Location.X, sold.Location.Y]));
+		}
+
+		/// <summary>
+		/// Raises a power_ready event when a support power finishes charging (5). SupportPowerInstance.Tick calls it once per
+		/// charge, behind the same guard. The owner's own power is always reported; another player's only when its timer is shown
+		/// to the local player (AgentPowers.Shown).
+		/// </summary>
+		public static void PowerReady(Player owner, SupportPowerInfo info, string key, string name)
+		{
+			if (!AgentEvents.Enabled || !AgentPowers.Shown(owner, info, owner.World.LocalPlayer))
+				return;
+
+			AgentEvents.Raise(new PowerReadyV1("power_ready", owner.World.WorldTick, owner.PlayerName, key, name));
 		}
 
 		/// <summary>Raises a captured event for an actor that changed owner. Called from CaptureActor behind the same guard.</summary>

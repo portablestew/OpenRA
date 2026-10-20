@@ -98,6 +98,7 @@ namespace OpenRA.Test
 				new PlacedV1("placed", 1, 2, "powr", "P", [3, 4]),
 				new PowerEventV1("power_low", 1, "P", 10, 30, -20, "Low"),
 				new PowerEventV1("power_restored", 1, "P", 30, 10, 20, "Normal"),
+				new PowerReadyV1("power_ready", 1, "P", "NukePowerInfoOrder", "Nuclear Strike"),
 				new DefeatedV1("defeated", 1, "P"),
 				new GameOverV1("game_over", 1, "P"),
 				new NotificationV1("notification", 1, "NewOptions", "P", [new ProductionOptionV1("proc", 1400, -30, ["anypower"], true, true)]),

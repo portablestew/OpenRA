@@ -84,6 +84,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("orders", "actor (uint) -> type, orders (the order names the actor accepts)", "{\"cmd\":\"orders\",\"actor\":12}"),
 			("production", "-> player, cash, resources, power, queues (the local player's queues; see Production keys). A queue's options are listed only when they changed since this connection last read them (changed says whether they were); the first read after connect, and the first read after a world change, lists them all", "{\"cmd\":\"production\"}"),
 			("production_tree", "-> the same keys as production: the full catalog, with every option of every queue in full", "{\"cmd\":\"production_tree\"}"),
+			("powers", "-> powers: each support power you can see, with its charge: order (the key an order names), owner, name, description,"
+				+ " ready, remaining_ticks, total_ticks, active, disabled, one_shot. Your own powers are always listed; another player's only when its"
+				+ " timer is shown to you, as the engine shows it (DisplayTimerRelationships includes your relationship with its owner)."
+				+ " Each key is also one of the player actor's orders, and an order for a power that is not ready is refused with ok:false,"
+				+ " error, ready:false and remaining_ticks", "{\"cmd\":\"powers\"}"),
 			("build", "item (string); optional count (positive int, default 1)\n"
 				+ "                -> ok, actor, queue_type, item, count, tick, min_effect_tick, ready, eta_ticks, blocked_by. Not buildable now: ok:false, error,"
 				+ " available (the items build accepts now: buildable and affordable), missing_prerequisites (every unmet prerequisite;"
@@ -164,6 +169,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("activity", "activity", typeof(ActivityV1)),
 			("power", "power_low", typeof(PowerEventV1)),
 			("power", "power_restored", typeof(PowerEventV1)),
+			("power", "power_ready", typeof(PowerReadyV1)),
 			("player", "defeated", typeof(DefeatedV1)),
 			("player", "game_over", typeof(GameOverV1)),
 			("notification", "notification", typeof(NotificationV1)),
@@ -193,7 +199,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    attacker_shrouded is true, and attacker_bearing is given.\n");
 			text.Append("    The same rule holds for events: damaged, healed, killed, captured, order, produced, placed, sold, stance, path and activity are sent only\n");
 			text.Append("    for your own actors and known ones. A captor, producer, attacker or order target is named only when known, else null.\n");
-			text.Append("    power, notification, defeated, game_over and overflow name no actor, so they are always sent.\n");
+			text.Append("    power_low, power_restored, notification, defeated, game_over and overflow name no actor, so they are always sent.\n");
+			text.Append("    power_ready is sent for your own powers, and for another player's only when its timer is shown to you (see powers).\n");
 			text.Append("    A NewOptions notification lists options only for your side or an ally's: those newly buildable since its last one.\n");
 			text.Append("  Null and omitted: a null key is present with no value (an unknown value, or an optional request key left out).\n");
 			text.Append("    A key that does not apply is omitted:\n");

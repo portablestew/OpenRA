@@ -45,7 +45,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static readonly string[] Names =
 		[
 			"ping", "help", "state", "actors", "maps", "load_skirmish", "order", "orders", "wait",
-			"production", "production_tree", "build", "cancel", "place", "deploy", "screenshot", "undo", "look", "map_state",
+			"production", "production_tree", "powers", "build", "cancel", "place", "deploy", "screenshot", "undo", "look", "map_state",
 		];
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
@@ -173,6 +173,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"wait" => Wait(cmd, root, connection),
 				"production" => Run(cmd, () => AgentProduction.List(AgentWorldBridge.RequireWorld(), connection)),
 				"production_tree" => Run(cmd, () => AgentProduction.Tree(AgentWorldBridge.RequireWorld())),
+				"powers" => Run(cmd, () => AgentPowers.List(AgentWorldBridge.RequireWorld())),
 				"build" => StartBuild(cmd, root, selection),
 				"cancel" => StartCancel(cmd, root),
 				"place" => StartPlace(cmd, root, selection),
@@ -240,6 +241,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 				// until that await resolves plus its settle window, and the game keeps ticking.
 				var issued = AgentMarshal.ExecuteOnGameThread(() => AgentOrder.Issue(AgentWorldBridge.RequireWorld(), request, selection));
 				return Serialize(AgentOrder.Settle(issued));
+			}
+			catch (PowerRefusedException e)
+			{
+				return Serialize(new PowerRefusedV1(false, cmd, e.Message, false, e.RemainingTicks, Hint));
 			}
 			catch (OrderRefusedException e)
 			{

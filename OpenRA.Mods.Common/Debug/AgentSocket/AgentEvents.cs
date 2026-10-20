@@ -59,6 +59,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 	// Owner is the player whose power changed. State is the PowerState name: Normal, Low or Critical.
 	public sealed record PowerEventV1(string Event, int Tick, string Owner, int Provided, int Drained, int Excess, string State);
 
+	// A support power finished charging, once per charge. Order is its key, the one an order names (AgentPowers). Name is its display name.
+	public sealed record PowerReadyV1(string Event, int Tick, string Owner, string Order, string Name);
+
 	public sealed record DefeatedV1(string Event, int Tick, string Owner);
 
 	public sealed record GameOverV1(string Event, int Tick, string Winner);

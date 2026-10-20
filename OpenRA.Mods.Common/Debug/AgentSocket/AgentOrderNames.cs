@@ -69,6 +69,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 			foreach (var toggle in actor.Info.TraitInfos<ToggleConditionOnOrderInfo>())
 				names.Add(toggle.OrderName);
 
+			// The player actor holds the support powers, and each is named by its key. A disabled power is not offered. A charging
+			// one is, and Accept refuses it until it is ready.
+			var support = actor.TraitOrDefault<SupportPowerManager>();
+			if (support != null)
+				names.AddRange(support.Powers.Where(p => !p.Value.Disabled).Select(p => p.Key));
+
 			return names.Distinct().Where(actor.AcceptsOrder).ToArray();
 		}
 
