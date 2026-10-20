@@ -188,6 +188,34 @@ namespace OpenRA.Test
 			Assert.That(Healed(events, dome.ActorID), Is.Empty, "No healed event for the structure across the whole repair.");
 		}
 
+		[TestCase(TestName = "A structure repair raises one start notification, and no damaged or healed events over the whole repair")]
+		public void StructureRepairRaisesOneStartNotification()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var local = hw.LocalPlayer;
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), local);
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(60, 50), 2, 2), local);
+			hw.Tick(1);
+
+			var enemy = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 60), 1, 1), hw.EnemyPlayer);
+			dome.TraitOrDefault<IHealth>().InflictDamage(dome, enemy, new Damage(SetupDamage), true);
+			var events = WatchEvents();
+			AgentProductionTest.SetLocalCash(hw, 10000);
+
+			// RA's RepairableBuilding.RepairingNotification, played once when the local player starts repairing.
+			const string repairingNotification = "Repairing";
+			var maxHp = dome.TraitOrDefault<IHealth>().MaxHP;
+			var repairable = ModTrait(dome, "Traits.RepairableBuilding");
+			repairable.GetType().GetMethod("RepairBuilding").Invoke(repairable, [dome, local]);
+			for (var elapsed = 0; Hp(dome) < maxHp && elapsed < RepairLoopCapTicks; elapsed += RepairLoopStepTicks)
+				hw.Tick(RepairLoopStepTicks);
+
+			var starts = events.Where(e => e.GetType().Name == "NotificationV1" && (string)Field(e, "Name") == repairingNotification).ToList();
+			Assert.That(starts, Has.Count.EqualTo(1), "A structure repair should raise its start notification exactly once.");
+			Assert.That(NegativeDamaged(events, dome.ActorID), Is.Empty, "A structure repair must raise no damaged event.");
+			Assert.That(Healed(events, dome.ActorID), Is.Empty, "A structure repair must raise no healed event.");
+		}
+
 		[TestCase(TestName = "A vehicle repaired at a fix depot over many ticks raises no damaged or healed events, and does not feed recent damage")]
 		public void DepotRepairRaisesNoEvents()
 		{
