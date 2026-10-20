@@ -72,6 +72,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record GroupedOrderV1(bool Ok, string Cmd, int Tick, int MinEffectTick, uint[] Ordered, int Matched, GroupResultV1[] Results);
 
 	/// <summary>
+	/// The sell reply (3.4). Outcome is sold once the owner sold the actor. The actor is disposed by then, so the reply names no
+	/// state of it. Valid and EffectTick are the validator result and the tick the sell resolved on.
+	/// </summary>
+	public sealed record SellV1(bool Ok, string Cmd, int Tick, int MinEffectTick, bool Valid, int EffectTick, bool Settled, string Outcome);
+
+	/// <summary>
 	/// What IssueGroup returns on the game thread. Awaits has one await per ordered actor, in the same order as Ordered, one for
 	/// every order name (9.2). Paused is true when the game is paused, so nothing will tick the awaits.
 	/// </summary>
@@ -485,6 +491,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (await.IsDeploy)
 				return new DeployV1(await.Outcome == AgentOrderAwait.Completed, "order", ack.Tick, ack.MinEffectTick, true, await.Outcome, await.Reason);
 
+			if (await.IsSell && await.Outcome == AgentOrderAwait.SoldOutcome)
+				return new SellV1(true, "order", ack.Tick, ack.MinEffectTick, true, await.ResolvedTick, true, await.Outcome);
+
 			if (await.IsMoveOrder)
 				return Reply("order", ack, await);
 
@@ -596,7 +605,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return new GroupResultV1(id, false, Error: e.Message);
 			}
 
-			if (await.IsAttack || await.IsDeploy)
+			if (await.IsAttack || await.IsDeploy || (await.IsSell && await.Outcome != null))
 				return new GroupResultV1(id, true, Outcome: await.Outcome, Reason: await.Reason);
 
 			if (await.IsAttackMove)

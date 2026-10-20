@@ -52,6 +52,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The deploy outcome when the transform did not finish. Reason says why (P1.8).</summary>
 		public const string Canceled = "canceled";
 
+		/// <summary>The sell outcome when the owner sold the actor (3.4). The actor is disposed right after, so the reply names no state of it.</summary>
+		public const string SoldOutcome = "sold";
+
 		/// <summary>The AttackMove outcome when the unit found no path to the cell (P3.0a).</summary>
 		public const string NoPathOutcome = "no_path";
 
@@ -136,6 +139,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>True for a PlaceBuilding await (F6). Its outcome is the new building's id, set by the placed notify.</summary>
 		public bool IsPlace => order == "PlaceBuilding";
+
+		/// <summary>True for a Sell await (3.4). A valid one stays Pending until the sold notify ends it, before the actor is disposed.</summary>
+		public bool IsSell => order == "Sell";
 
 		/// <summary>The id of the building a PlaceBuilding await placed (F6). Null until the placed notify, and for other awaits.</summary>
 		public uint? PlacedActor { get; private set; }
@@ -281,6 +287,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 					return;
 				}
 
+				// A valid Sell stays Pending: the sold notify ends it before the actor is disposed (3.4). Its activity may first wait
+				// for a reverse animation, so the settle clock does not apply to it.
+				if (await.IsSell && valid)
+					return;
+
 				Pending.RemoveAt(index);
 				if (!valid)
 					await.Orders = AgentOrderNames.For(order.Subject);
@@ -361,6 +372,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 							Fail(p, new InvalidOperationException($"actor {p.subject.ActorID} died before the building was placed"));
 						else if (world.WorldTick - p.registeredTick >= ResolveBudgetTicks)
 							Fail(p, new TimeoutException($"the building was not placed within {ResolveBudgetTicks} ticks"));
+					}
+					else if (p.IsSell && p.Resolved)
+					{
+						// The sold notify ends a sell before the actor is disposed, so a disposed subject here was not sold, and no activity
+						// will sell it now (3.4). A sell that never starts is bounded by the waiter's budget, not the resolve budget.
+						if (p.subject.IsDead)
+							Fail(p, new InvalidOperationException($"actor {p.subject.ActorID} died before it was sold"));
 					}
 					else if (p.subject.IsDead)
 						Fail(p, new InvalidOperationException($"actor {p.subject.ActorID} died before the order resolved"));
@@ -489,6 +507,20 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 				await.PlacedActor = buildingId;
 				Finish(await, Completed, null);
+			}
+		}
+
+		/// <summary>
+		/// The sold notify: the owner sold the actor, before it is disposed, so the socket's pending sell await on it finishes as sold
+		/// (3.4). Called for every sale, with or without a connection. Must run on the game thread.
+		/// </summary>
+		public static void Sold(Actor sold)
+		{
+			lock (Gate)
+			{
+				var await = Pending.Find(a => a.IsSell && a.Resolved && ReferenceEquals(a.subject, sold));
+				if (await != null)
+					Finish(await, SoldOutcome, null);
 			}
 		}
 

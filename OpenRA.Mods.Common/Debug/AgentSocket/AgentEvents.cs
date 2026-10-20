@@ -48,6 +48,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	public sealed record PlacedV1(string Event, int Tick, uint Actor, string Type, string Owner, int[] Cell);
 
+	// The owner sold the actor (Sell), before it was disposed, so it is in the world when the event is raised. Cell is its top-left cell.
+	public sealed record SoldV1(string Event, int Tick, uint Actor, string Type, string Owner, int[] Cell);
+
 	// Owner is the player whose power changed. State is the PowerState name: Normal, Low or Critical.
 	public sealed record PowerEventV1(string Event, int Tick, string Owner, int Provided, int Drained, int Excess, string State);
 

@@ -207,10 +207,11 @@ namespace OpenRA.Test
 		public void SellIsAcceptedWithoutOn()
 		{
 			using var hw = HeadlessWorld.Create(1);
-			var powr = hw.CreateActor("powr", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			// A wall, not a power plant: a building with a make animation never finishes selling headlessly, so the sale would not run.
+			var wall = hw.CreateActor("BRIK", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
-			using var response = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"order\",\"actor\":{powr.ActorID},\"order\":\"Sell\"}}");
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"order\",\"actor\":{wall.ActorID},\"order\":\"Sell\"}}");
 			Assert.That(response.RootElement.TryGetProperty("error", out _), Is.False, response.RootElement.ToString());
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
 		}

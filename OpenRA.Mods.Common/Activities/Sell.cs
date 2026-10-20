@@ -45,6 +45,9 @@ namespace OpenRA.Mods.Common.Activities
 			foreach (var ns in self.TraitsImplementing<INotifySold>())
 				ns.Sold(self);
 
+			// Before Dispose: the socket's pending sell await finishes as sold while the actor is still alive (3.4).
+			AgentPlayerEventObserver.Sold(self);
+
 			if (showTicks && refund > 0 && self.Owner.IsAlliedWith(self.World.RenderPlayer))
 				self.World.AddFrameEndTask(w => w.Add(new FloatingText(self.CenterPosition, self.OwnerColor(), FloatingText.FormatCashTick(refund), 30)));
 

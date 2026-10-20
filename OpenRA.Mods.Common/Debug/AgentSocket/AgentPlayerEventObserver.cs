@@ -126,6 +126,21 @@ namespace OpenRA.Mods.Common
 			AgentEvents.Raise(new DefeatedV1("defeated", player.World.WorldTick, player.PlayerName));
 		}
 
+		/// <summary>
+		/// Raises a sold event for an actor its owner sold (3.4). Sell calls it before the actor is disposed, so the actor is still in
+		/// the world. It resolves the socket's pending sell await first, so that reply reports sold. Runs without a connection.
+		/// </summary>
+		public static void Sold(Actor sold)
+		{
+			AgentOrderAwait.Sold(sold);
+
+			if (!AgentEvents.Enabled || !AgentFog.Reported(sold, sold.World.LocalPlayer))
+				return;
+
+			AgentEvents.Raise(new SoldV1("sold", sold.World.WorldTick,
+				sold.ActorID, sold.Info.Name, sold.Owner.PlayerName, [sold.Location.X, sold.Location.Y]));
+		}
+
 		/// <summary>Raises a captured event for an actor that changed owner. Called from CaptureActor behind the same guard.</summary>
 		public static void Captured(Actor captured, Actor captor, Player oldOwner, Player newOwner)
 		{
