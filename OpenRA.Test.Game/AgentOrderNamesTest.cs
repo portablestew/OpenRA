@@ -189,6 +189,37 @@ namespace OpenRA.Test
 			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo($"on applies only to a toggle order, and 'Sell' is not one for actor {powr.ActorID}"));
 		}
 
+		[TestCase(TestName = "The orders list gives RepairBuilding on the player actor, and no building or unit gets it")]
+		public void OrdersListsRepairBuildingOnlyOnThePlayerActor()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 60), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using var player = AgentStateDumpTest.Request($"{{\"cmd\":\"orders\",\"actor\":{hw.LocalPlayer.PlayerActor.ActorID}}}");
+			Assert.That(Names(player.RootElement), Does.Contain("RepairBuilding"));
+
+			using var building = AgentStateDumpTest.Request($"{{\"cmd\":\"orders\",\"actor\":{dome.ActorID}}}");
+			Assert.That(Names(building.RootElement), Does.Not.Contain("RepairBuilding"));
+
+			using var infantry = AgentStateDumpTest.Request($"{{\"cmd\":\"orders\",\"actor\":{unit.ActorID}}}");
+			Assert.That(Names(infantry.RootElement), Does.Not.Contain("RepairBuilding"));
+		}
+
+		[TestCase(TestName = "A RepairBuilding order with no on key is refused, and the refusal names the toggle")]
+		public void RepairBuildingWithoutOnIsRefused()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+			var player = hw.LocalPlayer.PlayerActor.ActorID;
+
+			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{player},\"order\":\"RepairBuilding\",\"target_actor\":{dome.ActorID}}}");
+			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.False);
+			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo($"'RepairBuilding' is a toggle for actor {player}, so it needs on: true or on: false"));
+		}
+
 		// The toggle's own execution (desired state against current state) is a later step, so this asserts acceptance only.
 		[TestCase(true, TestName = "A toggle order with on: true is accepted")]
 		[TestCase(false, TestName = "A toggle order with on: false is accepted")]

@@ -23,6 +23,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// </summary>
 	public static class AgentOrderNames
 	{
+		/// <summary>The order the player actor takes to repair a building. It is a toggle: on is the desired repair state.</summary>
+		public const string RepairOrder = "RepairBuilding";
+
 		/// <summary>The accepted names for an actor, in a stable order with no duplicates.</summary>
 		public static string[] For(Actor actor)
 		{
@@ -69,6 +72,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			foreach (var toggle in actor.Info.TraitInfos<ToggleConditionOnOrderInfo>())
 				names.Add(toggle.OrderName);
 
+			// The player actor issues RepairBuilding, naming the building in target_actor. AllyRepair resolves it.
+			if (actor.Info.HasTraitInfo<AllyRepairInfo>())
+				names.Add(RepairOrder);
+
 			// The player actor holds the support powers, and each is named by its key. A disabled power is not offered. A charging
 			// one is, and Accept refuses it until it is ready.
 			var support = actor.TraitOrDefault<SupportPowerManager>();
@@ -78,9 +85,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return names.Distinct().Where(actor.AcceptsOrder).ToArray();
 		}
 
-		/// <summary>True when the order name is the OrderName of a ToggleConditionOnOrder on the actor. Such an order takes the on key.</summary>
+		/// <summary>True when the order name is the OrderName of a ToggleConditionOnOrder on the actor, or RepairBuilding on an actor with AllyRepair. Such an order takes the on key.</summary>
 		public static bool IsToggle(Actor actor, string order)
 		{
+			if (order == RepairOrder)
+				return actor.Info.HasTraitInfo<AllyRepairInfo>();
+
 			return actor.Info.TraitInfos<ToggleConditionOnOrderInfo>().Any(t => t.OrderName == order);
 		}
 	}

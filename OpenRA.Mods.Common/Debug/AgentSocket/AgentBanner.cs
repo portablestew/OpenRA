@@ -58,7 +58,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("order", "exactly one of actor (uint), actors ([uint]), or type (string: a regex matched against the whole type name of"
 				+ " each owned actor, so \"e1\" is e1 only and \"e.\" is every e-type); order (string); at most one of cell [x,y],"
 				+ " pos [x,y,z], target_actor (uint); optional queued (bool), item (string), extra_data (uint), extra_location [x,y],"
-				+ " on (bool; required by a toggle order such as PowerDown, and refused for any other name), settle_ticks (Move and AttackMove), await (bool, default true; false is Move and AttackMove only, and single actor only)\n"
+				+ " on (bool; required by a toggle order such as PowerDown or RepairBuilding, and refused for any other name), settle_ticks (Move and AttackMove), await (bool, default true; false is Move and AttackMove only, and single actor only)\n"
 					+ "                -> tick, min_effect_tick, settled, plus the order's resolution. Every order name reports the"
 					+ " resolution, and nothing waits for travel or completion, which are events. Every name except an Attack and a"
 					+ " DeployTransform reports valid, effect_tick and settled_ticks, and holds the settle window so trailing events"
@@ -70,6 +70,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					+ " A DeployTransform replaces valid, effect_tick and settled_ticks with outcome (completed | canceled; null when"
 					+ " unsettled) and waits for the transform to end, with reason when canceled."
 				+ " A toggle order adds state (on or off: the state it left once settled, or the state already held) and unchanged (true when that state already held, so nothing was issued)."
+				+ " RepairBuilding is a toggle on the player actor, with target_actor the building: its state is on while you are among the building's repairers, so a building at its repairer cap stays off."
 				+ " Sell on a sellable structure replaces valid, effect_tick and settled_ticks with outcome (sold; null when unsettled), and a sold event follows."
 				+ " await:false returns job (the id for wait) with tick, min_effect_tick, and does not wait."
 				+ " A group returns ordered (the actor ids), matched, and results (one per actor: actor, valid, effect_tick, settled,"
@@ -84,7 +85,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " status:\"pending\" at the timeout (the job stays open). An unknown job, or a job whose world load_skirmish or undo replaced: ok:false, error."
 				+ " With no job: result:\"events\" when an event arrives (it is in this response's events), or result:\"timeout\"",
 				"{\"cmd\":\"wait\",\"timeout_ms\":5000}"),
-			("orders", "actor (uint) -> type, orders (the order names the actor accepts: Sell on a sellable structure, a toggle's name such as PowerDown on a toggle building, and each support power's key on the player actor)", "{\"cmd\":\"orders\",\"actor\":12}"),
+			("orders", "actor (uint) -> type, orders (the order names the actor accepts: Sell on a sellable structure, a toggle's name such as PowerDown on a toggle building, RepairBuilding on the player actor, and each support power's key on the player actor)", "{\"cmd\":\"orders\",\"actor\":12}"),
 			("production", "-> player, cash, resources, power, queues (the local player's queues; see Production keys). A queue's options are listed only when they changed since this connection last read them (changed says whether they were); the first read after connect, and the first read after a world change, lists them all", "{\"cmd\":\"production\"}"),
 			("production_tree", "-> the same keys as production: the full catalog, with every option of every queue in full", "{\"cmd\":\"production_tree\"}"),
 			("powers", "-> powers: each support power you can see, with its charge: order (the key an order names), owner, name, description,"

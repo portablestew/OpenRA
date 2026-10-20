@@ -127,7 +127,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record Issued(OrderV1 Ack, bool Move, bool Paused, AgentOrderAwait Await, ToggleIssue Toggle = null);
 
 	/// <summary>What a toggle order issued on the game thread: its subject and name, the state asked for, and whether that state already held.</summary>
-	public sealed record ToggleIssue(Actor Subject, string Order, bool On, bool Unchanged);
+	public sealed record ToggleIssue(Order Order, bool On, bool Unchanged);
 
 	/// <summary>
 	/// The reply to a toggle order (3.3). State is "on" or "off": the state the engine left once the order settled, or the state
@@ -384,14 +384,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 		static Issued IssueToggle(World world, Order order, bool on, AgentSelection selection)
 		{
 			var actor = order.Subject;
+			CheckToggleTarget(order);
 
 			// A toggle still in flight has not flipped yet, so a read now would miss it and a second flip would undo the first.
 			if (AgentOrderAwait.Unresolved(actor, order.OrderString))
 				throw new ArgumentException($"'{order.OrderString}' on actor {actor.ActorID} is still in flight, so wait for it to settle before setting it again");
 
-			var unchanged = ToggleOn(actor, order.OrderString) == on;
-			var toggle = new ToggleIssue(actor, order.OrderString, on, unchanged);
-			selection.Ordered(world, actor);
+			var unchanged = ToggleOn(order) == on;
+			var toggle = new ToggleIssue(order, on, unchanged);
+			selection.Ordered(world, ToggledActor(order));
 
 			var ack = new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
 			if (unchanged)
@@ -402,10 +403,41 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return new Issued(ack, false, world.Paused, await, toggle);
 		}
 
-		/// <summary>The state of the ToggleConditionOnOrder that takes the order name: true when on. Accept has checked the name. Must run on the game thread.</summary>
-		static bool ToggleOn(Actor actor, string order)
+		/// <summary>
+		/// RepairBuilding names its building in target_actor, and the player actor is the subject. Refuse it when the target is not
+		/// a building that can be repaired, so there is no state to read. Must run on the game thread.
+		/// </summary>
+		static void CheckToggleTarget(Order order)
 		{
-			return actor.TraitsImplementing<ToggleConditionOnOrder>().First(t => t.Info.OrderName == order).Enabled;
+			if (order.OrderString != AgentOrderNames.RepairOrder)
+				return;
+
+			if (order.Target.Type != TargetType.Actor)
+				throw new ArgumentException("RepairBuilding needs target_actor, the building to repair");
+
+			if (order.Target.Actor.TraitOrDefault<RepairableBuilding>() == null)
+				throw new ArgumentException($"actor {order.Target.Actor.ActorID} is not a building that can be repaired");
+		}
+
+		/// <summary>
+		/// The actor a toggle's state lives on. For RepairBuilding that is the building the player repairs, so the selection and the
+		/// state read follow it, not the player actor. Otherwise it is the subject.
+		/// </summary>
+		static Actor ToggledActor(Order order)
+		{
+			return order.OrderString == AgentOrderNames.RepairOrder ? order.Target.Actor : order.Subject;
+		}
+
+		/// <summary>
+		/// The state of the toggle the order names: true when on. Accept has checked the name, and CheckToggleTarget the target. A
+		/// RepairBuilding is on while the player is among the building's repairers. Must run on the game thread.
+		/// </summary>
+		static bool ToggleOn(Order order)
+		{
+			if (order.OrderString == AgentOrderNames.RepairOrder)
+				return ToggledActor(order).TraitOrDefault<RepairableBuilding>().Repairers.Contains(order.Subject.Owner);
+
+			return order.Subject.TraitsImplementing<ToggleConditionOnOrder>().First(t => t.Info.OrderName == order.OrderString).Enabled;
 		}
 
 		static string StateName(bool on)
@@ -440,7 +472,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return ToggleUnsettled(ack, toggle);
 			}
 
-			var state = AgentMarshal.ExecuteOnGameThread(() => ToggleOn(toggle.Subject, toggle.Order));
+			var state = AgentMarshal.ExecuteOnGameThread(() => ToggleOn(toggle.Order));
 			var refused = !await.Valid;
 			return new ToggleOrderV1(true, "order", ack.Tick, ack.MinEffectTick, await.Valid, await.ResolvedTick, true, await.SettleTicks,
 				StateName(state), false, refused ? ValidatorRejected : null, refused ? await.Orders : null);
@@ -449,7 +481,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The reply for a toggle a paused game left unsettled. The state is still read, since the game thread still runs.</summary>
 		static ToggleOrderV1 ToggleUnsettled(OrderV1 ack, ToggleIssue toggle)
 		{
-			var state = AgentMarshal.ExecuteOnGameThread(() => ToggleOn(toggle.Subject, toggle.Order));
+			var state = AgentMarshal.ExecuteOnGameThread(() => ToggleOn(toggle.Order));
 			return new ToggleOrderV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, StateName(state), false);
 		}
 
