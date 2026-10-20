@@ -22,11 +22,11 @@ description: How to get into an OpenRA game through the text_adventure tool, and
    `text_adventure(command='{"cmd":"production_tree"}')`
 6. Place a building. `cell` is where it placed, which may differ from the requested cell (search moves it up to 10 cells):
    `text_adventure(command='{"cmd":"place","item":"powr","cell":[40,50]}')`
-- A structure repair holds only while the building is damaged, so it ends at full health: read its `repairing` flag again before you count on it.
 7. Wait on a job, with `timeout_ms` as the `wait` key:
    `text_adventure(command='{"cmd":"wait","job":1,"timeout_ms":5000}')`
 8. `map_state` writes `map-state.png` to the workspace, the folder the game was started from. Screenshots go to a `screenshots` folder in the same place. Read the `path` the reply gives:
    `text_adventure(command='{"cmd":"map_state"}')`
+- A structure repair holds only while the building is damaged, so it ends at full health: read its `repairing` flag again before you count on it.
 - `path.eta_ticks` is a floor.
 - Sell refunds `RefundPercent` of the cost (default 50), scaled by the building's health: repair before you sell.
 - Repair drains cash as it heals: check `cash` in state before you start.
