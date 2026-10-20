@@ -157,7 +157,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public string[] Available { get; }
 	}
 
-	/// <summary>The refusal for a support power that is not ready. Ready is false, and RemainingTicks is the time left (5).</summary>
+	/// <summary>The refusal for a support power that is not ready. Ready is false, and RemainingTicks is the time left.</summary>
 	public sealed record PowerRefusedV1(bool Ok, string Cmd, string Error, bool Ready, int RemainingTicks, string Hint);
 
 	/// <summary>Thrown on the game thread when a support power is ordered before its charge completes. Carries the time left.</summary>

@@ -32,7 +32,7 @@ namespace OpenRA.Mods.Common
 
 		void INotifyDamage.Damaged(Actor self, AttackInfo e)
 		{
-			// A repair is not damage: it is neither reported nor recorded as a hit (4).
+			// A repair is not damage: it is neither reported nor recorded as a hit.
 			if (IsRepair(self, e))
 				return;
 
@@ -210,7 +210,7 @@ namespace OpenRA.Mods.Common
 		}
 
 		/// <summary>
-		/// Raises a power_ready event when a support power finishes charging (5). SupportPowerInstance.Tick calls it once per
+		/// Raises a power_ready event when a support power finishes charging. SupportPowerInstance.Tick calls it once per
 		/// charge, behind the same guard. The owner's own power is always reported; another player's only when its timer is shown
 		/// to the local player (AgentPowers.Shown).
 		/// </summary>

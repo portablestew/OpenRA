@@ -19,7 +19,7 @@ using OpenRA.Traits;
 namespace OpenRA.Test
 {
 	/// <summary>
-	/// Support powers (5): the powers command lists each power the local player can see, an order for a charging power is
+	/// Support powers: the powers command lists each power the local player can see, an order for a charging power is
 	/// refused with its time left, a ready power activates, and power_ready fires once per charge. An enemy's power is listed
 	/// and reported only when its DisplayTimerRelationships allows the local player's relationship (the engine's timer rule).
 	/// </summary>

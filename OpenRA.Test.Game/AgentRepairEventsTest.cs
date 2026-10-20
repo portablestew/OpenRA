@@ -18,7 +18,7 @@ using OpenRA.Traits;
 namespace OpenRA.Test
 {
 	/// <summary>
-	/// Repair spam (4): a repair heals through IHealth.InflictDamage with negative damage, so the damaged notify fires once per step.
+	/// Repair spam: a repair heals through IHealth.InflictDamage with negative damage, so the damaged notify fires once per step.
 	/// A structure's self-repair and a depot's repair are suppressed. Any other negative damage, such as a medic, is reported once
 	/// per healer per window as healed. The sink sees every event before it reaches a connection, so a suppressed event never
 	/// reaches the turn buffer and never wakes wait.
