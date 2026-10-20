@@ -102,6 +102,8 @@ namespace OpenRA.Test
 				new DefeatedV1("defeated", 1, "P"),
 				new GameOverV1("game_over", 1, "P"),
 				new NotificationV1("notification", 1, "NewOptions", "P", [new ProductionOptionV1("proc", 1400, -30, ["anypower"], true, true)]),
+				new HealedV1("healed", 1, 2, "e1", "P", 7, 30, 100, "Normal"),
+				new SoldV1("sold", 1, 2, "e1", "P", [3, 4]),
 				new OverflowV1("overflow", 3),
 			};
 
