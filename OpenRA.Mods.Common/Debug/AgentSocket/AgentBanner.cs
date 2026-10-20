@@ -152,6 +152,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		static readonly (string Group, string Event, Type Payload)[] Events =
 		[
 			("damage", "damaged", typeof(DamagedV1)),
+			("damage", "healed", typeof(HealedV1)),
 			("killed", "killed", typeof(KilledV1)),
 			("captured", "captured", typeof(CapturedV1)),
 			("orders", "order", typeof(OrderEventV1)),
@@ -190,7 +191,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    and extends to radar-dot actors once a GPS satellite is launched.\n");
 			text.Append("    An attacker is named only when known. Otherwise attacker, attacker_type and attacker_owner are null,\n");
 			text.Append("    attacker_shrouded is true, and attacker_bearing is given.\n");
-			text.Append("    The same rule holds for events: damaged, killed, captured, order, produced, placed, sold, stance, path and activity are sent only\n");
+			text.Append("    The same rule holds for events: damaged, healed, killed, captured, order, produced, placed, sold, stance, path and activity are sent only\n");
 			text.Append("    for your own actors and known ones. A captor, producer, attacker or order target is named only when known, else null.\n");
 			text.Append("    power, notification, defeated, game_over and overflow name no actor, so they are always sent.\n");
 			text.Append("    A NewOptions notification lists options only for your side or an ally's: those newly buildable since its last one.\n");

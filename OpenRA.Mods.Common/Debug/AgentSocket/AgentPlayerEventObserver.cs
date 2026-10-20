@@ -9,6 +9,7 @@
  */
 #endregion
 
+using System.Collections.Generic;
 using OpenRA.Mods.Common.AgentSocket;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Traits;
@@ -31,11 +32,76 @@ namespace OpenRA.Mods.Common
 
 		void INotifyDamage.Damaged(Actor self, AttackInfo e)
 		{
+			// A repair is not damage: it is neither reported nor recorded as a hit (4).
+			if (IsRepair(self, e))
+				return;
+
+			// A heal is not a hit, so it is not recorded as one.
+			if (e.Damage.Value < 0)
+			{
+				HealedEvent(self, e);
+				return;
+			}
+
 			// The threat list reads recent hits from the state, so a hit is recorded whether or not a connection is open (P2.7).
 			if (e.Attacker != null)
 				AgentRecentDamage.Record(self, e.Attacker);
 
 			DamagedEvent(self, e);
+		}
+
+		/// <summary>
+		/// A structure healing itself (RepairableBuilding), or a depot repairing a unit (RepairsUnits), is a repair. Repairs
+		/// run one step per interval, so reporting each step floods the stream. A medic's heal is not a repair.
+		/// </summary>
+		static bool IsRepair(Actor self, AttackInfo e)
+		{
+			if (e.Damage.Value >= 0)
+				return false;
+
+			if (e.Attacker == self)
+				return self.Info.HasTraitInfo<RepairableBuildingInfo>();
+
+			return e.Attacker != null && e.Attacker.Info.HasTraitInfo<RepairsUnitsInfo>();
+		}
+
+		/// <summary>One healed event is sent per healer per actor per window, so a medic's repeated heals do not flood the stream.</summary>
+		const int HealWindowTicks = 25;
+
+		static World healWorld;
+		static readonly Dictionary<(uint Actor, uint? Healer), int> LastHealed = [];
+
+		static void HealedEvent(Actor self, AttackInfo e)
+		{
+			var observer = self.World.LocalPlayer;
+			if (!AgentEvents.Enabled || !AgentFog.Reported(self, observer) || !HealDue(self, e.Attacker))
+				return;
+
+			// The healer is named only when the local player knows it (AgentFog), as the attacker is for damaged.
+			var healer = e.Attacker;
+			var known = healer != null && AgentFog.Known(healer, observer);
+			var health = self.TraitOrDefault<Health>();
+			AgentEvents.Raise(new HealedV1("healed", self.World.WorldTick, self.ActorID, self.Info.Name, self.Owner.PlayerName,
+				known ? healer.ActorID : null, health?.HP ?? 0, health?.MaxHP ?? 0, e.DamageState.ToString()));
+		}
+
+		/// <summary>Whether a heal from this healer is reported now. The record belongs to one world, like AgentRecentDamage.</summary>
+		static bool HealDue(Actor self, Actor healer)
+		{
+			var world = self.World;
+			if (healWorld != world)
+			{
+				healWorld = world;
+				LastHealed.Clear();
+			}
+
+			var key = (self.ActorID, healer?.ActorID);
+			var now = world.WorldTick;
+			if (LastHealed.TryGetValue(key, out var last) && now - last < HealWindowTicks)
+				return false;
+
+			LastHealed[key] = now;
+			return true;
 		}
 
 		static void DamagedEvent(Actor self, AttackInfo e)

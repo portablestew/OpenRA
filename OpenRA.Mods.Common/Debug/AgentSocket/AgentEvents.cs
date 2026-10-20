@@ -23,6 +23,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record DamagedV1(string Event, int Tick, uint Actor, string Type, string Owner, uint? Attacker,
 		string AttackerType, string AttackerOwner, int Damage, int Hp, int MaxHp, string DamageState, string AttackerBearing, bool AttackerShrouded);
 
+	// A non-repair heal (a medic's, for one). Healer is null when the local player does not know the healer (AgentFog). Hp, MaxHp and
+	// DamageState are read after the heal. At most one per healer per actor per window (AgentPlayerEventObserver).
+	public sealed record HealedV1(string Event, int Tick, uint Actor, string Type, string Owner, uint? Healer, int Hp, int MaxHp,
+		string DamageState);
+
 	public sealed record KilledV1(string Event, int Tick, uint Actor, string Type, string Owner, uint? Attacker,
 		string AttackerType, string AttackerOwner, int Cost);
 
