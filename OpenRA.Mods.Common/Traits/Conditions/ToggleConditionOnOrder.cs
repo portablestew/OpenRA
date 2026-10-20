@@ -57,6 +57,9 @@ namespace OpenRA.Mods.Common.Traits
 		public ToggleConditionOnOrder(ToggleConditionOnOrderInfo info)
 			: base(info) { }
 
+		/// <summary>Whether the toggle is on. A pause keeps the value, and disabling the trait resets it.</summary>
+		public bool Enabled => enabled;
+
 		void SetCondition(Actor self, bool granted)
 		{
 			if (granted && conditionToken == Actor.InvalidConditionToken)
