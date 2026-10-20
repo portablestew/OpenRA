@@ -71,7 +71,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>
 	/// An own structure in the state units (P2.5): only the keys the agent needs to address it and see its health. Cell is the
 	/// top-left cell. Hp is null for a structure without IHealth. The full UnitV1 entry is kept for every other unit.
-	/// Repairing is true while the local player is among the structure's repairers. PoweredDown is the state of its PowerDown
+	/// Repairing is true while the local player is among the structure's repairers. PoweredDown is the state of its
 	/// toggle, and is omitted (null) for a structure without one.
 	/// </summary>
 	public sealed record StructureV1(uint Id, string Type, int[] Cell, int? Hp, bool Repairing,
@@ -191,10 +191,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 				repairable != null && repairable.Repairers.Contains(observer), PowerDownState(a));
 		}
 
-		/// <summary>The state of the structure's PowerDown toggle, or null when it has none.</summary>
+		/// <summary>The state of the structure's toggle, or null when it has none. A structure's only toggle is its power-down one, so it is read whatever its order name.</summary>
 		static bool? PowerDownState(Actor a)
 		{
-			return a.TraitsImplementing<ToggleConditionOnOrder>().FirstOrDefault(t => t.Info.OrderName == "PowerDown")?.Enabled;
+			return a.TraitsImplementing<ToggleConditionOnOrder>().FirstOrDefault()?.Enabled;
 		}
 
 		/// <summary>

@@ -359,6 +359,35 @@ namespace OpenRA.Test
 			Assert.That(OwnUnit(state.RootElement, dome.ActorID).GetProperty("powered_down").GetBoolean(), Is.True);
 		}
 
+		// The toggle's Info is read by reflection, since this project cannot reference OpenRA.Mods.Common.
+		static readonly Lazy<Type> ToggleInfoType = new(() => HeadlessMod.ModData.ObjectCreator.FindType("Traits.ToggleConditionOnOrderInfo"));
+
+		[TestCase(TestName = "powered_down reports a structure's toggle under any order name, so a toggle named differently is reported too")]
+		public void PoweredDownReportsAToggleWithAnotherName()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			// The Info is shared by every dome, so the renamed order is put back after the test.
+			var info = dome.Info.TraitInfos<OpenRA.Traits.ITraitInfoInterface>().Single(i => i.GetType() == ToggleInfoType.Value);
+			var orderName = ToggleInfoType.Value.GetField("OrderName");
+			var original = (string)orderName.GetValue(info);
+			orderName.SetValue(info, "Hibernate");
+			try
+			{
+				using (var response = RequestWithTicks(hw, $"{{\"cmd\":\"order\",\"actor\":{dome.ActorID},\"order\":\"Hibernate\",\"on\":true}}"))
+					Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True, response.RootElement.ToString());
+
+				using var state = State();
+				Assert.That(OwnUnit(state.RootElement, dome.ActorID).GetProperty("powered_down").GetBoolean(), Is.True);
+			}
+			finally
+			{
+				orderName.SetValue(info, original);
+			}
+		}
+
 		[TestCase(TestName = "A state or ping request with no live world returns an error envelope")]
 		public void NoWorldReturnsErrorEnvelope()
 		{
