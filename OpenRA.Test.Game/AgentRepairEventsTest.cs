@@ -35,6 +35,10 @@ namespace OpenRA.Test
 		/// <summary>Ticks to let a repair run over many repair steps.</summary>
 		const int RepairTicks = 300;
 
+		/// <summary>Ticks per step of the whole-repair loop, and the cap on the loop so a stuck repair fails rather than hangs.</summary>
+		const int RepairLoopStepTicks = 100;
+		const int RepairLoopCapTicks = 5000;
+
 		bool savedAgentSocket;
 		bool savedHub;
 		object savedSink;
@@ -146,6 +150,42 @@ namespace OpenRA.Test
 			Assert.That(NegativeDamaged(events, dome.ActorID), Is.Empty, "A structure repair must raise no damaged event.");
 			Assert.That(Healed(events, dome.ActorID), Is.Empty, "A structure repair must raise no healed event.");
 			Assert.That(RecentVictim(hw, dome.ActorID), Is.Null, "A structure repair must not feed recent damage.");
+		}
+
+		[TestCase(TestName = "A structure repaired from damage to full health: repairing is true then false, hit points rise to max, and no damaged or healed events")]
+		public void StructureRepairFlagAndHpOverWholeRepair()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var local = hw.LocalPlayer;
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), local);
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(60, 50), 2, 2), local);
+			hw.Tick(1);
+
+			var enemy = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 60), 1, 1), hw.EnemyPlayer);
+			dome.TraitOrDefault<IHealth>().InflictDamage(dome, enemy, new Damage(SetupDamage), true);
+			var events = WatchEvents();
+			AgentProductionTest.SetLocalCash(hw, 10000);
+
+			// The state's repairing flag: the local player is among the structure's repairers.
+			var repairable = ModTrait(dome, "Traits.RepairableBuilding");
+			var repairers = (System.Collections.IEnumerable)repairable.GetType().GetField("Repairers").GetValue(repairable);
+			bool Repairing() => repairers.Cast<object>().Contains(local);
+
+			var maxHp = dome.TraitOrDefault<IHealth>().MaxHP;
+			var hpBefore = Hp(dome);
+			Assert.That(Repairing(), Is.False, "Precondition: the local player is not repairing before the order.");
+
+			repairable.GetType().GetMethod("RepairBuilding").Invoke(repairable, [dome, local]);
+			Assert.That(Repairing(), Is.True, "The repairing flag is true once the local player is among the repairers.");
+
+			for (var elapsed = 0; Hp(dome) < maxHp && elapsed < RepairLoopCapTicks; elapsed += RepairLoopStepTicks)
+				hw.Tick(RepairLoopStepTicks);
+
+			Assert.That(Hp(dome), Is.GreaterThan(hpBefore), "Hit points should rise over the repair.");
+			Assert.That(Hp(dome), Is.EqualTo(maxHp), "The structure should reach full health within the cap.");
+			Assert.That(Repairing(), Is.False, "The repairing flag is false once the structure is at full health.");
+			Assert.That(NegativeDamaged(events, dome.ActorID), Is.Empty, "No damaged event for the structure across the whole repair.");
+			Assert.That(Healed(events, dome.ActorID), Is.Empty, "No healed event for the structure across the whole repair.");
 		}
 
 		[TestCase(TestName = "A vehicle repaired at a fix depot over many ticks raises no damaged or healed events, and does not feed recent damage")]
