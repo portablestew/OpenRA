@@ -14,13 +14,15 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
 using OpenRA.Mods.Common.Traits;
+using OpenRA.Primitives;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.AgentSocket
 {
 	// Schema v1. Wire keys are snake_case (AgentSocketCommands.Json). The envelope fields ok and cmd are part of the
 	// state and actors lines, so every key a client sees is declared here.
-	public sealed record StateV1(bool Ok, string Cmd, int Tick, int NetFrame, StateMapV1 Map, bool Paused, bool GameOver,
+	// MsPerTick is the world's game speed: the milliseconds one tick lasts (World.Timestep). It is static, like the map.
+	public sealed record StateV1(bool Ok, string Cmd, int Tick, int NetFrame, StateMapV1 Map, int? MsPerTick, bool Paused, bool GameOver,
 		string LocalPlayer, PlayerV1[] Players, object[] Units, ThreatV1[] Threats, uint[] Selection);
 
 	/// <summary>
@@ -43,17 +45,20 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record SpawnV1(string Player, int[] Cell);
 
 	/// <summary>
-	/// Cash, Resources and ResourceCapacity are null for a player who is not allied with the local player: their economy is hidden,
-	/// as is Power. For an allied player, Resources is 0 without a PlayerResources trait. Dead means WinState.Lost. Power is null
-	/// without a PowerManager trait. KnownCounts is the number of each type the local player knows of this player's units (P2.5):
-	/// all of them for the local player, and for another player only those AgentFog says are known. Null when there is no local
-	/// player. Bot is the AI type of a bot-owned player and null for a human, so a later envelope proves which opponents
-	/// load_skirmish started. Handicap is the player's handicap percent (Player.Handicap, 0 for a player without one).
-	/// Faction, Bot and Handicap are static (C): null in an envelope that does not carry the static data, which is every envelope
-	/// after a connection's first one, until a world change. Name, the economy and the counts are always sent.
+	/// Funds, Cash, Resources and ResourceCapacity are null for a player who is not allied with the local player: their economy is
+	/// hidden, as is Power. Funds is the spendable total, Cash + Resources: the number the in-game counter shows and the number
+	/// costs compare against. Cash is only the uncapped pool, and Resources only the harvested pool capped by ResourceCapacity;
+	/// both are 0 without a PlayerResources trait. Dead means WinState.Lost. Power is null without a PowerManager trait.
+	/// KnownCounts is the number of each type the local player knows of this player's units (P2.5): all of them for the local
+	/// player, and for another player only those AgentFog says are known. Null when there is no local player. Bot is the AI type of
+	/// a bot-owned player and null for a human, so a later envelope proves which opponents load_skirmish started. Handicap is the
+	/// player's handicap percent (Player.Handicap, 0 for a player without one). Color is the player's colour as #RRGGBB, the same
+	/// one map_state draws as the owner's blip colour. Faction, Color, Bot and Handicap are static (C): null in an envelope that
+	/// does not carry the static data, which is every envelope after a connection's first one, until a world change. Name, the
+	/// economy and the counts are always sent.
 	/// </summary>
-	public sealed record PlayerV1(string Name, string Faction, int? Cash, int? Resources, int? ResourceCapacity, bool Dead, PowerV1 Power,
-		Dictionary<string, int> KnownCounts, string Bot, int? Handicap);
+	public sealed record PlayerV1(string Name, string Faction, string Color, int? Funds, int? Cash, int? Resources, int? ResourceCapacity,
+		bool Dead, PowerV1 Power, Dictionary<string, int> KnownCounts, string Bot, int? Handicap);
 
 	/// <summary>
 	/// Provided and Drained are the PowerManager totals. Excess is Provided - Drained. State is the PowerState name:
@@ -81,13 +86,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public static class AgentStateDump
 	{
 		/// <summary>
-		/// The snapshot. statics is whether it carries the static data (C): the map, and each player's faction, bot and handicap.
-		/// Without it those come out null. A null connection always asks for them.
+		/// The snapshot. statics is whether it carries the static data (C): the map, the world's ms_per_tick, and each player's
+		/// faction, color, bot and handicap. Without it those come out null. A null connection always asks for them.
 		/// </summary>
 		public static StateV1 Snapshot(World world, bool statics = true)
 		{
 			return new StateV1(true, "state", world.WorldTick, world.NetFrameNumber,
-				statics ? StateMap(world) : null, world.Paused, world.IsGameOver,
+				statics ? StateMap(world) : null, statics ? world.Timestep : null, world.Paused, world.IsGameOver,
 				world.LocalPlayer?.PlayerName, world.Players.Select(p => PlayerState(p, world.LocalPlayer, statics)).ToArray(),
 				StateUnits(world), AgentThreats.Build(world, world.LocalPlayer), Selected(world));
 		}
@@ -234,10 +239,18 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var resources = own ? p.PlayerActor.TraitOrDefault<PlayerResources>() : null;
 			var power = own ? p.PlayerActor.TraitOrDefault<PowerManager>() : null;
 
-			return new PlayerV1(p.PlayerName, statics ? p.Faction?.InternalName : null,
+			return new PlayerV1(p.PlayerName, statics ? p.Faction?.InternalName : null, statics ? ColorHex(p.Color) : null,
+				own ? resources?.GetCashAndResources() ?? 0 : null,
 				own ? resources?.Cash ?? 0 : null, own ? resources?.Resources ?? 0 : null, own ? resources?.ResourceCapacity ?? 0 : null,
 				p.WinState == WinState.Lost,
 				Power(power), KnownCounts(p, observer), statics ? p.BotType : null, statics ? p.Handicap : null);
+		}
+
+		/// <summary>A player colour as #RRGGBB, the form map_state blips also draw from.</summary>
+		static string ColorHex(Color color)
+		{
+			var argb = color.ToArgb();
+			return $"#{argb >> 16 & 0xFF:X2}{argb >> 8 & 0xFF:X2}{argb & 0xFF:X2}";
 		}
 
 		/// <summary>The PowerManager totals and state, or null for a player without a PowerManager.</summary>

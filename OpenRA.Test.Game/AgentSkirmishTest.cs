@@ -195,7 +195,7 @@ namespace OpenRA.Test
 			Assert.That(state.RootElement.GetProperty("map").GetProperty("uid").GetString(), Is.EqualTo(hw.World.Map.Uid));
 		}
 
-		[TestCase(TestName = "The load_skirmish defaults are a random map, the default speed, and one normal bot at 70 percent")]
+		[TestCase(TestName = "The load_skirmish defaults are a random map, the default speed, and one normal bot at 50 percent")]
 		public void Defaults()
 		{
 			using var doc = JsonDocument.Parse("{\"cmd\":\"load_skirmish\"}");
@@ -207,7 +207,7 @@ namespace OpenRA.Test
 			var opponents = (Array)Prop(request, "Opponents");
 			Assert.That(opponents.Length, Is.EqualTo(1));
 			Assert.That(Prop(opponents.GetValue(0), "Bot"), Is.EqualTo("normal"));
-			Assert.That(Prop(opponents.GetValue(0), "Handicap"), Is.EqualTo(70));
+			Assert.That(Prop(opponents.GetValue(0), "Handicap"), Is.EqualTo(50));
 		}
 
 		[TestCase(TestName = "An explicit load_skirmish parses its map, speed and opponents, and an empty opponents array is legal")]
@@ -225,7 +225,7 @@ namespace OpenRA.Test
 			Assert.That(Prop(opponents.GetValue(0), "Bot"), Is.EqualTo("turtle"));
 			Assert.That(Prop(opponents.GetValue(0), "Handicap"), Is.EqualTo(50));
 			Assert.That(Prop(opponents.GetValue(1), "Bot"), Is.EqualTo("naval"));
-			Assert.That(Prop(opponents.GetValue(1), "Handicap"), Is.EqualTo(70));
+			Assert.That(Prop(opponents.GetValue(1), "Handicap"), Is.EqualTo(50));
 
 			using var solo = JsonDocument.Parse("{\"cmd\":\"load_skirmish\",\"opponents\":[]}");
 			Assert.That(((Array)Prop(ParseRequest(solo.RootElement), "Opponents")).Length, Is.EqualTo(0));

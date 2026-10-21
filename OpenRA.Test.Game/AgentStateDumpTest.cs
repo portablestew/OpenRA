@@ -32,7 +32,7 @@ namespace OpenRA.Test
 	[TestFixture]
 	sealed class AgentStateDumpTest
 	{
-		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "paused", "game_over", "local_player", "players", "units", "threats", "selection"];
+		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "ms_per_tick", "paused", "game_over", "local_player", "players", "units", "threats", "selection"];
 		static readonly string[] StateAckKeys = ["ok", "cmd", "tick"];
 		static readonly string[] UnitKeys = ["id", "type", "owner", "cell", "pos", "facing", "hp", "max_hp", "damage", "idle", "activity"];
 		static readonly string[] PowerKeys = ["provided", "drained", "excess", "state"];
@@ -168,7 +168,7 @@ namespace OpenRA.Test
 
 			var players = root.GetProperty("players");
 			Assert.That(players.GetArrayLength(), Is.GreaterThan(0));
-			Assert.That(Keys(players[0]), Is.EquivalentTo(["name", "faction", "cash", "resources", "resource_capacity",
+			Assert.That(Keys(players[0]), Is.EquivalentTo(["name", "faction", "color", "cash", "resources", "resource_capacity",
 				"dead", "power", "known_counts", "bot", "handicap"]));
 			Assert.That(Keys(LocalPlayer(root).GetProperty("power")), Is.EquivalentTo(PowerKeys));
 

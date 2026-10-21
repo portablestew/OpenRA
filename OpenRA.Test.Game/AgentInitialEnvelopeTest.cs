@@ -267,6 +267,8 @@ namespace OpenRA.Test
 				"The first envelope should carry the player's faction.");
 			Assert.That(firstPlayer.GetProperty("handicap").ValueKind, Is.EqualTo(JsonValueKind.Number),
 				"The first envelope should carry the player's handicap.");
+			Assert.That(firstPlayer.GetProperty("color").GetString(), Does.Match("^#[0-9A-F]{6}$"),
+				"The first envelope should carry the player's #RRGGBB colour.");
 
 			Assert.That(responses[1].GetProperty("state").GetProperty("map").ValueKind, Is.EqualTo(JsonValueKind.Null),
 				"A later envelope on the connection should leave the map null.");
@@ -277,6 +279,8 @@ namespace OpenRA.Test
 				"A later envelope should leave the bot null.");
 			Assert.That(laterPlayer.GetProperty("handicap").ValueKind, Is.EqualTo(JsonValueKind.Null),
 				"A later envelope should leave the handicap null.");
+			Assert.That(laterPlayer.GetProperty("color").ValueKind, Is.EqualTo(JsonValueKind.Null),
+				"A later envelope should leave the colour null.");
 			Assert.That(laterPlayer.GetProperty("name").GetString(), Is.EqualTo(local.PlayerName),
 				"A later envelope should keep the player's name, the key its entry is found by.");
 		}

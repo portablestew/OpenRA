@@ -45,12 +45,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// The load_skirmish reply (plan §3.3, shape A): the flat state shape with cmd load_skirmish, plus the skirmish
 	/// echo. Built from a StateV1 so the two shapes cannot drift.
 	/// </summary>
-	public sealed record LoadSkirmishV1(bool Ok, string Cmd, int Tick, int NetFrame, StateMapV1 Map, bool Paused, bool GameOver,
-		string LocalPlayer, PlayerV1[] Players, object[] Units, ThreatV1[] Threats, uint[] Selection, SkirmishV1 Skirmish)
+	public sealed record LoadSkirmishV1(bool Ok, string Cmd, int Tick, int NetFrame, StateMapV1 Map, int? MsPerTick, bool Paused,
+		bool GameOver, string LocalPlayer, PlayerV1[] Players, object[] Units, ThreatV1[] Threats, uint[] Selection, SkirmishV1 Skirmish)
 	{
 		public static LoadSkirmishV1 From(StateV1 state, SkirmishV1 skirmish)
 		{
-			return new LoadSkirmishV1(state.Ok, "load_skirmish", state.Tick, state.NetFrame, state.Map, state.Paused,
+			return new LoadSkirmishV1(state.Ok, "load_skirmish", state.Tick, state.NetFrame, state.Map, state.MsPerTick, state.Paused,
 				state.GameOver, state.LocalPlayer, state.Players, state.Units, state.Threats, state.Selection, skirmish);
 		}
 	}
@@ -68,9 +68,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public const string DefaultSpeed = "default";
 
 		public const string DefaultBot = "normal";
-		public const int DefaultHandicap = 70;
+		public const int DefaultHandicap = 50;
 
-		/// <summary>The default request's opponents: one CPU at 70% handicap (the owner's 1v1 default).</summary>
+		/// <summary>The default request's opponents: one CPU at 50% handicap (the owner's 1v1 default).</summary>
 		public static SkirmishOpponent[] DefaultOpponents() => [new SkirmishOpponent(DefaultBot, DefaultHandicap)];
 
 		/// <summary>Handicaps the engine accepts: 0 to 95 in steps of 5 (LobbyCommands.Handicap).</summary>
