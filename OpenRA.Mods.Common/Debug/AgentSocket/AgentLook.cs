@@ -63,9 +63,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>
 	/// The look command (P2.8, 9.4). It returns the k nearest actors to each reference point, regardless of owner, under the fog policy
 	/// (AgentFog.Known; the observer's own actors always count). Points share the k: each takes its nearest unclaimed actor in turn, so
-	/// every point gets a fair share and no actor is listed twice. Scenery is left out, as in the state. Each looked-at cell reports its
-	/// terrain type and whether a construction yard can stand on it, and a resource cell adds its resource and density. Each point also
-	/// gets a class summary: the classes within radius of it, with a count and the nearest occurrence, from the engine's own class names.
+	/// every point gets a fair share and no actor is listed twice. Scenery is left out, as in the state, but a crate is not scenery to
+	/// this command: it is a collectable the observer can act on, so a known crate is listed like any other actor. Each looked-at cell
+	/// reports its terrain type and whether a construction yard can stand on it, and a resource cell adds its resource and density. Each
+	/// point also gets a class summary: the classes within radius of it, with a count and the nearest occurrence, from the engine's own
+	/// class names.
 	/// </summary>
 	public static class AgentLook
 	{
@@ -142,7 +144,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					throw new InvalidOperationException($"the point {p.X},{p.Y} is not on the map");
 
 			var candidates = world.Actors
-				.Where(a => a.OccupiesSpace != null && !a.IsDead && !AgentStateDump.IsScenery(a)
+				.Where(a => a.OccupiesSpace != null && !a.IsDead && (!AgentStateDump.IsScenery(a) || IsCrate(a))
 					&& (a.Owner == observer || AgentFog.Known(a, observer)))
 				.ToArray();
 
@@ -278,13 +280,24 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>
 		/// The engine's class for an occupying actor (9.4): the map-editor category its rules declare, so RA trees are Tree and
-		/// buildings are Building. An actor whose rules declare none is grouped as "occupant". Never the actor type: a class, not
-		/// an entity, which is what the owner asked for.
+		/// buildings are Building. A crate declares none, and reports the crush class its Crate trait declares (RA: crate), the
+		/// name its collectors crush by. An actor whose rules declare neither is grouped as "occupant". Never the actor type: a
+		/// class, not an entity, which is what the owner asked for.
 		/// </summary>
 		static string Class(Actor a)
 		{
+			var crate = a.Info.TraitInfoOrDefault<CrateInfo>();
+			if (crate != null)
+				return crate.CrushClass;
+
 			var categories = a.Info.TraitInfos<MapEditorDataInfo>().SelectMany(i => i.Categories).ToArray();
 			return categories.Length > 0 ? categories[0] : "occupant";
+		}
+
+		/// <summary>True for a crate, which the scenery rule would otherwise swallow: a collectable, not a map prop.</summary>
+		static bool IsCrate(Actor a)
+		{
+			return a.Info.HasTraitInfo<CrateInfo>();
 		}
 
 		/// <summary>A class's running total: how many cells, and the nearest one.</summary>

@@ -147,13 +147,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ "                -> cells (per cell: cell, terrain, buildable, and resource and density when the cell has them), actors (the k\n"
 				+ " nearest you know, of any owner: id, type, owner, cell, hp), and summary (one entry per point: pt, radius, cells, classes).\n"
 				+ " With points, each actor also has dist (world units, 1024 per cell) and pt, the point it is nearest to, and the k is shared\n"
-				+ " so each point gets a fair share. Scenery (trees, husks, map props, spawn markers) is left out. buildable means a construction\n"
-				+ " yard could stand on the cell. Each summary class names kind (terrain, resource or blocking), the engine's own class, count\n"
+				+ " so each point gets a fair share. Scenery (trees, husks, map props, spawn markers) is left out, but a known crate is listed.\n"
+				+ " buildable means a construction yard could stand on the cell. Each summary class names kind (terrain, resource or blocking), the engine's own class, count\n"
 				+ " (cells) and nearest (cell and distance in world units); cells is how many on-map cells within radius the counts cover, so a\n"
 				+ " summary is a neighbourhood, not a survey. terrain is the tileset's type (RA: Clear, Road, Rock, Water, River, Beach, Bridge,\n"
 				+ " Rough, Tree, Wall, Ore, Gems), resource is the mod's type (RA: Ore, Gems, at any density), and blocking is the map-editor\n"
-				+ " category the occupying actor's rules declare (RA trees are Tree), counted only for actors you know, so an unseen doodad is\n"
-				+ " not counted. An empty or invalid selector is ok:false, error",
+				+ " category the occupying actor's rules declare (RA trees are Tree), or a crate's crush class (RA: crate), counted only for\n"
+				+ " actors you know, so an unseen doodad is not counted. An empty or invalid selector is ok:false, error",
 				"{\"cmd\":\"look\",\"points\":[[40,50]],\"k\":5,\"radius\":10}"),
 		];
 
@@ -177,6 +177,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("player", "defeated", typeof(DefeatedV1)),
 			("player", "game_over", typeof(GameOverV1)),
 			("notification", "notification", typeof(NotificationV1)),
+			("crate", "crate", typeof(CrateV1)),
 		];
 
 		/// <summary>The command names, in banner order.</summary>
@@ -201,8 +202,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    and extends to radar-dot actors once a GPS satellite is launched.\n");
 			text.Append("    An attacker is named only when known. Otherwise attacker, attacker_type and attacker_owner are null,\n");
 			text.Append("    attacker_shrouded is true, and attacker_bearing is given.\n");
-			text.Append("    The same rule holds for events: damaged, healed, killed, captured, order, produced, placed, sold, stance, path and activity are sent only\n");
-			text.Append("    for your own actors and known ones. A captor, producer, attacker or order target is named only when known, else null.\n");
+			text.Append("    The same rule holds for events: damaged, healed, killed, captured, crate, order, produced, placed, sold, stance, path and activity are sent only\n");
+			text.Append("    for your own actors and known ones. A captor, producer, collector, attacker or order target is named only when known, else null.\n");
 			text.Append("    power_low, power_restored, notification, defeated, game_over and overflow name no actor, so they are always sent.\n");
 			text.Append("    power_ready is sent for your own powers, and for another player's only when its timer is shown to you (see powers).\n");
 			text.Append("    A NewOptions notification lists options only for your side or an ally's: those newly buildable since its last one.\n");

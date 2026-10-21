@@ -34,6 +34,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 	// Captor is null when the local player does not know the captor (AgentFog), so the event carries no id it cannot see.
 	public sealed record CapturedV1(string Event, int Tick, uint Actor, string Type, string From, string To, uint? Captor);
 
+	// A crate a unit collected by crushing it. State is collected. Action is the CrateAction type that fired (e.g.
+	// GiveCashCrateAction), or null when the crate declared none. By is null when the local player does not know the collector (AgentFog).
+	public sealed record CrateV1(string Event, int Tick, string State, uint Actor, string Type, string Owner, int[] Cell,
+		uint? By, string ByType, string Action);
+
 	public sealed record OrderEventV1(string Event, int Tick, int EffectTick, bool Valid, int Client, string Order, uint Actor,
 		string Type, string Owner, int[] Cell, uint? TargetActor, bool Queued);
 

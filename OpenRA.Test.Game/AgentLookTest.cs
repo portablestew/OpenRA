@@ -28,6 +28,7 @@ namespace OpenRA.Test
 		const int Seed = 0x100C;
 		const string Infantry = "e1";
 		const string Satellite = "atek";
+		const string CrateActor = "moneycrate";
 
 		/// <summary>Ticks to let the map settle, and visibility and the satellite update.</summary>
 		const int SettleTicks = 5;
@@ -104,7 +105,8 @@ namespace OpenRA.Test
 			var center = hw.World.Map.CenterOfCell(point);
 			var local = hw.LocalPlayer;
 			return hw.World.Actors
-				.Where(a => a.OccupiesSpace != null && !a.IsDead && a.Owner.PlayerReference?.OwnsWorld != true && a.Info.Name != "mpspawn"
+				.Where(a => a.OccupiesSpace != null && !a.IsDead && a.Info.Name != "mpspawn"
+					&& (a.Owner.PlayerReference?.OwnsWorld != true || a.Info.Name == CrateActor)
 					&& (a.Owner == local || Known(a, local)))
 				.OrderBy(a => (a.CenterPosition - center).Length).ThenBy(a => a.ActorID)
 				.ToArray();
@@ -381,6 +383,42 @@ namespace OpenRA.Test
 			Assert.That(expected, Is.GreaterThanOrEqualTo(1), "The tree should occupy at least one cell.");
 			Assert.That(counted.GetProperty("nearest").GetProperty("distance").GetInt32(), Is.LessThanOrEqualTo(3 * 1024),
 				"The nearest blocked cell should be within the radius.");
+		}
+
+		[TestCase(TestName = "A known crate is a look actor and a crate blocking class; a fogged crate is in neither")]
+		public void CratesAreSurfaced()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			hw.Tick(SettleTicks);
+			var neutral = hw.World.Players.First(p => p.PlayerReference.OwnsWorld);
+
+			// A crate near the home, where the base already sees it, and one at the enemy home, out of sight.
+			var cell = hw.FindClearArea(hw.LocalPlayer.HomeLocation, 2, 2, 3);
+			var crate = hw.CreateActor(CrateActor, cell, neutral);
+			var hidden = hw.CreateActor(CrateActor, hw.FindClearArea(hw.EnemyPlayer.HomeLocation, 2, 2), neutral);
+			hw.Tick(SettleTicks);
+
+			Assert.That(Known(crate, hw.LocalPlayer), Is.True, "Precondition: the crate near the home should be known.");
+			Assert.That(Known(hidden, hw.LocalPlayer), Is.False, "Precondition: the crate at the enemy home should be out of sight.");
+
+			using var response = Look($"\"at\":[{cell.X},{cell.Y}],\"radius\":3");
+			var root = response.RootElement;
+
+			Assert.That(ActorIds(root), Does.Contain(crate.ActorID), "A known crate should be one of the actors.");
+			Assert.That(ActorIds(root), Does.Not.Contain(hidden.ActorID), "A fogged crate must not be one of the actors.");
+
+			var listed = root.GetProperty("actors").EnumerateArray().Single(a => a.GetProperty("id").GetUInt32() == crate.ActorID);
+			Assert.That(listed.GetProperty("type").GetString(), Is.EqualTo(CrateActor), "The crate should be listed under its own type.");
+			Assert.That(listed.GetProperty("hp").ValueKind, Is.EqualTo(JsonValueKind.Null), "A crate has no health.");
+
+			// The class is the crush class its Crate trait declares: the name its collectors crush by.
+			var summary = Summary(root);
+			var counted = summary.GetProperty("classes").EnumerateArray()
+				.Single(c => c.GetProperty("kind").GetString() == "blocking" && c.GetProperty("class").GetString() == "crate");
+			Assert.That(counted.GetProperty("nearest").GetProperty("cell")[0].GetInt32(), Is.EqualTo(cell.X),
+				"The summary's nearest crate should be the crate's cell.");
+			Assert.That(counted.GetProperty("nearest").GetProperty("cell")[1].GetInt32(), Is.EqualTo(cell.Y),
+				"The summary's nearest crate should be the crate's cell.");
 		}
 
 		[TestCase(TestName = "k of zero returns cells and summary with no actors, k of one returns the nearest known actor, and k outside 0 to 100 is refused")]

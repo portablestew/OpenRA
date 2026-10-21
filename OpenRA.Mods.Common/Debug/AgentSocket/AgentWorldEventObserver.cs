@@ -78,5 +78,21 @@ namespace OpenRA.Mods.Common
 			AgentEvents.Raise(new StanceV1("stance", self.World.WorldTick, self.ActorID,
 				self.Info.Name, self.Owner.PlayerName, from.ToString(), to.ToString()));
 		}
+
+		/// <summary>
+		/// Raises a crate event when a unit collects a crate by crushing it. Called from Crate.OnCrushInner while the crate is still
+		/// in the world, so the fog rule can speak for it. The collector is named only when the local player knows it.
+		/// </summary>
+		public static void Collected(Actor crate, Actor crusher, string action)
+		{
+			var observer = crate.World.LocalPlayer;
+			if (!AgentEvents.Enabled || !AgentFog.Reported(crate, observer))
+				return;
+
+			var known = AgentFog.Reported(crusher, observer);
+			AgentEvents.Raise(new CrateV1("crate", crate.World.WorldTick, "collected",
+				crate.ActorID, crate.Info.Name, crate.Owner.PlayerName, [crate.Location.X, crate.Location.Y],
+				known ? crusher.ActorID : null, known ? crusher.Info.Name : null, action));
+		}
 	}
 }

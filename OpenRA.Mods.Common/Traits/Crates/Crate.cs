@@ -155,14 +155,13 @@ namespace OpenRA.Mods.Common.Traits
 			if (collected)
 				return;
 
-			var crateActions = self.TraitsImplementing<CrateAction>();
-
-			self.Dispose();
 			collected = true;
 
-			var shares = crateActions
+			var shares = self.TraitsImplementing<CrateAction>()
 				.Select(a => (Action: a, Shares: a.GetSelectionSharesOuter(crusher)))
 				.ToList();
+
+			CrateAction chosen = null;
 			if (shares.Count != 0)
 			{
 				var totalShares = shares.Sum(a => a.Shares);
@@ -172,13 +171,19 @@ namespace OpenRA.Mods.Common.Traits
 				{
 					if (n < share)
 					{
-						action.Activate(crusher);
-						return;
+						chosen = action;
+						break;
 					}
 
 					n -= share;
 				}
 			}
+
+			// The crate is still in the world here, so the notify's fog rule can speak for it.
+			AgentWorldEventObserver.Collected(self, crusher, chosen?.GetType().Name);
+
+			self.Dispose();
+			chosen?.Activate(crusher);
 		}
 
 		void ITick.Tick(Actor self)
