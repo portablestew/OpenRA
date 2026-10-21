@@ -82,7 +82,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " Sell on a sellable structure replaces valid, effect_tick and settled_ticks with outcome (sold; null when unsettled), and a sold event follows."
 				+ " await:false returns job (the id for wait) with tick, min_effect_tick, and does not wait."
 				+ " A group returns ordered (the actor ids), matched, and results (one per actor: actor, valid, effect_tick, settled,"
-				+ " settled_ticks, path, outcome, reason, orders, error; an Attack or a DeployTransform actor carries only actor,"
+				+ " settled_ticks, outcome, reason, orders, error; an Attack or a DeployTransform actor carries only actor,"
 				+ " settled, outcome and reason). One actor that refuses the name refuses the whole group."
 				+ " A name the actor does not accept is refused: ok:false, error, available (the names it accepts)."
 				+ " Call orders to list every name an actor accepts before guessing."

@@ -50,7 +50,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	}
 
 	/// <summary>
-	/// One actor's outcome in a grouped order (P1.14). Valid, EffectTick, SettledTicks, Path and Orders are the single-actor Move
+	/// One actor's outcome in a grouped order (P1.14). Valid, EffectTick, SettledTicks and Orders are the single-actor Move
 	/// reply's values for that actor. Outcome and Reason are the Attack or DeployTransform outcome. Error is set when the actor's
 	/// await failed: its subject died, or it did not resolve in time. A field that does not apply is omitted.
 	/// </summary>
@@ -58,7 +58,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Valid = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? EffectTick = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? SettledTicks = null,
-		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int[][] Path = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Outcome = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Orders = null,
@@ -85,11 +84,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	/// <summary>
 	/// The Move reply (P1.3). Valid and EffectTick are null, and Settled is false, when the game was paused and the reply did not
-	/// wait. Path is the cells the Move planned, source cell first. Reason and Orders (P1.5) are set only when the validators
-	/// refused the order, and are omitted from every other reply.
+	/// wait. Reason and Orders (P1.5) are set only when the validators refused the order, and are omitted from every other reply.
 	/// </summary>
 	public sealed record MoveV1(bool Ok, string Cmd, int Tick, int MinEffectTick, bool? Valid, int? EffectTick, bool Settled,
-		int SettledTicks, int[][] Path,
+		int SettledTicks,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Orders = null);
 
@@ -490,7 +488,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			var refused = !await.Valid;
 			return new MoveV1(true, cmd, ack.Tick, ack.MinEffectTick, await.Valid, await.ResolvedTick, true, await.SettleTicks,
-				await.Path ?? [], refused ? ValidatorRejected : null, refused ? await.Orders : null);
+				refused ? ValidatorRejected : null, refused ? await.Orders : null);
 		}
 
 		/// <summary>
@@ -558,7 +556,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return new AttackMoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0);
 
 			if (await is { IsMoveOrder: true })
-				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
+				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0);
 
 			return Outcome("order", ack, null);
 		}
@@ -681,7 +679,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			var refused = !await.Valid;
 			return new GroupResultV1(id, true, Valid: await.Valid, EffectTick: await.ResolvedTick, SettledTicks: await.SettleTicks,
-				Path: await.IsMoveOrder ? await.Path ?? [] : null, Reason: refused ? ValidatorRejected : null, Orders: refused ? await.Orders : null);
+				Reason: refused ? ValidatorRejected : null, Orders: refused ? await.Orders : null);
 		}
 
 		/// <summary>

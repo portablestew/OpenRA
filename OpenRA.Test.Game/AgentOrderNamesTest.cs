@@ -130,7 +130,7 @@ namespace OpenRA.Test
 
 			var line = $"{{\"cmd\":\"order\",\"actor\":{mcv.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
 			using var move = AgentStateDumpTest.RequestWithTicks(hw, line);
-			Assert.That(Keys(move.RootElement), Is.EquivalentTo(["ok", "cmd", "tick", "min_effect_tick", "valid", "effect_tick", "settled", "settled_ticks", "path"]));
+			Assert.That(Keys(move.RootElement), Is.EquivalentTo(["ok", "cmd", "tick", "min_effect_tick", "valid", "effect_tick", "settled", "settled_ticks"]));
 			Assert.That(move.RootElement.GetProperty("ok").GetBoolean(), Is.True);
 
 			// The deploy waits for its transform to end (P1.8), so it ticks. Accepted means no error reply and a settled outcome, not ok:true: this footprint is 1x1.

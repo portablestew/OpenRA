@@ -249,9 +249,7 @@ namespace OpenRA.Test
 				Assert.That(orders, Has.Count.EqualTo(1), "Expected exactly one order event.");
 				Assert.That(Field<int>(orders[0], "EffectTick"), Is.EqualTo(effectTick), "The reply's effect_tick is not the order event's.");
 
-				var path = root.GetProperty("path");
-				Assert.That(path.GetArrayLength(), Is.GreaterThan(0), "The path is empty.");
-				Assert.That(new[] { path[0][0].GetInt32(), path[0][1].GetInt32() }, Is.EqualTo(new[] { start.X, start.Y }), "The path does not start at the actor's cell.");
+				Assert.That(root.TryGetProperty("path", out _), Is.False, "The order reply carries no path; the path event does.");
 			}
 			finally
 			{

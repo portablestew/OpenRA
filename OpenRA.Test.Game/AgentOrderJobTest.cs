@@ -93,9 +93,7 @@ namespace OpenRA.Test
 			Assert.That(root.GetProperty("settled_ticks").GetInt32(), Is.EqualTo(3));
 			Assert.That(root.GetProperty("effect_tick").GetInt32(), Is.GreaterThanOrEqualTo(ack.GetProperty("tick").GetInt32() + 1));
 
-			var path = root.GetProperty("path");
-			Assert.That(path.GetArrayLength(), Is.GreaterThan(0), "The path is empty.");
-			Assert.That(new[] { path[0][0].GetInt32(), path[0][1].GetInt32() }, Is.EqualTo(new[] { start.X, start.Y }), "The path does not start at the actor's cell.");
+			Assert.That(root.TryGetProperty("path", out _), Is.False, "The wait reply carries no path; the path event does.");
 			Assert.That(PendingCount(hw.World), Is.EqualTo(0), "The waited job left its await pending.");
 		}
 

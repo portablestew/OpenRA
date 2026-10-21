@@ -60,7 +60,7 @@ namespace OpenRA.Test
 			using var response = AgentStateDumpTest.RequestWithTicks(hw, line);
 			var root = response.RootElement;
 
-			Assert.That(Keys(root), Is.EquivalentTo(["ok", "cmd", "tick", "min_effect_tick", "valid", "effect_tick", "settled", "settled_ticks", "path"]));
+			Assert.That(Keys(root), Is.EquivalentTo(["ok", "cmd", "tick", "min_effect_tick", "valid", "effect_tick", "settled", "settled_ticks"]));
 			Assert.That(root.GetProperty("settled").GetBoolean(), Is.True, root.ToString());
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True);
 			Assert.That(root.GetProperty("cmd").GetString(), Is.EqualTo("order"));
