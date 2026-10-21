@@ -111,6 +111,35 @@ namespace OpenRA.Test
 		}
 
 		[Test]
+		public void AgentPathMetricsEtaUsesPathLengthAndDeclaredSpeed()
+		{
+			var m = Measure(Line(new PathCell(0, 0), new PathCell(6, 0)));
+
+			// 6 cells x 1024 world units, at the given world units per tick.
+			Assert.That(AgentPathMetrics.EtaTicks(m, 1024), Is.EqualTo(6));
+			Assert.That(AgentPathMetrics.EtaTicks(m, 512), Is.EqualTo(12));
+			Assert.That(AgentPathMetrics.EtaTicks(m, 100), Is.EqualTo(62));
+		}
+
+		[Test]
+		public void AgentPathMetricsEtaIsNullWithoutAPathOrSpeed()
+		{
+			var m = Measure(Line(new PathCell(0, 0), new PathCell(6, 0)));
+
+			Assert.That(AgentPathMetrics.EtaTicks(null, 1024), Is.Null);
+			Assert.That(AgentPathMetrics.EtaTicks(m, 0), Is.Null);
+			Assert.That(AgentPathMetrics.EtaTicks(m, -1), Is.Null);
+		}
+
+		[Test]
+		public void AgentPathMetricsEtaOfZeroLengthPathIsZero()
+		{
+			var m = AgentPathMetrics.Compute(new PathCell(2, 2), new PathCell(2, 2), [], _ => 0);
+
+			Assert.That(AgentPathMetrics.EtaTicks(m, 1024), Is.EqualTo(0));
+		}
+
+		[Test]
 		public void AgentPathMetricsTerrainCostSkipsSourceCell()
 		{
 			// Cells 1 to 6 are charged, the source is not. Cell (3,0) costs 5 and the rest cost 1: 5 × 1 + 5 = 10.

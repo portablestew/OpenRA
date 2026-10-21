@@ -30,6 +30,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (!AgentEvents.Enabled || !AgentFog.Reported(self, self.World.LocalPlayer))
 				return;
 
+			// Move activity is reported only for actors a socket order drives, so autonomous work stays out of the turn.
+			// Transform stays: it is how a deploy reports, and it is rare.
+			if (kind == "move" && !AgentOrderInterest.Tracked(self))
+				return;
+
 			AgentEvents.Raise(new ActivityV1("activity", self.World.WorldTick,
 				self.ActorID, self.Info.Name, self.Owner.PlayerName, kind, state, reason));
 		}

@@ -105,8 +105,11 @@ namespace OpenRA.Test
 			var unit = hw.CreateActor(Infantry, hw.FindClearArea(local.HomeLocation, 3, 3), local);
 			hw.Tick(1);
 			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
-			hw.World.IssueOrder(new Order("Move", unit, Target.FromCell(hw.World, destination), false));
-			Assert.That(hw.TickUntil(() => unit.Location == destination, 500), Is.Not.Null, "The unit never reached the destination.");
+
+			// The socket order issues on the game thread with no connection (a null connection), so the sink is the only listener.
+			using var response = AgentStateDumpTest.RequestWithTicks(hw,
+				$"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}");
+			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True, response.RootElement.ToString());
 
 			Assert.That(Groups(), Does.Contain("path"), "A Move with no connection open should raise its path to the sink.");
 			Assert.That(Groups(), Does.Contain("activity"), "A Move with no connection open should raise its activity to the sink.");

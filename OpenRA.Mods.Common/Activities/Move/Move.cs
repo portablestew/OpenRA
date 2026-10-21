@@ -156,6 +156,7 @@ namespace OpenRA.Mods.Common.Activities
 			{
 				path?.Clear();
 				AgentActivityEvents.Raise(self, "move", "canceled", "interrupted");
+				AgentOrderInterest.MoveEnded(self, this);
 
 				mobile.MoveResult = MoveResult.CompleteCanceled;
 				return true;
@@ -387,6 +388,7 @@ namespace OpenRA.Mods.Common.Activities
 		void ReportCompleted(Actor self)
 		{
 			AgentActivityEvents.Raise(self, "move", "completed", mobile.MoveResult == MoveResult.CompleteDestinationBlocked ? "blocked" : "reached");
+			AgentOrderInterest.MoveEnded(self, this);
 		}
 
 		protected override void OnLastRun(Actor self)

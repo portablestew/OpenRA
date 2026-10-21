@@ -73,12 +73,19 @@ namespace OpenRA.Mods.Common.AgentSocket
 			// A socket await for this Move takes the path whether or not a connection is open. An empty list means no path was found.
 			AgentOrderAwait.CapturePath(self, cells);
 
-			// The actor's path is sent only when the local player reports the actor (AgentFog). The await above takes it regardless.
+			// The actor's path is sent only when the local player reports the actor (AgentFog), and only while a socket order
+			// drives it: an autonomous move (a harvester's shuttle) is not the socket's to report.
 			if (!AgentFog.Reported(self, self.World.LocalPlayer))
 				return;
 
+			if (!AgentOrderInterest.Tracked(self))
+				return;
+
+			// Naive by design: the declared speed, not the terrain- and modifier-adjusted movement speed.
+			var speed = self.TraitOrDefault<Mobile>()?.Info.Speed ?? 0;
 			AgentEvents.Raise(new PathV1("path", self.World.WorldTick, self.ActorID,
-				self.Info.Name, self.Owner.PlayerName, from, [to.X, to.Y], check.ToString(), repath, result, metrics));
+				self.Info.Name, self.Owner.PlayerName, from, [to.X, to.Y], check.ToString(), repath, result,
+				AgentPathMetrics.EtaTicks(metrics, speed), metrics));
 		}
 
 		/// <summary>

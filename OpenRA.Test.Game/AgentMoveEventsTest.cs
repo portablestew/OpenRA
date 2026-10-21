@@ -130,12 +130,26 @@ namespace OpenRA.Test
 			unit.QueueActivity((Activity)Activator.CreateInstance(ModType("Activities.Move"), unit, unit.Location, null));
 		}
 
+		/// <summary>Takes socket-order interest in an actor, so its path and move activity are reported.</summary>
+		static void Track(Actor unit)
+		{
+			ModType("AgentSocket.AgentOrderInterest").GetMethod("Track", [typeof(Actor)]).Invoke(null, [unit]);
+		}
+
+		/// <summary>The actor's declared Mobile speed, in world units per tick, read without referencing the mod assembly.</summary>
+		static int DeclaredSpeed(Actor unit)
+		{
+			var info = unit.Info.TraitInfos<ITraitInfoInterface>().Single(t => t.GetType().Name == "MobileInfo");
+			return (int)info.GetType().GetField("Speed").GetValue(info);
+		}
+
 		[TestCase(TestName = "A Move order yields a started activity, one path event (found, not a repath), then a completed activity")]
 		public void MoveProducesOnePathThenReachedEvent()
 		{
 			using var hw = HeadlessWorld.Create(1);
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
+			Track(unit);
 
 			var origin = unit.Location;
 			var destination = hw.FindClearArea(origin, 1, 1, 6);
@@ -170,6 +184,10 @@ namespace OpenRA.Test
 			Assert.That(Field<int>(metrics, "PathLenCells"), Is.GreaterThan(0));
 			Assert.That(Field<double>(metrics, "DetourRatio"), Is.GreaterThanOrEqualTo(1.0));
 
+			// The naive ETA: path length in world units at the declared Mobile speed.
+			var expectedEta = (int)Math.Ceiling(Field<double>(metrics, "PathLen") * 1024 / DeclaredSpeed(unit));
+			Assert.That(Field<int>(path, "EtaTicks"), Is.EqualTo(expectedEta));
+
 			var result = events[2];
 			Assert.That(Field<string>(result, "Event"), Is.EqualTo("activity"));
 			Assert.That(Field<string>(result, "State"), Is.EqualTo("completed"));
@@ -183,6 +201,7 @@ namespace OpenRA.Test
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
+			Track(unit);
 			QueueMoveToOwnCell(unit);
 			hw.Tick(3);
 
@@ -199,6 +218,7 @@ namespace OpenRA.Test
 			Assert.That(Field<int>(metrics, "PathLenCells"), Is.EqualTo(0));
 			Assert.That(Field<double>(metrics, "CrowCells"), Is.EqualTo(0.0));
 			Assert.That(Field<double>(metrics, "DetourRatio"), Is.EqualTo(1.0));
+			Assert.That(Field<int>(path, "EtaTicks"), Is.EqualTo(0));
 
 			Assert.That(Field<string>(events[2], "Reason"), Is.EqualTo("reached"));
 		}
@@ -210,6 +230,7 @@ namespace OpenRA.Test
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
+			Track(unit);
 			QueueMoveWithPath(unit, []);
 			hw.Tick(5);
 
@@ -219,6 +240,7 @@ namespace OpenRA.Test
 			var path = events[1];
 			Assert.That(Field<string>(path, "Result"), Is.EqualTo("no_path"));
 			Assert.That(Field<object>(path, "Metrics"), Is.Null);
+			Assert.That(Field<object>(path, "EtaTicks"), Is.Null);
 
 			Assert.That(Field<string>(events[2], "Reason"), Is.EqualTo("blocked"));
 		}
@@ -235,6 +257,7 @@ namespace OpenRA.Test
 			var far = new CPos(origin.X + 8, origin.Y);
 
 			// path[0] is the destination. The step from far to near is 6 cells, and the step from origin to far is 8.
+			Track(unit);
 			QueueMoveWithPath(unit, [near, far]);
 			Assert.That(() => hw.Tick(5), Throws.Nothing, "An invalid path must not throw on the game thread.");
 
@@ -245,9 +268,11 @@ namespace OpenRA.Test
 			Assert.That(Field<bool>(first, "Repath"), Is.False);
 			Assert.That(Field<string>(first, "Result"), Is.EqualTo("found"));
 			Assert.That(Field<object>(first, "Metrics"), Is.Null);
+			Assert.That(Field<object>(first, "EtaTicks"), Is.Null);
 
 			Assert.That(Field<bool>(events[2], "Repath"), Is.True);
 			Assert.That(Field<object>(events[2], "Metrics"), Is.Null);
+			Assert.That(Field<object>(events[2], "EtaTicks"), Is.Null);
 
 			Assert.That(Field<string>(events[3], "Reason"), Is.EqualTo("blocked"));
 		}
@@ -261,6 +286,7 @@ namespace OpenRA.Test
 
 			// Eight cells away, so the path still has cells on it after a couple of ticks.
 			var destination = hw.FindClearArea(new CPos(unit.Location.X + 8, unit.Location.Y), 1, 1, 2);
+			Track(unit);
 			unit.QueueActivity((Activity)Activator.CreateInstance(ModType("Activities.Move"), unit, destination, null));
 			hw.Tick(2);
 
@@ -297,6 +323,7 @@ namespace OpenRA.Test
 
 			// Sixteen cells away, so the move is still under way when the Stop arrives.
 			var destination = hw.FindClearArea(new CPos(unit.Location.X + 16, unit.Location.Y), 1, 1, 2);
+			Track(unit);
 			hw.World.IssueOrder(new Order("Move", unit, Target.FromCell(hw.World, destination), false));
 			hw.Tick(2);
 
@@ -331,6 +358,46 @@ namespace OpenRA.Test
 			Assert.That(hw.TickUntil(() => unit.Location == destination, 500), Is.Not.Null, "The unit never reached the destination.");
 
 			Assert.That((int)connection.GetType().GetProperty("Pending").GetValue(connection), Is.EqualTo(0));
+		}
+
+		[TestCase(TestName = "A move no socket order drives reports no path or move activity")]
+		public void UntrackedMoveReportsNothing()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+
+			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+			hw.World.IssueOrder(new Order("Move", unit, Target.FromCell(hw.World, destination), false));
+			Assert.That(hw.TickUntil(() => unit.Location == destination, 500), Is.Not.Null, "The unit never reached the destination.");
+
+			Assert.That(Pending(), Is.EqualTo(0), "An order no socket issued should report no path or move activity.");
+		}
+
+		[TestCase(TestName = "Interest in an actor ends when its move completes, so later autonomous movement reports nothing")]
+		public void InterestEndsWhenMoveCompletes()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			Track(unit);
+
+			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+			hw.World.IssueOrder(new Order("Move", unit, Target.FromCell(hw.World, destination), false));
+			Assert.That(hw.TickUntil(() => unit.Location == destination, 500), Is.Not.Null, "The unit never reached the destination.");
+
+			// The activity reports completed, and the interest ends, when the actor's queue empties after the arrival.
+			Assert.That(hw.TickUntil(() => unit.CurrentActivity == null, 50), Is.Not.Null, "The move never completed.");
+
+			// The tracked move reported its path and its activity; the next move is no longer the socket's.
+			Drain();
+			held.Clear();
+
+			var elsewhere = hw.FindClearArea(unit.Location, 1, 1, 6);
+			hw.World.IssueOrder(new Order("Move", unit, Target.FromCell(hw.World, elsewhere), false));
+			Assert.That(hw.TickUntil(() => unit.Location == elsewhere, 500), Is.Not.Null, "The unit never reached the second destination.");
+
+			Assert.That(Pending(), Is.EqualTo(0), "Interest should end with the order's move, so a later move reports nothing.");
 		}
 
 		/// <summary>The events of the named types, in the order they were raised. The connection carries every event; a test looks at its own.</summary>

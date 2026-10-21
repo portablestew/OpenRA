@@ -33,6 +33,18 @@ namespace OpenRA.Mods.Common.AgentSocket
 		const int DiagonalStep = 1449;
 
 		/// <summary>
+		/// A naive ETA: the path length in cells at the actor's declared speed, in world units per tick.
+		/// Ignores terrain speed, speed modifiers, turning and blocking, so it is a lower bound. Null without a path or a positive speed.
+		/// </summary>
+		public static int? EtaTicks(PathMetrics metrics, int speed)
+		{
+			if (metrics == null || speed <= 0)
+				return null;
+
+			return (int)Math.Ceiling(metrics.PathLen * Scale / speed);
+		}
+
+		/// <summary>
 		/// <paramref name="pathTargetToSource"/> is the list as EvalPath returns it: target first, source excluded.
 		/// An empty list means the source already is the destination when <paramref name="src"/> equals <paramref name="dst"/>
 		/// (zero-length, metrics all zero); otherwise it means no path and the result is null.

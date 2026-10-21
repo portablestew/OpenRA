@@ -53,6 +53,7 @@ namespace OpenRA.Mods.Common
 
 			// The events waiting for a turn belong to the world this replaces (8.8). The new world's own events come after this.
 			AgentEvents.DiscardWaiting();
+			AgentOrderInterest.Clear();
 
 			Enabled = Game.Settings.Debug.AgentSocket;
 			AgentEvents.Enabled = Enabled;
@@ -76,6 +77,7 @@ namespace OpenRA.Mods.Common
 		void ITick.Tick(Actor self)
 		{
 			AgentOrderAwait.Tick(self.World);
+			AgentOrderInterest.Tick(self.World);
 		}
 
 		public void WorldAdopted(World w, WorldRenderer wr)
@@ -85,6 +87,7 @@ namespace OpenRA.Mods.Common
 
 			// An undo's events of the timeline it rewinds are not part of the restored world (8.8).
 			AgentEvents.DiscardWaiting();
+			AgentOrderInterest.Clear();
 
 			if (Enabled)
 			{

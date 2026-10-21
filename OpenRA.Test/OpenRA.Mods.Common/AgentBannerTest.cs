@@ -93,7 +93,7 @@ namespace OpenRA.Test
 				new OrderEventV1("order", 1, 1, true, 0, "Move", 2, "e1", "P", [3, 4], null, false),
 				new ProducedV1("produced", 1, 2, "e1", "P", 7, "fact"),
 				new StanceV1("stance", 1, 2, "e1", "P", "Defend", "HoldFire"),
-				new PathV1("path", 1, 2, "e1", "P", [1, 1], [3, 3], "All", false, "found", null),
+				new PathV1("path", 1, 2, "e1", "P", [1, 1], [3, 3], "All", false, "found", 10, null),
 				new ActivityV1("activity", 1, 2, "e1", "P", "move", "completed", "reached"),
 				new PlacedV1("placed", 1, 2, "powr", "P", [3, 4]),
 				new PowerEventV1("power_low", 1, "P", 10, 30, -20, "Low"),

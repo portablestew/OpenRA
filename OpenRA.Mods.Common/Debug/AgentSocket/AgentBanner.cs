@@ -203,7 +203,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    An attacker is named only when known. Otherwise attacker, attacker_type and attacker_owner are null,\n");
 			text.Append("    attacker_shrouded is true, and attacker_bearing is given.\n");
 			text.Append("    The same rule holds for events: damaged, healed, killed, captured, crate, order, produced, placed, sold, stance, path and activity are sent only\n");
-			text.Append("    for your own actors and known ones. A captor, producer, collector, attacker or order target is named only when known, else null.\n");
+			text.Append("    for your own actors and known ones. Path and move activity are sent only while an order you issued drives the actor,\n");
+			text.Append("    so an autonomous harvester stays quiet. A captor, producer, collector, attacker or order target is named only when known, else null.\n");
 			text.Append("    power_low, power_restored, notification, defeated, game_over and overflow name no actor, so they are always sent.\n");
 			text.Append("    power_ready is sent for your own powers, and for another player's only when its timer is shown to you (see powers).\n");
 			text.Append("    A NewOptions notification lists options only for your side or an ally's: those newly buildable since its last one.\n");
@@ -222,7 +223,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				Row(text, group, 12, $"{type}: {Fields(payload)}");
 
 			Row(text, "(any)", 12, $"{OverflowEvent}: {Fields(typeof(OverflowV1))}");
-			Row(text, "path", 12, $"metrics (in path events): {Fields(typeof(PathMetrics))}");
+			Row(text, "path", 12, $"metrics (in path events): {Fields(typeof(PathMetrics))}. eta_ticks is approximately path_len at"
+				+ " declared speed; null without a path");
 			Row(text, "activity", 12, "kind: move or transform; state: started, completed or canceled; reason (null unless the activity"
 				+ " says why it ended): reached or blocked (a move completed), interrupted (a Stop or a new order canceled it),"
 				+ " cannot_deploy or destroyed (a transform canceled)");
