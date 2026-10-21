@@ -62,6 +62,10 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("Text notification to display when the repair process is aborted.")]
 		public readonly string RepairingStoppedTextNotification = null;
 
+		[NotificationReference("Speech")]
+		[Desc("Speech notification to play when the repair process reaches full health.")]
+		public readonly string RepairingFinishedNotification = null;
+
 		public override object Create(ActorInitializer init) { return new RepairableBuilding(init.Self, this); }
 	}
 
@@ -189,6 +193,9 @@ namespace OpenRA.Mods.Common.Traits
 
 				if (health.DamageState == DamageState.Undamaged)
 				{
+					foreach (var repairer in Repairers)
+						Game.Sound.PlayNotification(self.World.Map.Rules, repairer, "Speech", Info.RepairingFinishedNotification, repairer.Faction.InternalName);
+
 					foreach (var repairer in Repairers)
 						if (repairer != self.Owner)
 							repairer.PlayerActor.TraitOrDefault<PlayerExperience>()?.GiveExperience(Info.PlayerExperience);

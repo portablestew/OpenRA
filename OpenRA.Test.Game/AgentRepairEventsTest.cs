@@ -216,6 +216,77 @@ namespace OpenRA.Test
 			Assert.That(Healed(events, dome.ActorID), Is.Empty, "A structure repair must raise no healed event.");
 		}
 
+		/// <summary>The notification events of one name, in the order they were raised.</summary>
+		static List<object> Notifications(List<object> events, string name)
+		{
+			return events.Where(e => e.GetType().Name == "NotificationV1" && (string)Field(e, "Name") == name).ToList();
+		}
+
+		[TestCase(TestName = "A structure repaired to full health raises one start and one finish notification, and no stop notification")]
+		public void StructureRepairRaisesStartAndFinishNotifications()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var local = hw.LocalPlayer;
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), local);
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(60, 50), 2, 2), local);
+			hw.Tick(1);
+
+			// Several repair steps' worth of damage, so the repair runs to full health rather than finishing in its first step.
+			var enemy = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 60), 1, 1), hw.EnemyPlayer);
+			var maxHp = dome.TraitOrDefault<IHealth>().MaxHP;
+			dome.TraitOrDefault<IHealth>().InflictDamage(dome, enemy, new Damage(maxHp * 3 / 4), true);
+			var events = WatchEvents();
+			AgentProductionTest.SetLocalCash(hw, 10000);
+
+			// RA's RepairableBuilding: RepairingNotification is Repairing, and RepairingFinishedNotification is UnitRepaired.
+			const string startNotification = "Repairing";
+			const string finishNotification = "UnitRepaired";
+			const string stopNotification = "Cancelled";
+			var repairable = ModTrait(dome, "Traits.RepairableBuilding");
+			repairable.GetType().GetMethod("RepairBuilding").Invoke(repairable, [dome, local]);
+			for (var elapsed = 0; Hp(dome) < maxHp && elapsed < RepairLoopCapTicks; elapsed += RepairLoopStepTicks)
+				hw.Tick(RepairLoopStepTicks);
+
+			Assert.That(Hp(dome), Is.EqualTo(maxHp), "Precondition: the structure should reach full health within the cap.");
+			Assert.That(Notifications(events, startNotification), Has.Count.EqualTo(1), "A structure repair should raise its start notification exactly once.");
+			Assert.That(Notifications(events, finishNotification), Has.Count.EqualTo(1), "A structure repair to full health should raise its finish notification exactly once.");
+			Assert.That(Notifications(events, stopNotification), Is.Empty, "A repair that finishes must not raise the stop notification.");
+		}
+
+		[TestCase(TestName = "A structure repair toggled off before full health raises one stop notification, and no finish notification")]
+		public void StructureRepairToggledOffRaisesStopNotification()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var local = hw.LocalPlayer;
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), local);
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(60, 50), 2, 2), local);
+			hw.Tick(1);
+
+			// Several repair steps' worth of damage, so the repair is still under way when it is toggled off.
+			var enemy = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 60), 1, 1), hw.EnemyPlayer);
+			var maxHp = dome.TraitOrDefault<IHealth>().MaxHP;
+			dome.TraitOrDefault<IHealth>().InflictDamage(dome, enemy, new Damage(maxHp * 3 / 4), true);
+			var events = WatchEvents();
+			AgentProductionTest.SetLocalCash(hw, 10000);
+
+			const string startNotification = "Repairing";
+			const string finishNotification = "UnitRepaired";
+			const string stopNotification = "Cancelled";
+			var repairable = ModTrait(dome, "Traits.RepairableBuilding");
+			repairable.GetType().GetMethod("RepairBuilding").Invoke(repairable, [dome, local]);
+			hw.Tick(1);
+			Assert.That(Hp(dome), Is.LessThan(maxHp), "Precondition: the structure should still be damaged when the repair is toggled off.");
+
+			// The same order again removes the local player, the last repairer, which stops the repair.
+			repairable.GetType().GetMethod("RepairBuilding").Invoke(repairable, [dome, local]);
+			hw.Tick(RepairLoopStepTicks);
+
+			Assert.That(Notifications(events, startNotification), Has.Count.EqualTo(1), "A structure repair should raise its start notification exactly once.");
+			Assert.That(Notifications(events, stopNotification), Has.Count.EqualTo(1), "Toggling off the last repairer should raise the stop notification exactly once.");
+			Assert.That(Notifications(events, finishNotification), Is.Empty, "A repair stopped before full health must not raise the finish notification.");
+			Assert.That(Hp(dome), Is.LessThan(maxHp), "The structure should stay damaged after the repair is stopped.");
+		}
+
 		[TestCase(TestName = "A vehicle repaired at a fix depot over many ticks raises no damaged or healed events, and does not feed recent damage")]
 		public void DepotRepairRaisesNoEvents()
 		{
