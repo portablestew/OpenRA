@@ -139,26 +139,26 @@ namespace OpenRA.Test
 			Assert.That(deploy.RootElement.GetProperty("settled").GetBoolean(), Is.True);
 		}
 
-		[TestCase(TestName = "The orders list gives Sell and the toggle name for a toggle building")]
-		public void OrdersListsSellAndTheToggleName()
+		[TestCase(TestName = "The orders list gives the toggle name for a toggle building")]
+		public void OrdersListsTheToggleName()
 		{
 			using var hw = HeadlessWorld.Create(1);
 			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
 			hw.Tick(1);
 
+			// The dome's Sellable is not listed here: a headless building is still build-incomplete, which disables it.
 			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"orders\",\"actor\":{dome.ActorID}}}");
-			Assert.That(Names(response.RootElement), Does.Contain("Sell"));
 			Assert.That(Names(response.RootElement), Does.Contain("PowerDown"));
 		}
 
 		[TestCase(TestName = "The orders list gives Sell but no toggle name for a structure with no toggle")]
-		public void OrdersListsSellButNoToggleForAPowerPlant()
+		public void OrdersListsSellButNoToggleForAWall()
 		{
 			using var hw = HeadlessWorld.Create(1);
-			var powr = hw.CreateActor("powr", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			var wall = hw.CreateActor("BRIK", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
-			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"orders\",\"actor\":{powr.ActorID}}}");
+			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"orders\",\"actor\":{wall.ActorID}}}");
 			Assert.That(Names(response.RootElement), Does.Contain("Sell"));
 			Assert.That(Names(response.RootElement), Does.Not.Contain("PowerDown"));
 		}
@@ -180,13 +180,13 @@ namespace OpenRA.Test
 		public void OnIsRefusedForANonToggleOrder()
 		{
 			using var hw = HeadlessWorld.Create(1);
-			var powr = hw.CreateActor("powr", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			var wall = hw.CreateActor("BRIK", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
-			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{powr.ActorID},\"order\":\"Sell\",\"on\":true}}");
+			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{wall.ActorID},\"order\":\"Sell\",\"on\":true}}");
 			var root = response.RootElement;
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False);
-			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo($"on applies only to a toggle order, and 'Sell' is not one for actor {powr.ActorID}"));
+			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo($"on applies only to a toggle order, and 'Sell' is not one for actor {wall.ActorID}"));
 		}
 
 		[TestCase(TestName = "The orders list gives RepairBuilding on the player actor, and no building or unit gets it")]
@@ -220,7 +220,7 @@ namespace OpenRA.Test
 			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo($"'RepairBuilding' is a toggle for actor {player}, so it needs on: true or on: false"));
 		}
 
-		// The toggle's own execution (desired state against current state) is a later step, so this asserts acceptance only.
+		// This asserts acceptance only. A toggle's execution (desired state against current state) is covered in AgentToggleOrderTest.
 		[TestCase(true, TestName = "A toggle order with on: true is accepted")]
 		[TestCase(false, TestName = "A toggle order with on: false is accepted")]
 		public void ToggleOrderWithOnIsAccepted(bool on)

@@ -65,8 +65,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (actor.Info.HasTraitInfo<PlaceBuildingInfo>())
 				names.AddRange(["PlaceBuilding", "LineBuild", "PlacePlug"]);
 
-			// Sellable and ToggleConditionOnOrder resolve their names without a targeter, so they are listed here.
-			if (actor.Info.HasTraitInfo<SellableInfo>())
+			// Sellable and ToggleConditionOnOrder resolve their names without a targeter, so they are listed here. Sell is listed only
+			// while Sellable is enabled: a disabled Sellable ignores the order, so Accept refuses it as an unlisted name.
+			if (actor.TraitOrDefault<Sellable>() is { IsTraitDisabled: false })
 				names.Add("Sell");
 
 			foreach (var toggle in actor.Info.TraitInfos<ToggleConditionOnOrderInfo>())

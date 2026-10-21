@@ -124,6 +124,56 @@ namespace OpenRA.Test
 			Assert.That(events.Count(e => IsEvent(e, "KilledV1", id)), Is.EqualTo(0), "A sale is not a kill.");
 		}
 
+		[TestCase(TestName = "A Sell on a building whose Sellable is disabled is refused, and nothing is sold")]
+		public void SellOfADisabledSellableIsRefused()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+
+			// being-demolished is one of the conditions that disable the RA building's Sellable.
+			dome.GrantCondition("being-demolished");
+			hw.Tick(1);
+			var events = WatchEvents();
+
+			using var response = AgentStateDumpTest.Request(Line(dome));
+			var root = response.RootElement;
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False);
+			Assert.That(root.GetProperty("error").GetString(), Does.Contain("does not accept order 'Sell'"));
+			Assert.That(dome.IsDead, Is.False, "A refused sell sold the building.");
+			Assert.That(events.Count(e => e.GetType().Name == "SoldV1"), Is.EqualTo(0));
+		}
+
+		[TestCase(TestName = "The orders list leaves Sell out for a building whose Sellable is disabled")]
+		public void OrdersLeavesOutSellWhileSellableIsDisabled()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+
+			dome.GrantCondition("being-demolished");
+			hw.Tick(1);
+			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"orders\",\"actor\":{dome.ActorID}}}");
+			Assert.That(response.RootElement.GetProperty("orders").EnumerateArray().Select(e => e.GetString()), Does.Not.Contain("Sell"));
+		}
+
+		[TestCase(TestName = "A Sell on a building whose Sellable is enabled is accepted, lists Sell, and sells it")]
+		public void SellOfAnEnabledSellableStillSells()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var wall = hw.CreateActor("BRIK", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using (var orders = AgentStateDumpTest.Request($"{{\"cmd\":\"orders\",\"actor\":{wall.ActorID}}}"))
+				Assert.That(orders.RootElement.GetProperty("orders").EnumerateArray().Select(e => e.GetString()), Does.Contain("Sell"));
+
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, Line(wall));
+			Assert.That(response.RootElement.TryGetProperty("error", out _), Is.False, response.RootElement.ToString());
+			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
+			Assert.That(response.RootElement.GetProperty("outcome").GetString(), Is.EqualTo("sold"));
+			Assert.That(wall.Disposed, Is.True, "The sale did not dispose the wall.");
+		}
+
 		[TestCase(TestName = "A Sell on an actor that cannot be sold is refused at the order, and nothing is sold")]
 		public void SellOfANonSellableActorIsRefused()
 		{
