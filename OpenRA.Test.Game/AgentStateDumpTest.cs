@@ -168,7 +168,7 @@ namespace OpenRA.Test
 
 			var players = root.GetProperty("players");
 			Assert.That(players.GetArrayLength(), Is.GreaterThan(0));
-			Assert.That(Keys(players[0]), Is.EquivalentTo(["name", "faction", "color", "cash", "resources", "resource_capacity",
+			Assert.That(Keys(players[0]), Is.EquivalentTo(["name", "faction", "color", "funds", "cash_funds", "resource_funds", "resource_funds_capacity",
 				"dead", "power", "known_counts", "bot", "handicap"]));
 			Assert.That(Keys(LocalPlayer(root).GetProperty("power")), Is.EquivalentTo(PowerKeys));
 

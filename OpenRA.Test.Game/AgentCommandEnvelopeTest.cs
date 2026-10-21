@@ -30,7 +30,7 @@ namespace OpenRA.Test
 		static readonly string[] MapsKeys = ["ok", "cmd", "maps"];
 		static readonly string[] LookKeys = ["ok", "cmd", "cells", "actors", "summary"];
 		static readonly string[] OrdersKeys = ["ok", "cmd", "actor", "type", "orders"];
-		static readonly string[] ProductionKeys = ["ok", "cmd", "player", "cash", "resources", "power", "queues"];
+		static readonly string[] ProductionKeys = ["ok", "cmd", "player", "funds", "cash_funds", "resource_funds", "power", "queues"];
 		static readonly string[] ErrorKeys = ["ok", "cmd", "error", "hint"];
 
 		bool savedAgentSocket;

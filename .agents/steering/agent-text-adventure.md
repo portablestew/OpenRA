@@ -21,7 +21,8 @@ description: OpenRA text_adventure patterns.
 - Vision comes only from your units; scout.
 - `path.eta_ticks` is a floor.
 - Sell refunds `RefundPercent` of the cost (default 50), scaled by the building's health: repair before you sell.
-- Repair drains cash as it heals: check `cash` in state before you start.
+- Costs compare against `funds`, the spendable total (`cash_funds + resource_funds`). `cash_funds` is only the uncapped pool; `resource_funds` is only the harvested pool, capped by `resource_funds_capacity`.
+- Repair drains funds as it heals: check `funds` in state before you start.
 - A structure repair holds only while the building is damaged, so it ends at full health: read its `repairing` flag again before you count on it.
 - Under low power, power down a building you do not need, such as a superweapon, to restore the grid. `power_restored` says when.
 - Check `powers` before you plan around a super weapon: a charging one is not ready, and `remaining_ticks` says when it will be.

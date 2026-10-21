@@ -20,10 +20,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 	// Schema v1, additive. Wire keys are snake_case (AgentSocketCommands.Json).
 
 	/// <summary>
-	/// The production command: the local player's queues with cash and power, so one call answers what can be built. A queue's
-	/// options come only when they changed for this connection (ProductionQueueV1.Changed). production_tree lists them all.
+	/// The production command: the local player's queues with funds and power, so one call answers what can be built. Funds is the
+	/// spendable total, CashFunds + ResourceFunds; CashFunds and ResourceFunds are the two pools it sums, as in the state digest.
+	/// A queue's options
+	/// come only when they changed for this connection (ProductionQueueV1.Changed). production_tree lists them all.
 	/// </summary>
-	public sealed record ProductionV1(bool Ok, string Cmd, string Player, int Cash, int Resources, PowerV1 Power, ProductionQueueV1[] Queues);
+	public sealed record ProductionV1(bool Ok, string Cmd, string Player, int Funds, int CashFunds, int ResourceFunds,
+		PowerV1 Power, ProductionQueueV1[] Queues);
 
 	/// <summary>
 	/// One ProductionQueue the local player owns and can build with. Actor is the actor that holds the queue: the player
@@ -41,7 +44,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// Buildable is the engine's ProductionQueue.BuildableItems set: the item can be queued now. An option listed with
 	/// buildable false is visible but not buildable, such as one whose prerequisites are not met. PowerAmount is
 	/// PowerInfo.Amount: positive provides power, negative drains it, and it is null without a Power trait. CanAfford compares
-	/// Cost with Cash + Resources, as PlayerResources.GetCashAndResources does.
+	/// Cost with Funds, which is CashFunds + ResourceFunds as PlayerResources.GetCashAndResources does.
 	/// </summary>
 	public sealed record ProductionOptionV1(string Name, int Cost, int? PowerAmount, string[] Prerequisites, bool Buildable, bool CanAfford);
 
@@ -79,7 +82,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		internal static ProductionOptionV1[] Buildable(Player player)
 		{
 			var resources = player.PlayerActor.TraitOrDefault<PlayerResources>();
-			var cash = resources == null ? 0 : resources.GetCashAndResources();
+			var funds = resources == null ? 0 : resources.GetCashAndResources();
 
 			var found = new Dictionary<string, (ActorInfo Info, ProductionOptionV1 Option)>();
 			var queues = player.World.ActorsWithTrait<ProductionQueue>()
@@ -90,7 +93,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				var buildable = queue.Trait.BuildableItems().ToArray();
 				var names = buildable.Select(b => b.Name).ToHashSet();
 				foreach (var info in buildable)
-					found.TryAdd(info.Name, (info, OptionOf(queue.Trait, info, names, cash)));
+					found.TryAdd(info.Name, (info, OptionOf(queue.Trait, info, names, funds)));
 			}
 
 			return found.Values
@@ -115,14 +118,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			var player = world.LocalPlayer ?? throw new InvalidOperationException("There is no local player");
 			var resources = player.PlayerActor.TraitOrDefault<PlayerResources>();
-			var cash = resources == null ? 0 : resources.GetCashAndResources();
+			var funds = resources == null ? 0 : resources.GetCashAndResources();
 
 			var reported = new Dictionary<(uint Actor, string QueueType), string[]>();
 			var queues = world.ActorsWithTrait<ProductionQueue>()
 				.Where(t => t.Actor.Owner == player && t.Actor.IsInWorld && !t.Actor.IsDead)
 				.OrderBy(t => t.Actor.ActorID)
 				.ThenBy(t => t.Trait.Info.Type, StringComparer.Ordinal)
-				.Select(t => QueueOf(world, player, t.Actor, t.Trait, cash, seen, reported))
+				.Select(t => QueueOf(world, player, t.Actor, t.Trait, funds, seen, reported))
 
 				// A queue with no producer, such as the Ship queue of a player with no shipyard, has nothing to build with.
 				.Where(q => q != null)
@@ -136,12 +139,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 					seen[key] = signature;
 			}
 
-			return new ProductionV1(true, cmd, player.PlayerName, resources?.Cash ?? 0, resources?.Resources ?? 0,
+			return new ProductionV1(true, cmd, player.PlayerName, funds,
+				resources?.Cash ?? 0, resources?.Resources ?? 0,
 				AgentStateDump.Power(player.PlayerActor.TraitOrDefault<PowerManager>()), queues);
 		}
 
 		// Null when the queue has no producer. Such a queue is not reported, so it is not recorded as seen either.
-		static ProductionQueueV1 QueueOf(World world, Player player, Actor actor, ProductionQueue queue, int cash,
+		static ProductionQueueV1 QueueOf(World world, Player player, Actor actor, ProductionQueue queue, int funds,
 			Dictionary<(uint Actor, string QueueType), string[]> seen, Dictionary<(uint Actor, string QueueType), string[]> reported)
 		{
 			var producers = ProducersOf(world, player, queue);
@@ -155,14 +159,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 				.ThenBy(i => i.Name, StringComparer.Ordinal)
 				.ToArray();
 
-			// The option set is each option's name and buildable, in palette order. can_afford is left out: it flips whenever cash
-			// moves, so it would mark the set changed on nearly every read.
+			// The option set is each option's name and buildable, in palette order. can_afford is left out: it flips whenever funds
+			// move, so it would mark the set changed on nearly every read.
 			var signature = ordered.Select(i => i.Name + (buildable.Contains(i.Name) ? "+" : "-")).ToArray();
 			var key = (actor.ActorID, queue.Info.Type);
 			reported[key] = signature;
 
 			var changed = seen == null || !seen.TryGetValue(key, out var previous) || !previous.SequenceEqual(signature);
-			var options = changed ? ordered.Select(i => OptionOf(queue, i, buildable, cash)).ToArray() : null;
+			var options = changed ? ordered.Select(i => OptionOf(queue, i, buildable, funds)).ToArray() : null;
 
 			// The engine ticks only the head of a queue, so a finished head holds everything behind it.
 			var head = queue.AllQueued().FirstOrDefault();

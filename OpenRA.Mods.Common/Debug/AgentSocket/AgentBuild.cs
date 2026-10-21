@@ -110,7 +110,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			var option = queue.Options.First(o => o.Name == item);
 			if (!option.CanAfford)
-				throw Refused(world, item, $"not enough cash for '{item}': it costs {option.Cost}, and you have {production.Cash + production.Resources}", production);
+				throw Refused(world, item, $"not enough funds for '{item}': it costs {option.Cost}, and you have {production.Funds}", production);
 
 			// The engine silently drops a StartProduction that the queue, item or build limit refuses, so ask the queue first.
 			if (!QueueTrait(world, queue).CanQueue(info, out _, out _))

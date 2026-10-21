@@ -221,7 +221,7 @@ namespace OpenRA.Test
 			Assert.That(root.GetProperty("available").GetArrayLength(), Is.GreaterThan(0));
 		}
 
-		[TestCase(TestName = "An item the player cannot afford is refused with the cost and cash, and nothing is queued")]
+		[TestCase(TestName = "An item the player cannot afford is refused with the cost and funds, and nothing is queued")]
 		public void UnaffordableItemIsRefused()
 		{
 			using var hw = HeadlessWorld.Create(1);
@@ -233,8 +233,8 @@ namespace OpenRA.Test
 			{
 				var root = response.RootElement;
 				Assert.That(root.GetProperty("ok").GetBoolean(), Is.False);
-				Assert.That(root.GetProperty("error").GetString(), Is.EqualTo("not enough cash for 'powr': it costs 300, and you have 0"));
-				Assert.That(Available(root), Is.Empty, "Nothing is affordable with no cash");
+				Assert.That(root.GetProperty("error").GetString(), Is.EqualTo("not enough funds for 'powr': it costs 300, and you have 0"));
+				Assert.That(Available(root), Is.Empty, "Nothing is affordable with no funds");
 			}
 
 			hw.Tick(5);

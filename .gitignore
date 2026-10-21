@@ -69,6 +69,7 @@ TODO.md
 
 # Kilo Code, keep settings but not plans
 .kilo/plans/
+.commandcode/
 
 # The agent socket's screenshot folder, written into the workspace root by screenshot requests.
 /screenshots/

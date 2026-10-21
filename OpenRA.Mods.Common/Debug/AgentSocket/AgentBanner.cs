@@ -42,7 +42,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " players[].known_counts is the count by type of the actors you know: all of your own, and another player's only where known."
 				+ " players[].bot is the AI type of a bot-owned player (null for a human), players[].handicap its handicap percent,"
 				+ " and players[].color its #RRGGBB colour."
-				+ " A player not allied with you has null cash, resources, resource_capacity and power."
+				+ " A player not allied with you has null funds, cash_funds, resource_funds, resource_funds_capacity and power."
+				+ " funds is the spendable total, cash_funds + resource_funds: the in-game counter and the number costs compare against."
+				+ " cash_funds is only the uncapped pool, and resource_funds only the harvested pool capped by resource_funds_capacity."
 				+ " threats: the top 15 known enemy units by standoff (the engine's Enemy relationship: neutral civilians and allies are not listed; at most 3 per type; a recent attacker first), each with id, type, cell,"
 				+ " hp, attack_target (the friendly it hit recently, or null: only a recent attacker has one), heading (its facing, not a bearing),"
 				+ " bearing (from its closest friendly),"
@@ -90,7 +92,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " events are your ordered movement, combat, production and notifications",
 				"{\"cmd\":\"wait\",\"timeout_ticks\":250}"),
 			("orders", "actor (uint) -> type, orders (every order name the actor accepts; use it to discover orders: Sell on a sellable structure, a toggle's name such as PowerDown on a toggle building, RepairBuilding on the player actor, and each support power's key on the player actor)", "{\"cmd\":\"orders\",\"actor\":12}"),
-			("production", "-> player, cash, resources, power, queues (the local player's queues; see Production keys). A queue's options are listed only when they changed since this connection last read them (changed says whether they were); the first read after connect, and the first read after a world change, lists them all", "{\"cmd\":\"production\"}"),
+			("production", "-> player, funds, cash_funds, resource_funds, power, queues (the local player's queues; see Production keys). funds is cash_funds + resource_funds, the total can_afford compares against. A queue's options are listed only when they changed since this connection last read them (changed says whether they were); the first read after connect, and the first read after a world change, lists them all", "{\"cmd\":\"production\"}"),
 			("production_tree", "-> the same keys as production: the full catalog, with every option of every queue in full", "{\"cmd\":\"production_tree\"}"),
 			("powers", "-> powers: each support power you can see, with its charge: order (the key an order names), owner, name, description,"
 				+ " ready, remaining_ticks, total_ticks, active, disabled, one_shot. Your own powers are always listed; another player's only when its"

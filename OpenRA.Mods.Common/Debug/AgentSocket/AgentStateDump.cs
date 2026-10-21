@@ -45,10 +45,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record SpawnV1(string Player, int[] Cell);
 
 	/// <summary>
-	/// Funds, Cash, Resources and ResourceCapacity are null for a player who is not allied with the local player: their economy is
-	/// hidden, as is Power. Funds is the spendable total, Cash + Resources: the number the in-game counter shows and the number
-	/// costs compare against. Cash is only the uncapped pool, and Resources only the harvested pool capped by ResourceCapacity;
-	/// both are 0 without a PlayerResources trait. Dead means WinState.Lost. Power is null without a PowerManager trait.
+	/// Funds, CashFunds, ResourceFunds and ResourceFundsCapacity are null for a player who is not allied with the local player: their
+	/// economy is hidden, as is Power. Funds is the spendable total, CashFunds + ResourceFunds: the number the in-game counter shows
+	/// and the number costs compare against. CashFunds is only the uncapped pool, and ResourceFunds only the harvested pool capped by
+	/// ResourceFundsCapacity; both are 0 without a PlayerResources trait. Dead means WinState.Lost. Power is null without a
+	/// PowerManager trait.
 	/// KnownCounts is the number of each type the local player knows of this player's units (P2.5): all of them for the local
 	/// player, and for another player only those AgentFog says are known. Null when there is no local player. Bot is the AI type of
 	/// a bot-owned player and null for a human, so a later envelope proves which opponents load_skirmish started. Handicap is the
@@ -57,8 +58,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// does not carry the static data, which is every envelope after a connection's first one, until a world change. Name, the
 	/// economy and the counts are always sent.
 	/// </summary>
-	public sealed record PlayerV1(string Name, string Faction, string Color, int? Funds, int? Cash, int? Resources, int? ResourceCapacity,
-		bool Dead, PowerV1 Power, Dictionary<string, int> KnownCounts, string Bot, int? Handicap);
+	public sealed record PlayerV1(string Name, string Faction, string Color, int? Funds, int? CashFunds, int? ResourceFunds,
+		int? ResourceFundsCapacity, bool Dead, PowerV1 Power, Dictionary<string, int> KnownCounts, string Bot, int? Handicap);
 
 	/// <summary>
 	/// Provided and Drained are the PowerManager totals. Excess is Provided - Drained. State is the PowerState name:

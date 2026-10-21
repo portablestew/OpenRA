@@ -167,7 +167,7 @@ namespace OpenRA.Test
 				"After the launch, the far enemy should be counted in the enemy's infantry.");
 		}
 
-		[TestCase(TestName = "A player not allied with the local player has no cash, resources, resource_capacity or power, but keeps known_counts")]
+		[TestCase(TestName = "A player not allied with the local player has no funds, cash_funds, resource_funds, resource_funds_capacity or power, but keeps known_counts")]
 		public void EnemyEconomyIsHiddenButKnownCountsRemain()
 		{
 			using var hw = HeadlessWorld.Create(Seed);
@@ -179,7 +179,7 @@ namespace OpenRA.Test
 			var root = state.RootElement;
 
 			var hidden = PlayerEntry(root, enemy.PlayerName);
-			foreach (var key in new[] { "cash", "resources", "resource_capacity", "power" })
+			foreach (var key in new[] { "funds", "cash_funds", "resource_funds", "resource_funds_capacity", "power" })
 				Assert.That(hidden.GetProperty(key).ValueKind, Is.EqualTo(JsonValueKind.Null), $"The enemy's {key} should be null.");
 
 			Assert.That(hidden.GetProperty("known_counts").ValueKind, Is.EqualTo(JsonValueKind.Object),
@@ -187,14 +187,15 @@ namespace OpenRA.Test
 			Assert.That(Keys(hidden), Is.SupersetOf(["name", "faction", "dead", "bot", "handicap", "known_counts"]));
 
 			var own = PlayerEntry(root, local.PlayerName);
-			Assert.That(own.GetProperty("cash").ValueKind, Is.EqualTo(JsonValueKind.Number), "The local player's cash should be an int.");
+			Assert.That(own.GetProperty("funds").ValueKind, Is.EqualTo(JsonValueKind.Number), "The local player's funds should be an int.");
+			Assert.That(own.GetProperty("cash_funds").ValueKind, Is.EqualTo(JsonValueKind.Number), "The local player's cash_funds should be an int.");
 
 			var ally = hw.World.Players.FirstOrDefault(p => p != local && p != enemy && local.IsAlliedWith(p));
 			if (ally == null)
 				Assert.Inconclusive("The headless world has no allied player, so an ally's economy cannot be checked here.");
 
 			var allied = PlayerEntry(root, ally.PlayerName);
-			Assert.That(allied.GetProperty("cash").ValueKind, Is.EqualTo(JsonValueKind.Number), "An allied player's cash should still be an int.");
+			Assert.That(allied.GetProperty("cash_funds").ValueKind, Is.EqualTo(JsonValueKind.Number), "An allied player's cash_funds should still be an int.");
 		}
 	}
 }
