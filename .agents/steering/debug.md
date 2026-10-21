@@ -117,6 +117,7 @@ Full transcript always goes to a log. `dump.py collect` snapshots a running game
 - **`print` gives one level of object expansion**, not a full locals tree. Reach
   into fields explicitly (`this.ToCell.X`). An out-of-scope or misspelled name
   comes back as an `EvalResult` with `.error` set, not an exception.
+- **No assignment and no `new`.** In this build netcoredbg fails `this.HP = 20000` and `new OpenRA.Damage(5000)` with `SyntaxKindNotImplementedException`. Read fields and call methods that take existing values; you cannot change game state or build new objects through `eval`.
 - **Crash dumps are suppressed while attached**, so a crash inside a session
   window produces no dump — the stop is reported instead.
 - **Recovery:** if a session ever leaves the game halted (e.g. netcoredbg itself

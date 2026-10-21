@@ -32,14 +32,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("ping", "-> tick", "{\"cmd\":\"ping\"}"),
 			("help", "-> banner (this text, as one string)", "{\"cmd\":\"help\"}"),
 			("state", "-> tick, ok, cmd: a refresh ack, so this result carries no digest\n"
-				+ "                -> the digest is the envelope's state: ok, cmd, tick, net_frame, map, paused, game_over, local_player,"
+				+ "                -> the digest is the envelope's state: ok, cmd, tick, net_frame, map, ms_per_tick, paused,"
+				+ " game_over, local_player,"
 				+ " players, units, threats, selection\n"
 				+ "                -> map is uid, title, bounds ([x, y, width, height], Map.Bounds in cells) and spawns (one per player with a home"
 				+ " cell: player, cell [x, y]). Your own buildings in units are id, type, cell and hp, plus repairing (true while you are among its repairers)"
 				+ " and powered_down (its PowerDown toggle's state; omitted for a building without one)."
 				+ " selection is the sorted ids of the actors your orders selected, empty when none."
 				+ " players[].known_counts is the count by type of the actors you know: all of your own, and another player's only where known."
-				+ " players[].bot is the AI type of a bot-owned player (null for a human), and players[].handicap its handicap percent."
+				+ " players[].bot is the AI type of a bot-owned player (null for a human), players[].handicap its handicap percent,"
+				+ " and players[].color its #RRGGBB colour."
 				+ " A player not allied with you has null cash, resources, resource_capacity and power."
 				+ " threats: the top 15 known enemy units by standoff (the engine's Enemy relationship: neutral civilians and allies are not listed; at most 3 per type; a recent attacker first), each with id, type, cell,"
 				+ " hp, attack_target (the friendly it hit recently, or null: only a recent attacker has one), heading (its facing, not a bearing),"
@@ -50,7 +52,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("maps", "-> maps", "{\"cmd\":\"maps\"}"),
 			("load_skirmish", "map (string: a uid or title from maps, or \"random\"; default random); speed (string: a game speed key, one of"
 				+ " slowest, slower, default, fast, faster, fastest; default default); opponents (array of objects, default one"
-				+ " {\"bot\":\"normal\",\"handicap\":70}; each is bot (string, an AI type the map defines) and handicap (int, 0 to 95 in steps"
+				+ " {\"bot\":\"normal\",\"handicap\":50}; each is bot (string, an AI type the map defines) and handicap (int, 0 to 95 in steps"
 				+ " of 5); an empty array is a solo world)\n"
 				+ "                -> the state shape, plus skirmish (map, map_requested, speed, and opponents: each with player, bot, handicap"
 				+ " and slot), once the new world is ready",
@@ -77,15 +79,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " settled_ticks, path, outcome, reason, orders, error; an Attack or a DeployTransform actor carries only actor,"
 				+ " settled, outcome and reason). One actor that refuses the name refuses the whole group."
 				+ " A name the actor does not accept is refused: ok:false, error, available (the names it accepts)."
+				+ " Call orders to list every name an actor accepts before guessing."
 				+ " The exception is Attack, which is never refused here: an attack that cannot start replies no_valid_target."
 				+ " Zero or several selectors, a bad regex, or a type with no match are errors",
 				"{\"cmd\":\"order\",\"actor\":12,\"order\":\"AttackMove\",\"cell\":[40,50]}"),
-			("wait", "job (int), or no job; optional timeout_ms (non-negative int, default 10000)\n"
-				+ "                -> with job: the Move reply (cmd:wait, same keys as a Move order reply) with result:\"job\", once the job settles, or"
-				+ " status:\"pending\" at the timeout (the job stays open). An unknown job, or a job whose world load_skirmish or undo replaced: ok:false, error."
-				+ " With no job: result:\"events\" when an event arrives (it is in this response's events), or result:\"timeout\"",
-				"{\"cmd\":\"wait\",\"timeout_ms\":5000}"),
-			("orders", "actor (uint) -> type, orders (the order names the actor accepts: Sell on a sellable structure, a toggle's name such as PowerDown on a toggle building, RepairBuilding on the player actor, and each support power's key on the player actor)", "{\"cmd\":\"orders\",\"actor\":12}"),
+			("wait", "job (int), or no job; timeout_ticks (int), min_ticks (int, no job only)\n"
+				+ "                -> with job: the job reply with result:\"job\", start_tick, requested_ticks, waited_ticks;"
+				+ " status:\"pending\"|\"paused\" keeps the job open\n"
+				+ "                -> no job: result:\"events\"|\"timeout\"|\"paused\"|\"world_changed\";"
+				+ " events are your ordered movement, combat, production and notifications",
+				"{\"cmd\":\"wait\",\"timeout_ticks\":250}"),
+			("orders", "actor (uint) -> type, orders (every order name the actor accepts; use it to discover orders: Sell on a sellable structure, a toggle's name such as PowerDown on a toggle building, RepairBuilding on the player actor, and each support power's key on the player actor)", "{\"cmd\":\"orders\",\"actor\":12}"),
 			("production", "-> player, cash, resources, power, queues (the local player's queues; see Production keys). A queue's options are listed only when they changed since this connection last read them (changed says whether they were); the first read after connect, and the first read after a world change, lists them all", "{\"cmd\":\"production\"}"),
 			("production_tree", "-> the same keys as production: the full catalog, with every option of every queue in full", "{\"cmd\":\"production_tree\"}"),
 			("powers", "-> powers: each support power you can see, with its charge: order (the key an order names), owner, name, description,"
@@ -97,8 +101,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ "                -> ok, actor, queue_type, item, count, tick, min_effect_tick, ready, eta_ticks, blocked_by. Not buildable now: ok:false, error,"
 				+ " available (the items build accepts now: buildable and affordable), missing_prerequisites (every unmet prerequisite;"
 				+ " null if the refusal is not about prerequisites), ready and eta_ticks (both null: a refused build queues nothing)."
-				+ " On success, ready is always false, and eta_ticks is the ticks until the first copy queued by this request is done"
-				+ " (25 ticks per second at the default game speed),"
+				+ " On success, ready is always false, and eta_ticks is the ticks until the first copy queued by this request is done,"
 				+ " counting the items ahead of it in its queue at the current power; null while a finished item at the head of that queue"
 				+ " holds it until it is placed. blocked_by names the finished item at the head of the queue this one joins, which holds"
 				+ " the queue until it is placed (null when that head is not finished); a refusal carries it too",
@@ -130,17 +133,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " tick. Waits for the next rendered frame to be saved, so the file exists when the reply arrives."
 				+ " No window (headless), no world view, the shellmap, an unknown or dead actor, or a failed write: ok:false, error",
 				"{\"cmd\":\"screenshot\",\"actor\":12,\"dir\":\"shots\"}"),
-			("undo", "offset (string): \"-<seconds>\" rewinds, \"+<seconds>\" advances, \"@<seconds>\" jumps to that"
-				+ " absolute game time, read at 25 ticks per second\n"
-				+ "                -> tick, requested_tick, moved_ticks (signed), held. The snapshot nearest the target game"
-				+ " time is restored; nothing is consumed. Pending orders and jobs fail with error restored. In an array, undo must be the only or the last item,"
-				+ " or it is refused. A missing or unprefixed offset, or no snapshot in range:"
-				+ " ok:false, error (the usage)",
-				"{\"cmd\":\"undo\",\"offset\":\"-10\"}"),
+			("undo", "offset (signed int ticks) or at_tick (int); exactly one\n"
+				+ "                -> tick, requested_tick, moved_ticks, held; nearest snapshot restored, window kept;"
+				+ " pending orders and jobs fail with restored; last item in an array only",
+				"{\"cmd\":\"undo\",\"offset\":-250}"),
 			("map_state", "-> ok, cmd, path (map-state.png in the workspace, or null), render (ok or unavailable), reason (only when"
 				+ " unavailable), map_px_per_cell (4), origin [x, y] (the top-left map cell), size [w, h] (pixels), tick. Terrain: unexplored"
-				+ " black, explored but unseen darkened. Overlays: blips in owner colour (actors you know); selected units get a green"
-				+ " crosshair, a yellow path ending in a red X, and a red line to their attack target. Writes a file",
+				+ " black, explored but unseen darkened. The image is the discovered map state and expands as your units reveal terrain."
+				+ " Overlays: blips in the owner's colour (players[].color; actors you know); selected units get a green crosshair, a yellow path ending in a red X,"
+				+ " and a red line to their attack target. Writes a file",
 				"{\"cmd\":\"map_state\"}"),
 			("look", "at [x, y] or points [[x, y], ...] (at most 16), an optional k (0 to 100, default 20; 0 returns cells and summary, no actors), and an optional radius (1 to 20\n"
 				+ "                cells, default 10) for the class summary\n"
@@ -205,8 +206,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    The same rule holds for events: damaged, healed, killed, captured, crate, order, produced, placed, sold, stance, path and activity are sent only\n");
 			text.Append("    for your own actors and known ones. Path and move activity are sent only while an order you issued drives the actor,\n");
 			text.Append("    so an autonomous harvester stays quiet. A captor, producer, collector, attacker or order target is named only when known, else null.\n");
-			text.Append("    power_low, power_restored, notification, defeated, game_over and overflow name no actor, so they are always sent.\n");
-			text.Append("    power_ready is sent for your own powers, and for another player's only when its timer is shown to you (see powers).\n");
+			text.Append("    power_low, power_restored, defeated, game_over and overflow name no actor, so they are always sent. power_ready is sent for\n");
+			text.Append("    your own powers, and for another player's only when its timer is shown to you (see powers). notification is sent only for your\n");
+			text.Append("    side and your allies, and the cash counter's tick notifications are not sent: cash is in state and production.\n");
 			text.Append("    A NewOptions notification lists options only for your side or an ally's: those newly buildable since its last one.\n");
 			text.Append("  Null and omitted: a null key is present with no value (an unknown value, or an optional request key left out).\n");
 			text.Append("    A key that does not apply is omitted:\n");
@@ -237,6 +239,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 			Row(text, "queue", 12, Fields(typeof(ProductionQueueV1)));
 			Row(text, "option", 12, Fields(typeof(ProductionOptionV1)));
 			Row(text, "item", 12, Fields(typeof(ProductionItemV1)));
+			Row(text, "prerequisite", 12, "all must be met; a name is met when an owned actor grants it. A ~ prefix hides the option"
+				+ " until the name is met; a ! prefix inverts it (the option is unavailable while the name is met)."
+				+ " techlevel.* names are tech-level gates");
 
 			text.Append("Notes:\n");
 			text.Append("  After the banner, and after every response, the server sends a lone > line as a prompt: it is your turn.\n");
@@ -248,18 +253,18 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    null), map_state_tick (the tick it was rendered at, equal to tick after a world-changing request), map_state_render\n");
 			text.Append("    (ok or unavailable), and map_px_per_cell, map_origin, map_size (its geometry).\n"
 				+ "    A connection's first envelope has initial:true, its state in full, and no events from before its first request.\n"
-				+ "    The static data (state.map, and players' faction, bot and handicap) rides with the state until a world change (an undo,\n"
+				+ "    The static data (state.map, state.ms_per_tick, and players' faction, color, bot and handicap) rides with the state until a world change (an undo,\n"
 				+ "    a load_skirmish, a new world) or a reconnect; in the envelopes between, those keys are null.\n"
 				+ " With no world loaded, tick, state and\n");
 			text.Append("    the image are null, and render is unavailable.\n");
 			text.Append("  Add \"digest\":false to an object request to drop state and the map keys. An array drops them only when every item sets it.\n");
 			text.Append("  Selection: an issued order selects its actor, so world.Selection is the actors a request ordered (an array: their union).\n");
 			text.Append("    A request with no order leaves the selection alone.\n");
-			text.Append("  A failing item does not stop the rest. A slow awaited item delays the response until it settles or times out.\n");
+			text.Append("  A failing item does not stop the rest. A slow awaited item delays the response until it settles or its tick budget runs out.\n");
 			text.Append("  order min_effect_tick is a lower bound (tick + 1). The order applies on or after it; network frame delay can make it later.\n");
 			text.Append("  Example: {\"cmd\":\"order\",\"actor\":12,\"order\":\"Move\",\"cell\":[40,50],\"await\":false}\n")
 				.Append("    -> {\"ok\":true,\"cmd\":\"order\",\"job\":1,...}\n");
-			text.Append("  then {\"cmd\":\"wait\",\"job\":1,\"timeout_ms\":5000} -> the Move reply, or {\"status\":\"pending\"} after 5 s.\n");
+			text.Append("  then {\"cmd\":\"wait\",\"job\":1,\"timeout_ticks\":250} -> the Move reply, or {\"status\":\"pending\"} when 250 ticks pass.\n");
 			text.Append("  An overflow event is sent before the events that follow it. dropped counts the events a full queue discarded.\n");
 			text.Append("  healed is any heal other than a repair: a medic's, for one. A repair, by a depot or a structure's own repair, raises neither damaged nor healed.\n");
 			text.Append("  The player actor is production.queues[].actor; each support power's key (see powers) is one of its orders.\n");

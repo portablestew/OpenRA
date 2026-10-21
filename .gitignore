@@ -72,3 +72,4 @@ TODO.md
 
 # The agent socket's screenshot folder, written into the workspace root by screenshot requests.
 /screenshots/
+map-state.png

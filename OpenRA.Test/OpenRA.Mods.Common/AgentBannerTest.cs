@@ -133,7 +133,7 @@ namespace OpenRA.Test
 		{
 			var banner = AgentSocketServer.Banner;
 
-			Assert.That(banner, Does.Contain("The static data (state.map, and players' faction, bot and handicap) rides with the state"));
+			Assert.That(banner, Does.Contain("The static data (state.map, state.ms_per_tick, and players' faction, color, bot and handicap) rides with the state"));
 			Assert.That(banner, Does.Contain("a reconnect; in the envelopes between, those keys are null."));
 		}
 
@@ -169,8 +169,8 @@ namespace OpenRA.Test
 			Assert.That(banner, Does.Contain("on (bool; required by a toggle order such as PowerDown or RepairBuilding, and refused for any other name)"));
 			Assert.That(banner, Does.Contain("state (on or off: the state it left once settled, or the state already held)"));
 			Assert.That(banner, Does.Contain("unchanged (true when that state already held, so nothing was issued)"));
-			Assert.That(banner, Does.Contain("Sell on a sellable structure replaces valid, effect_tick and settled_ticks with outcome (sold; null when unsettled)"));
 			Assert.That(banner, Does.Contain("RepairBuilding is a toggle on the player actor, with target_actor the building: its state is on while you are among the building's repairers, so a building at its repairer cap stays off."));
+			Assert.That(banner, Does.Contain("Sell on a sellable structure replaces valid, effect_tick and settled_ticks with outcome (sold; null when unsettled)"));
 			Assert.That(banner, Does.Contain("healed is any heal other than a repair"));
 		}
 

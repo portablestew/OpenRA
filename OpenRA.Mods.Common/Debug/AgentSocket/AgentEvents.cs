@@ -154,7 +154,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		internal Dictionary<(uint Actor, string QueueType), string[]> SeenOptions { get; } = new();
 
 		/// <summary>
-		/// Whether an envelope on this connection has carried the static data (the map, and each player's faction, bot and handicap)
+		/// Whether an envelope on this connection has carried the static data (the map, and each player's faction, color, bot and handicap)
 		/// since the last world change (C). A world change clears it, so the next state read sends the static data again.
 		/// </summary>
 		internal bool StaticsSent { get; set; }
