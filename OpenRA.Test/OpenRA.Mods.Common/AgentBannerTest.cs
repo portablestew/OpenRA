@@ -101,7 +101,9 @@ namespace OpenRA.Test
 				new PowerReadyV1("power_ready", 1, "P", "NukePowerInfoOrder", "Nuclear Strike"),
 				new DefeatedV1("defeated", 1, "P"),
 				new GameOverV1("game_over", 1, "P"),
-				new NotificationV1("notification", 1, "NewOptions", "P", [new ProductionOptionV1("proc", 1400, -30, ["anypower"], true, true)]),
+
+				// One sample sets every optional key, so the banner's keys are checked in full.
+				new NotificationV1("notification", 1, "ConstructionComplete", "P", "powr", [3, 4], true),
 				new CrateV1("crate", 1, "collected", 2, "crate", "Neutral", [3, 4], 7, "e1", "GiveCashCrateAction"),
 				new HealedV1("healed", 1, 2, "e1", "P", 7, 30, 100, "Normal"),
 				new SoldV1("sold", 1, 2, "e1", "P", [3, 4]),

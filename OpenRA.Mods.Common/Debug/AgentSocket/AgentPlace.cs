@@ -44,7 +44,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record PlaceRefusedV1(bool Ok, string Cmd, string Error, string Hint, int CellsChecked, PlaceCandidateV1[] Candidates,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LookV1 Look);
 
-	/// <summary>A parsed place request. Cell is null when the request omitted it.</summary>
+	/// <summary>A parsed place request. Item and Cell are each null when the request omitted them.</summary>
 	public sealed record PlaceRequest(string Item, CPos? Cell);
 
 	/// <summary>
@@ -66,8 +66,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static string Parse(JsonElement root, out PlaceRequest request)
 		{
 			request = null;
-			if (!root.TryGetProperty("item", out var itemElement) || itemElement.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(itemElement.GetString()))
-				return "item must be a non-empty string";
+			string item = null;
+			if (AgentOrder.IsPresent(root, "item"))
+			{
+				var itemElement = root.GetProperty("item");
+				if (itemElement.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(itemElement.GetString()))
+					return "item must be a non-empty string";
+
+				item = itemElement.GetString();
+			}
 
 			CPos? cell = null;
 			if (AgentOrder.IsPresent(root, "cell"))
@@ -78,7 +85,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				cell = new CPos(c[0], c[1]);
 			}
 
-			request = new PlaceRequest(itemElement.GetString(), cell);
+			request = new PlaceRequest(item, cell);
 			return null;
 		}
 
@@ -89,7 +96,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		public static object Start(World world, PlaceRequest request, AgentSelection selection)
 		{
-			var item = request.Item;
+			// Without an item, place takes the finished item at the head of a queue: the one that holds its queue until it is placed.
+			var item = request.Item ?? AgentProduction.Tree(world).Queues.Select(q => q.Blocker).FirstOrDefault(b => b != null);
+			if (item == null)
+				throw new InvalidOperationException("no finished item is waiting for placement: build it first");
+
 			if (!world.Map.Rules.Actors.TryGetValue(item, out var info))
 				throw new InvalidOperationException($"unknown item '{item}'");
 

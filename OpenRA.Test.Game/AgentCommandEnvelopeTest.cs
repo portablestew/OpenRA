@@ -103,7 +103,8 @@ namespace OpenRA.Test
 				("{\"cmd\":\"load_skirmish\",\"speed\":5}", "load_skirmish", "speed must be a string"),
 				("{\"cmd\":\"build\"}", "build", "item must be a non-empty string"),
 				("{\"cmd\":\"build\",\"item\":\"powr\",\"count\":0}", "build", "count must be a positive integer"),
-				("{\"cmd\":\"place\"}", "place", "item must be a non-empty string"),
+				("{\"cmd\":\"place\"}", "place", "no finished item is waiting for placement: build it first"),
+				("{\"cmd\":\"place\",\"item\":\"\"}", "place", "item must be a non-empty string"),
 				("{\"cmd\":\"screenshot\",\"actor\":\"fact\"}", "screenshot", "actor must be an unsigned integer"),
 				("{\"cmd\":\"screenshot\",\"actor\":-1}", "screenshot", "actor must be an unsigned integer"),
 			];

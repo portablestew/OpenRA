@@ -12,6 +12,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using OpenRA.Mods.Common.AgentSocket;
 using OpenRA.Primitives;
 using OpenRA.Traits;
 
@@ -92,6 +93,7 @@ namespace OpenRA.Mods.Common.Traits
 			self.World.AddFrameEndTask(w =>
 			{
 				var newUnit = self.World.CreateActor(producee.Name, td);
+				AgentNotifications.Produced(newUnit);
 				if (!self.IsDead)
 					foreach (var t in self.TraitsImplementing<INotifyProduction>())
 						t.UnitProduced(self, newUnit, exit);

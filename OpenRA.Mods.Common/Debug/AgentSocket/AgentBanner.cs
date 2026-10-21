@@ -122,7 +122,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " first owned queue that holds it, last copy first. A copy in progress goes when it is the last copy. Nothing queued,"
 				+ " or the producer disabled: ok:false, error",
 				"{\"cmd\":\"cancel\",\"item\":\"powr\",\"count\":1}"),
-			("place", "item (string); optional cell [x,y] (default: the producer's location)\n"
+			("place", "optional item (string; default: the finished item at a queue head, which holds its queue until placed); optional cell [x,y]"
+				+ " (default: the producer's location)\n"
 				+ "                -> ok, item, requested_cell, search_from, cell, actor, settled, tick, min_effect_tick. The nearest"
 				+ " valid cell within 10 of search_from is used (cell is where it placed, not requested_cell), and the reply waits for"
 				+ " the building, so actor names what it placed"
@@ -226,7 +227,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    power_low, power_restored, defeated, game_over and overflow name no actor, so they are always sent. power_ready is sent for\n");
 			text.Append("    your own powers, and for another player's only when its timer is shown to you (see powers). notification is sent only for your\n");
 			text.Append("    side and your allies, and the cash counter's tick notifications are not sent: cash is in state and production.\n");
-			text.Append("    A NewOptions notification lists options only for your side or an ally's: those newly buildable since its last one.\n");
+			text.Append("    A notification that announces a finished item (ConstructionComplete for a structure, UnitReady for a unit) names it in item.\n");
+			text.Append("    A structure has placement_required true: place it. A unit has cell, where it was built. NewOptions names no options:\n");
+			text.Append("    production lists the ones that became buildable.\n");
 			text.Append("  Null and omitted: a null key is present with no value (an unknown value, or an optional request key left out).\n");
 			text.Append("    A key that does not apply is omitted:\n");
 			text.Append("    dist and pt in look actors without reference points, and look on a refusal with no local player.\n");

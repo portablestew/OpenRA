@@ -12,7 +12,9 @@ description: OpenRA text_adventure patterns.
 - Build: `{"cmd":"build","item":"e1","count":2}`. `eta_ticks` is cumulative; array builds resolve a tick later, so their etas are lower bounds.
 - Production: `{"cmd":"production"}` lists options only when changed; full catalog `{"cmd":"production_tree"}`.
 - Fresh producer: `options:[]`, `enabled:false` on first read; read again.
-- Place: `{"cmd":"place","item":"powr","cell":[40,50]}`. `cell` is where it placed.
+- Place: `{"cmd":"place","item":"powr","cell":[40,50]}`. `cell` is where it placed. `{"cmd":"place"}` with no args places the finished item at a queue head; with nothing finished it errors.
+- Finished: a `ConstructionComplete` notification names a structure with `placement_required:true`, so place it. A `UnitReady` notification names a unit with its `cell`.
+- `NewOptions` names no options: read `production` for what became buildable.
 - Wait job: `{"cmd":"wait","job":1,"timeout_ticks":250}`. `result:"job"` settled; `status:"pending"` or `"paused"` keeps it open.
 - Wait events: `{"cmd":"wait","timeout_ticks":500,"min_ticks":500}`. `result`: `events`, `timeout`, `paused`, `world_changed`. Events are your ordered movement, combat, production and notifications.
 - Undo: `{"cmd":"undo","offset":-250}` or `{"cmd":"undo","at_tick":12000}`.

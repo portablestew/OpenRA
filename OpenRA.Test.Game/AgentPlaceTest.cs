@@ -252,8 +252,45 @@ namespace OpenRA.Test
 			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo("unknown item 'nope'"));
 		}
 
+		[TestCase(TestName = "A place with no args places the finished item at a queue head, and names it in item")]
+		public void PlaceWithNoArgsPlacesTheQueueHead()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var fact = hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+			QueueAndFinishPowr(hw);
+
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, "{\"cmd\":\"place\"}");
+			var root = response.RootElement;
+			Assert.That(AgentProductionTest.Keys(root), Is.EquivalentTo(SuccessKeys));
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+			Assert.That(root.GetProperty("item").GetString(), Is.EqualTo("powr"), "The reply should name the item it placed");
+			Assert.That(root.GetProperty("search_from").EnumerateArray().Select(c => c.GetInt32()), Is.EqualTo(new[] { fact.Location.X, fact.Location.Y }));
+
+			var chosen = new CPos(root.GetProperty("cell")[0].GetInt32(), root.GetProperty("cell")[1].GetInt32());
+			var placed = PowrAt(hw, chosen);
+			Assert.That(placed, Is.Not.Null, "No POWR was placed on the chosen cell.");
+			Assert.That(root.GetProperty("actor").GetUInt32(), Is.EqualTo(placed.ActorID));
+			Assert.That(PowrDone(), Is.False, "The finished item was consumed by the placement");
+		}
+
+		[TestCase(TestName = "A place with no args and nothing finished is refused, and names what to do")]
+		public void PlaceWithNoArgsAndNothingFinishedIsRefused()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using var response = AgentStateDumpTest.Request("{\"cmd\":\"place\"}");
+			var root = response.RootElement;
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False);
+			Assert.That(root.GetProperty("cmd").GetString(), Is.EqualTo("place"));
+			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo("no finished item is waiting for placement: build it first"));
+			Assert.That(hw.World.Actors.Any(a => a.Info.Name == "powr" && !a.IsDead), Is.False, "Nothing should be placed");
+		}
+
 		[TestCase("{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[1]}", TestName = "A place with a malformed cell is refused by the parser")]
-		[TestCase("{\"cmd\":\"place\"}", TestName = "A place without an item is refused by the parser")]
+		[TestCase("{\"cmd\":\"place\",\"item\":\"\"}", TestName = "A place with an empty item is refused by the parser")]
 		public void MalformedRequestIsRefused(string line)
 		{
 			using var response = AgentStateDumpTest.Request(line);

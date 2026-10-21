@@ -9,10 +9,8 @@
  */
 #endregion
 
-using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
+using OpenRA.Mods.Common.Traits;
 
 namespace OpenRA.Mods.Common.AgentSocket
 {
@@ -20,20 +18,54 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>
 	/// A notification the engine played (P2.10): its name, such as BuildingCannotPlaceAudio, and the owner it was played for, which is
 	/// null when the caller gave no player. Tick is the world tick it was played on. Unit barks are voices, not notifications, so they
-	/// are not reported. Options is set only on a NewOptions notification for the local player or an ally: the options that became
-	/// buildable since that player's previous NewOptions, in palette order. It is left out of the JSON otherwise.
+	/// are not reported. A notification that announces a finished item (ConstructionComplete for a structure, UnitReady for a unit,
+	/// as the rules name them) also names it in Item. A finished structure waits for placement: PlacementRequired is true, and place
+	/// puts it. A finished unit has its Cell, the cell it was built on. Those keys are left out of the JSON otherwise. A NewOptions
+	/// notification names no options: production lists the ones that became buildable, because it reports changed options.
 	/// </summary>
 	public sealed record NotificationV1(string Event, int Tick, string Name, string Owner,
-		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ProductionOptionV1[] Options = null);
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Item = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int[] Cell = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? PlacementRequired = null);
 
 	public static class AgentNotifications
 	{
-		// The rules name of the notification that a player's buildable options changed, as PlaceBuilding plays it in every mod.
-		const string NewOptions = "NewOptions";
+		// The finished item a production queue is announcing: its type, and the owner that built it. Set only while the queue
+		// plays its ready notification, so Raise can name the item. The engine plays the sound synchronously, so Raise sees it.
+		static (Player Owner, ActorInfo Item)? finishing;
 
-		// The options each player could build when its last NewOptions was played. A world's players are new objects, so the
-		// table starts empty in each world. Only allied players are tracked, because only they report options.
-		static readonly ConditionalWeakTable<Player, HashSet<string>> BuildableAtLastNewOptions = [];
+		// A unit's ready notification, held until the unit exists. The production creates a unit at frame end, after its ready
+		// sound plays, so the cell is known only then: Produced sends the notification with it.
+		static NotificationV1 heldUnit;
+
+		/// <summary>Marks the item a production queue has finished, for the ready notification it plays next. Pair with Finished.</summary>
+		public static void Finishing(Player owner, ActorInfo item)
+		{
+			finishing = (owner, item);
+		}
+
+		/// <summary>Ends the mark Finishing set, once the ready notification has played.</summary>
+		public static void Finished()
+		{
+			finishing = null;
+		}
+
+		/// <summary>
+		/// Sends a held unit's ready notification with its cell, once the production trait has created the unit. Called for every
+		/// unit a production creates, and sends nothing unless it is the one a ready notification held.
+		/// </summary>
+		public static void Produced(Actor produced)
+		{
+			if (heldUnit is not { } held || produced.Owner.PlayerName != held.Owner || produced.Info.Name != held.Item)
+				return;
+
+			heldUnit = null;
+			int[] cell = null;
+			if (produced.OccupiesSpace != null)
+				cell = [produced.Location.X, produced.Location.Y];
+
+			AgentEvents.Raise(held with { Cell = cell });
+		}
 
 		/// <summary>
 		/// Raises a notification event for a notification the engine plays. Sound.PlayNotification calls it before its guards, so it
@@ -55,31 +87,22 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (player != null && local != null && !local.IsAlliedWith(player))
 				return;
 
-			var tick = player?.World.WorldTick ?? AgentWorldBridge.Active?.WorldTick ?? 0;
-			var options = name == NewOptions && IsAlliedWithLocal(player) ? NewlyBuildable(player) : null;
-
 			// A nameless notification, such as the stop that RA's structures play, has no name an agent can match on.
 			if (name is null)
 				return;
 
-			AgentEvents.Raise(new NotificationV1("notification", tick, name, player?.PlayerName, options));
-		}
+			var tick = player?.World.WorldTick ?? AgentWorldBridge.Active?.WorldTick ?? 0;
+			var finished = finishing is { } announced && announced.Owner == player ? announced.Item : null;
 
-		// Tech progression is reported only for the local player and allies, so an enemy's unlocks do not leak (D-4).
-		static bool IsAlliedWithLocal(Player player)
-		{
-			var local = player?.World.LocalPlayer;
-			return local != null && local.IsAlliedWith(player);
-		}
+			// A unit's cell is known only once it exists, so the notification waits for Produced.
+			if (finished != null && !finished.HasTraitInfo<BuildingInfo>())
+			{
+				heldUnit = new NotificationV1("notification", tick, name, player?.PlayerName, finished.Name);
+				return;
+			}
 
-		// The options buildable now that were not buildable at this player's previous NewOptions. The first one in a world lists them all.
-		static ProductionOptionV1[] NewlyBuildable(Player player)
-		{
-			var now = AgentProduction.Buildable(player);
-			var before = BuildableAtLastNewOptions.TryGetValue(player, out var previous) ? previous : [];
-			BuildableAtLastNewOptions.AddOrUpdate(player, now.Select(o => o.Name).ToHashSet());
-
-			return now.Where(o => !before.Contains(o.Name)).ToArray();
+			AgentEvents.Raise(new NotificationV1("notification", tick, name, player?.PlayerName, finished?.Name,
+				null, finished == null ? null : true));
 		}
 	}
 }

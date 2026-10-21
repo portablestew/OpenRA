@@ -13,6 +13,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using NUnit.Framework;
 
 namespace OpenRA.Test
@@ -147,8 +148,8 @@ namespace OpenRA.Test
 				"An opponent's notification must not be sent.");
 		}
 
-		[TestCase(TestName = "A NewOptions notification for the local player lists the options it newly made buildable, and not the ones already buildable")]
-		public void NewOptionsListsTheNewlyBuildableOptions()
+		[TestCase(TestName = "A NewOptions notification for the local player names no options, and production lists the one that became buildable")]
+		public void NewOptionsNamesNoOptions()
 		{
 			using var hw = HeadlessWorld.Create(Seed);
 			var local = hw.LocalPlayer;
@@ -165,15 +166,18 @@ namespace OpenRA.Test
 			PlayNewOptions(hw, local);
 			var note = TakeNotifications().Single(n => Field<string>(n, "Name") == NewOptionsNotification);
 
-			var options = ((IEnumerable)Field<object>(note, "Options")).Cast<object>().ToList();
-			var names = options.ConvertAll(o => Field<string>(o, "Name"));
-			Assert.That(names, Does.Contain("proc"), "A powr should make proc newly buildable, so the notification should list it.");
-			Assert.That(names, Does.Not.Contain("powr"), "powr was buildable before the powr was built, so it is not newly available.");
+			// The socket's JSON for the notification: the same naming policy the socket uses, and null keys left out.
+			using var json = JsonDocument.Parse(JsonSerializer.Serialize(note, SocketJson));
+			Assert.That(json.RootElement.EnumerateObject().Select(p => p.Name), Is.EquivalentTo(["event", "tick", "name", "owner"]),
+				"A NewOptions notification should carry no options: production lists what became buildable.");
 
-			var proc = options.Single(o => Field<string>(o, "Name") == "proc");
-			Assert.That(Field<bool>(proc, "Buildable"), Is.True);
-			Assert.That(Field<string[]>(proc, "Prerequisites"), Does.Contain("anypower"));
+			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
+			var proc = AgentProductionTest.Option(AgentProductionTest.QueueOf(production.RootElement, "Building"), "proc");
+			Assert.That(proc.GetProperty("buildable").GetBoolean(), Is.True, "proc should be buildable once a powr exists.");
+			Assert.That(proc.GetProperty("prerequisites").EnumerateArray().Select(p => p.GetString()), Does.Contain("anypower"));
 		}
+
+		static readonly JsonSerializerOptions SocketJson = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
 		[TestCase(TestName = "A NewOptions notification for an enemy is not sent, so the enemy's tech progress does not leak")]
 		public void NewOptionsOfAnEnemyIsNotSent()
