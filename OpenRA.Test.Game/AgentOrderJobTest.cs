@@ -86,6 +86,8 @@ namespace OpenRA.Test
 			var root = reply.RootElement;
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
 			Assert.That(root.GetProperty("cmd").GetString(), Is.EqualTo("wait"));
+			Assert.That(root.GetProperty("waited_ticks").GetInt32(), Is.GreaterThanOrEqualTo(0), "The wait did not report its game ticks.");
+			Assert.That(root.GetProperty("requested_ticks").GetInt32(), Is.GreaterThan(0), "The wait did not report its tick budget.");
 			Assert.That(root.GetProperty("valid").GetBoolean(), Is.True);
 			Assert.That(root.GetProperty("settled").GetBoolean(), Is.True);
 			Assert.That(root.GetProperty("settled_ticks").GetInt32(), Is.EqualTo(3));
@@ -106,24 +108,25 @@ namespace OpenRA.Test
 			Assert.That(root.GetProperty("error").GetString(), Does.StartWith("unknown job 987654").And.Contains("await:false"));
 		}
 
-		[TestCase(TestName = "wait with timeout_ms on a job that has not settled returns pending, and the job stays open")]
-		public void WaitTimeoutReturnsPendingAndKeepsJob()
+		[TestCase(TestName = "wait with timeout_ticks on a job in a paused game returns paused, and the job stays open")]
+		public void WaitWhilePausedReturnsPausedAndKeepsJob()
 		{
 			using var hw = HeadlessWorld.Create(1);
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
 
-			// A paused game never ticks, so the job cannot settle until it is resumed.
+			// A paused game spends no ticks, so the wait ends at once and the job cannot settle until it is resumed.
 			hw.World.SetLocalPauseState(true);
 			using var issued = AgentStateDumpTest.Request(MoveLine(unit, destination, ",\"await\":false"));
 			var job = issued.RootElement.GetProperty("job").GetInt32();
 
-			using var pending = AgentStateDumpTest.Request($"{{\"cmd\":\"wait\",\"job\":{job},\"timeout_ms\":50}}");
+			using var pending = AgentStateDumpTest.Request($"{{\"cmd\":\"wait\",\"job\":{job},\"timeout_ticks\":50}}");
 			var root = pending.RootElement;
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
-			Assert.That(root.GetProperty("status").GetString(), Is.EqualTo("pending"));
-			Assert.That(PendingCount(hw.World), Is.EqualTo(1), "The timed-out wait closed the job's await.");
+			Assert.That(root.GetProperty("status").GetString(), Is.EqualTo("paused"));
+			Assert.That(root.GetProperty("waited_ticks").GetInt32(), Is.Zero, "A paused wait spent game ticks.");
+			Assert.That(PendingCount(hw.World), Is.EqualTo(1), "The paused wait closed the job's await.");
 
 			hw.World.SetLocalPauseState(false);
 			using var settled = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"wait\",\"job\":{job}}}");

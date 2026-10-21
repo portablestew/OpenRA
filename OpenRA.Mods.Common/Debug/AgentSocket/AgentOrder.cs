@@ -495,9 +495,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>
 		/// Builds the reply once the order's await has settled or its outcome is known (9.2): the richer verbs report their own
-		/// outcome, and every other order name reports its resolution signal. Parks the calling socket thread in Wait, so the game
-		/// thread keeps ticking, and returns at the resolution plus the settle window, never at the order's completion. Throws when
-		/// the await fails: restored, a resolve timeout, a dead subject, or the wall-clock backstop. Must not run on the game thread.
+		/// outcome, and every other order name reports its resolution signal. Parks the calling socket thread until the await
+		/// settles, within its game-tick budget, so the game thread keeps ticking. A paused game leaves the order unsettled.
+		/// Throws when the await fails: restored, a resolve timeout, a dead subject, or a tick budget. Must not run on the game thread.
 		/// </summary>
 		public static object Settle(Issued issued)
 		{
@@ -510,22 +510,20 @@ namespace OpenRA.Mods.Common.AgentSocket
 			{
 				// Nothing will tick the await in a paused game, so drop it here, or it stays in the registry until the world is disposed.
 				await?.Abandon();
-				if (await is { IsAttack: true })
-					return new AttackV1(true, "order", ack.Tick, ack.MinEffectTick, false, null);
-
-				if (await is { IsDeploy: true })
-					return new DeployV1(true, "order", ack.Tick, ack.MinEffectTick, false, null);
-
-				if (await is { IsAttackMove: true })
-					return new AttackMoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0);
-
-				if (await is { IsMoveOrder: true })
-					return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
-
-				return Outcome("order", ack, null);
+				return Unsettled(ack, await);
 			}
 
-			await.Wait();
+			try
+			{
+				await.Wait();
+			}
+			catch (AgentPausedException)
+			{
+				// The game paused while the wait was parked, so no tick will complete it. Drop it and report it unsettled.
+				await.Abandon();
+				return Unsettled(ack, await);
+			}
+
 			if (await.IsAttack)
 				return new AttackV1(true, "order", ack.Tick, ack.MinEffectTick, true, await.Outcome, await.Reason);
 
@@ -545,6 +543,24 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return Reply("order", ack, await);
 
 			return Outcome("order", ack, await);
+		}
+
+		/// <summary>The reply for an await a paused game left unsettled: every verb reports its own shape with no outcome.</summary>
+		static object Unsettled(OrderV1 ack, AgentOrderAwait await)
+		{
+			if (await is { IsAttack: true })
+				return new AttackV1(true, "order", ack.Tick, ack.MinEffectTick, false, null);
+
+			if (await is { IsDeploy: true })
+				return new DeployV1(true, "order", ack.Tick, ack.MinEffectTick, false, null);
+
+			if (await is { IsAttackMove: true })
+				return new AttackMoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0);
+
+			if (await is { IsMoveOrder: true })
+				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, []);
+
+			return Outcome("order", ack, null);
 		}
 
 		/// <summary>
@@ -587,8 +603,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>
 		/// Builds the reply to a grouped order once every ordered actor's await has settled or failed (P1.14). A failed await becomes
-		/// that actor's error, and the other actors still report. Throws when the shared wall-clock limit passes first, and then
-		/// abandons every await. Must not run on the game thread.
+		/// that actor's error, and the other actors still report. A paused game leaves every actor unsettled. Throws when an await's
+		/// game-tick budget passes first, and then abandons every await. Must not run on the game thread.
 		/// </summary>
 		public static GroupedOrderV1 SettleGroup(GroupIssued issued)
 		{
@@ -604,17 +620,18 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, ids.Length, ids.Select(id => new GroupResultV1(id, false)).ToArray());
 			}
 
-			var deadline = DateTime.UtcNow.AddMilliseconds(AgentOrderAwait.WallClockMs);
-			foreach (var await in awaits)
+			try
 			{
-				var remaining = Math.Max(0, (int)(deadline - DateTime.UtcNow).TotalMilliseconds);
-				if (await.TryWait(remaining))
-					continue;
+				foreach (var await in awaits)
+					await.Wait();
+			}
+			catch (AgentPausedException)
+			{
+				// The game paused while the group was parked, so no tick will complete the remaining awaits.
+				foreach (var await in awaits)
+					await.Abandon();
 
-				foreach (var other in awaits)
-					other.Abandon();
-
-				throw new TimeoutException($"the order did not settle within {AgentOrderAwait.WallClockMs} ms of wall-clock time");
+				return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, ids.Length, ids.Select(id => new GroupResultV1(id, false)).ToArray());
 			}
 
 			var results = new GroupResultV1[ids.Length];

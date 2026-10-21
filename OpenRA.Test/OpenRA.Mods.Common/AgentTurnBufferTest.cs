@@ -115,29 +115,35 @@ namespace OpenRA.Test
 			Assert.That(buffer.Flush(), Is.Empty, "A second flush with nothing added should be empty.");
 		}
 
-		[TestCase(TestName = "A wait with events already buffered returns at once, without reading the clock past its start")]
+		[TestCase(TestName = "A wait with events already buffered returns at once, without reading the clock")]
 		public void WaitReturnsAtOnceWhenBuffered()
 		{
 			var buffer = new AgentTurnBuffer();
 			buffer.Add(Damaged(5, 1));
 
+			var start = new AgentGameClock.Reading(null, 0, false);
 			var reads = 0;
-			var waited = buffer.WaitForEvents(10000, () => { reads++; return 0; });
+			var waited = buffer.WaitForEvents(start, 10, 0, () => { reads++; return start; });
 
-			Assert.That(waited, Is.True, "A buffered event should release the wait at once.");
-			Assert.That(reads, Is.EqualTo(1), "The wait should read the clock once, for its deadline, and never sleep.");
+			Assert.That(waited, Is.EqualTo("events"), "A buffered event should release the wait at once.");
+			Assert.That(reads, Is.Zero, "The wait should return before it reads the clock.");
 		}
 
-		[TestCase(TestName = "A wait with no events returns false once the clock passes its timeout")]
+		[TestCase(TestName = "A wait with no events returns timeout once the game clock passes its tick budget")]
 		public void WaitTimesOutOnTheClock()
 		{
 			var buffer = new AgentTurnBuffer();
-			long now = 0;
+			var start = new AgentGameClock.Reading(null, 0, false);
+			var now = 0;
 
-			var waited = buffer.WaitForEvents(200, () => now += 50);
+			var waited = buffer.WaitForEvents(start, 200, 0, () =>
+			{
+				now += 50;
+				return new AgentGameClock.Reading(null, now, false);
+			});
 
-			Assert.That(waited, Is.False, "With no events, the wait should time out.");
-			Assert.That(now, Is.GreaterThanOrEqualTo(200), "The wait should give up once the clock has passed its timeout.");
+			Assert.That(waited, Is.EqualTo("timeout"), "With no events, the wait should time out.");
+			Assert.That(now, Is.GreaterThanOrEqualTo(200), "The wait should give up once the game clock has passed its tick budget.");
 		}
 
 		[TestCase(TestName = "A payload with no Event and Tick field is not an event, so the buffer skips it")]

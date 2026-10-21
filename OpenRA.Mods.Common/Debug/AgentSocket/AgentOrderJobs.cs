@@ -19,8 +19,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>The reply to order with await:false. Job is the id that wait takes. Tick and MinEffectTick are the order's ack.</summary>
 	public sealed record JobV1(bool Ok, string Cmd, int Job, int Tick, int MinEffectTick);
 
-	/// <summary>The reply to wait when the job has not settled by its timeout. The job stays open, so wait can be called again.</summary>
-	public sealed record WaitPendingV1(bool Ok, string Cmd, int Job, string Status);
+	/// <summary>
+	/// The reply to wait when the job has not settled by its tick budget. The job stays open, so wait can be called again.
+	/// Status is pending when the budget ran out, and paused when the game was paused and spent no ticks.
+	/// </summary>
+	public sealed record WaitPendingV1(bool Ok, string Cmd, int Job, string Status, int StartTick, int Tick,
+		int RequestedTicks, int WaitedTicks);
 
 	/// <summary>
 	/// What an issued request hands to the job table (P1.4, P1.13): the ack the job reply carries, the await wait parks on, and
@@ -83,11 +87,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Waits on the socket thread for the job, up to timeoutMs of wall-clock time. Returns the job's reply once it settles, or a
-		/// pending reply if the timeout passes first, and the job stays open. Throws for an unknown job, and for a failed await,
-		/// which ends the job. Must not run on the game thread.
+		/// Waits on the socket thread for the job, up to timeoutTicks of game time. Returns the job's reply once it settles, or a
+		/// pending or paused reply if the budget or a pause ends the wait first, and the job stays open. Throws for an unknown job,
+		/// and for a failed await, which ends the job. Must not run on the game thread.
 		/// </summary>
-		public static object Wait(int id, int timeoutMs)
+		public static object Wait(int id, int timeoutTicks, out int startTick, out int tick)
 		{
 			Job job;
 			lock (Gate)
@@ -97,13 +101,25 @@ namespace OpenRA.Mods.Common.AgentSocket
 						+ " or load_skirmish or undo replaces its world");
 			}
 
-			if (!job.Await.TryWait(timeoutMs))
-				return new WaitPendingV1(true, "wait", id, "pending");
+			var wait = job.Await.WaitFor(timeoutTicks);
+			startTick = wait.StartTick;
+			tick = wait.Tick;
+
+			if (wait.Outcome != AwaitWait.Settled)
+				return new WaitPendingV1(true, "wait", id, wait.Outcome == AwaitWait.Paused ? "paused" : "pending",
+					startTick, tick, timeoutTicks, wait.WaitedTicks);
 
 			lock (Gate)
 				Open.Remove(id);
 
 			job.Await.ThrowIfFailed();
+
+			// The await settled, so a world is live: report the tick the wait returned on.
+			var reading = AgentGameClock.Read();
+			if (startTick < 0)
+				startTick = reading.Tick;
+
+			tick = reading.Tick;
 			return job.Reply("wait");
 		}
 

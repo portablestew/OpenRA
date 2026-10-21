@@ -19,13 +19,27 @@ using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.AgentSocket
 {
+	/// <summary>How a parked wait ended: the await settled, the game paused, or the tick budget ran out.</summary>
+	public enum AwaitWait
+	{
+		Settled,
+		Paused,
+		Budget
+	}
+
+	/// <summary>The outcome of one parked wait, with the game ticks it started and last read. StartTick is -1 when the await was already settled.</summary>
+	public readonly record struct AwaitWaitResult(AwaitWait Outcome, int StartTick, int Tick)
+	{
+		public int WaitedTicks => StartTick < 0 || Tick < 0 ? 0 : Tick - StartTick;
+	}
+
 	/// <summary>
 	/// An order the socket issued that has not settled yet. Registered on the game thread at issue. Resolve moves it from
 	/// Pending to Settling when the order resolves: AgentWorldEventObserver.Ordered runs for every resolved order, before the
 	/// connection check. Tick, the settle clock, completes it once settleTicks have passed, or fails it when the resolve budget
 	/// runs out or its subject dies. The socket thread parks in Wait until then. The registry is world-scoped: a resolution only
 	/// matches an await on the same world, because Undo swaps the world and actor IDs are not unique across worlds.
-	/// The socket thread abandons its await on a wall-clock timeout, so every list access takes Gate.
+	/// The socket thread abandons its await when its tick budget or a pause ends the wait, so every list access takes Gate.
 	/// An Attack await (P1.6) has no settle: a valid Attack stays Pending, and Tick finishes it with an outcome. It is started
 	/// once its attack activity is on the subject, or no_valid_target when the resolve budget runs out first.
 	/// </summary>
@@ -33,9 +47,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 	{
 		/// <summary>Game ticks an order may take to resolve before its await fails (Q13).</summary>
 		public const int ResolveBudgetTicks = 50;
-
-		/// <summary>The wall-clock backstop for one Wait. The socket thread gives up after this, even if the game does not tick.</summary>
-		public const int WallClockMs = 10000;
 
 		/// <summary>The ticks a Move holds after it resolves, unless the request says otherwise.</summary>
 		public const int DefaultSettleTicks = 3;
@@ -57,12 +68,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>The AttackMove outcome when the unit found no path to the cell (P3.0a).</summary>
 		public const string NoPathOutcome = "no_path";
-
-		/// <summary>
-		/// The clock the event long-poll reads, in milliseconds (P3.4). The wall clock by default. A test sets a fake clock, so a
-		/// wait times out on the test's ticks and not on real time. The job wait keeps its own limit.
-		/// </summary>
-		public static Func<long> Clock { get; set; } = () => Environment.TickCount64;
 
 		static readonly Lock Gate = new();
 		static readonly List<AgentOrderAwait> Pending = [];
@@ -194,6 +199,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		public static AgentOrderAwait Register(Order order, int settleTicks)
 		{
+			// The order's own path and move activity are reported until it goes idle, so autonomous work stays quiet.
+			AgentOrderInterest.Track(order);
+
 			var await = new AgentOrderAwait(order.Subject, order.OrderString, order.Target, settleTicks);
 			lock (Gate)
 				Pending.Add(await);
@@ -209,30 +217,59 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Parks the calling thread until the await settles or fails, or until timeoutMs of wall-clock time passes. A failed
-		/// await throws its reason. Must not run on the game thread: the game thread is what completes it.
+		/// Parks the calling thread until the await settles, fails, or uses up budgetTicks of game time. A paused game ends the
+		/// wait at once with <see cref="AgentPausedException"/>; a budget that runs out throws a timeout. A failed await throws its
+		/// reason. Must not run on the game thread: the game thread is what completes it.
 		/// </summary>
-		public void Wait(int timeoutMs = WallClockMs)
+		public void Wait(int budgetTicks = AgentGameClock.MaxWaitTicks)
 		{
-			if (!TryWait(timeoutMs))
+			var wait = WaitFor(budgetTicks);
+			if (wait.Outcome == AwaitWait.Paused)
 			{
 				Abandon();
-				throw new TimeoutException($"the order did not settle within {timeoutMs} ms of wall-clock time");
+				throw new AgentPausedException();
+			}
+
+			if (wait.Outcome == AwaitWait.Budget)
+			{
+				Abandon();
+				throw new TimeoutException($"the order did not settle within {budgetTicks} ticks");
 			}
 
 			ThrowIfFailed();
 		}
 
 		/// <summary>
-		/// Parks the calling thread until the await settles or fails, or until timeoutMs passes. Returns false on timeout and
-		/// leaves the await registered, so an order job can wait again. Must not run on the game thread.
+		/// Parks the calling thread until the await settles, the game pauses, or budgetTicks of game time pass, whichever comes
+		/// first. The await is left registered on a pause or budget, so a job can wait again. Must not run on the game thread.
 		/// </summary>
-		public bool TryWait(int timeoutMs)
+		public AwaitWaitResult WaitFor(int budgetTicks = AgentGameClock.MaxWaitTicks)
 		{
-			return Task.WaitAny([done.Task], timeoutMs) != -1;
+			if (done.Task.IsCompleted)
+				return new AwaitWaitResult(AwaitWait.Settled, -1, -1);
+
+			var reading = AgentGameClock.Read();
+			var start = reading.Tick;
+			if (reading.Paused)
+				return new AwaitWaitResult(AwaitWait.Paused, start, start);
+
+			while (true)
+			{
+				if (reading.Tick - start >= budgetTicks)
+					return new AwaitWaitResult(AwaitWait.Budget, start, reading.Tick);
+
+				// WaitAny does not throw a faulted task's exception, so ThrowIfFailed reports the original reason.
+				Task.WaitAny([done.Task], AgentGameClock.PollMs);
+				if (done.Task.IsCompleted)
+					return new AwaitWaitResult(AwaitWait.Settled, start, reading.Tick);
+
+				reading = AgentGameClock.Read();
+				if (reading.Paused)
+					return new AwaitWaitResult(AwaitWait.Paused, start, reading.Tick);
+			}
 		}
 
-		/// <summary>Throws the failure reason of an await that has finished. Call it only after TryWait returned true, or it blocks.</summary>
+		/// <summary>Throws the failure reason of an await that has finished. Call it only after WaitFor returned Settled, or it blocks.</summary>
 		public void ThrowIfFailed()
 		{
 			done.Task.GetAwaiter().GetResult();
@@ -357,7 +394,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 					else if (p.IsAttack && p.Resolved)
 					{
 						// The attack outcome: started once its activity is on the subject, and no_valid_target when the budget runs out first.
-						if (AttackStarted(p.subject, p.target))
+						// A disposed subject's traits are gone, so it is never asked; a dead subject fails on the next line.
+						if (!p.subject.Disposed && AttackStarted(p.subject, p.target))
 							Finish(p, Started, null);
 						else if (p.subject.IsDead)
 							Fail(p, new InvalidOperationException($"actor {p.subject.ActorID} died before the attack started"));

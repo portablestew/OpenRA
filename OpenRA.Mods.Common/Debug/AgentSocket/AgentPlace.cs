@@ -156,13 +156,28 @@ namespace OpenRA.Mods.Common.AgentSocket
 			{
 				// Nothing will tick the await in a paused game, so drop it here, or it stays in the registry until the world is disposed.
 				issued.Await.Abandon();
-				return new PlaceV1(true, "place", issued.Item, issued.RequestedCell, issued.SearchFrom, issued.Cell, null, false,
-					issued.Tick, issued.MinEffectTick);
+				return Unsettled(issued);
 			}
 
-			issued.Await.Wait();
+			try
+			{
+				issued.Await.Wait();
+			}
+			catch (AgentPausedException)
+			{
+				// The game paused while the wait was parked, so no tick will place the building.
+				issued.Await.Abandon();
+				return Unsettled(issued);
+			}
+
 			return new PlaceV1(true, "place", issued.Item, issued.RequestedCell, issued.SearchFrom, issued.Cell, issued.Await.PlacedActor,
 				true, issued.Tick, issued.MinEffectTick);
+		}
+
+		static PlaceV1 Unsettled(PlaceIssued issued)
+		{
+			return new PlaceV1(true, "place", issued.Item, issued.RequestedCell, issued.SearchFrom, issued.Cell, null, false,
+				issued.Tick, issued.MinEffectTick);
 		}
 
 		/// <summary>

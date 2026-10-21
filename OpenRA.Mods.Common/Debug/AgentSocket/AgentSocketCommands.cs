@@ -10,6 +10,7 @@
 #endregion
 
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -20,8 +21,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 	{
 		sealed record Envelope(bool Ok, string Cmd, string Error, string Hint);
 		sealed record PingResponse(bool Ok, string Cmd, int Tick);
-		/// <summary>The events wait's reply (P3.4): events when a turn event arrived, timeout otherwise. The events are in the envelope.</summary>
-		sealed record WaitResultV1(bool Ok, string Cmd, string Result);
+
+		/// <summary>
+		/// The events wait's reply: events when a turn event arrived, timeout when the tick budget ran out, paused when
+		/// the game was paused, or world_changed when the live world was replaced. The events are in the envelope.
+		/// </summary>
+		sealed record WaitResultV1(bool Ok, string Cmd, string Result, int StartTick, int Tick, int RequestedTicks, int WaitedTicks);
 		sealed record HelpV1(bool Ok, string Cmd, string Banner);
 
 		/// <summary>Every error envelope and refusal carries this hint, so an agent that gets an error finds the command list on its own (P1.18).</summary>
@@ -34,12 +39,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// </summary>
 		sealed record SnapshotV1(bool Ok, string Cmd, int Tick, int RequestedTick, int MovedTicks, int Held);
 
-		/// <summary>Game ticks per second an offset is read in, the default game speed.</summary>
-		const int TicksPerSecond = 25;
-
-		/// <summary>Returned whenever the offset is missing or malformed, so a caller sees how to write it.</summary>
-		const string Usage = "usage: undo offset \"-<seconds>\" to rewind, \"+<seconds>\" to advance, " +
-			"or \"@<seconds>\" for an absolute game time, read at 25 ticks per second";
+		/// <summary>Returned whenever the target is missing or malformed, so a caller sees how to write it.</summary>
+		const string Usage = "usage: undo offset <ticks> to rewind or advance (a negative offset rewinds), " +
+			"or undo at_tick <tick> for an absolute game tick";
 
 		/// <summary>The command names the dispatcher answers. The banner lists the same names, and a headless test keeps them in step.</summary>
 		public static readonly string[] Names =
@@ -60,7 +62,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// Parses one request line and returns the single response line for it, wrapped in the turn envelope (AgentEnvelope)
 		/// except for help. A root array is one request: its items run in order, and the results are one JSON array with
 		/// one result per item, so a failing item does not stop the rest. Items run on the calling thread, so a slow awaited
-		/// item delays the whole response until it settles or its own wall-clock limit passes. connection is the calling
+		/// item delays the whole response until it settles or its own tick budget passes. connection is the calling
 		/// connection; it is null only where no connection exists, and a wait then has no events to wait for.
 		/// </summary>
 		public static string Handle(string line, AgentConnection connection)
@@ -405,31 +407,59 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// wait with a job is the job's reply (P1.4), with result:"job" at its front. wait with no job long-polls the connection's turn
-		/// buffer (P3.4): result is events when an event arrived, which is in this response's events, and timeout otherwise. A
-		/// connection-less request (no connection) has nothing to wait for, so it times out at once. The events wait does not hold a
-		/// lock the game thread needs; it runs on the connection's thread.
+		/// wait with a job is the job's reply (P1.4), with result:"job" and the ticks it waited at its front. wait with no job
+		/// long-polls the connection's turn buffer: result is events when an event arrived, which is in this response's
+		/// events, and timeout, paused, or world_changed otherwise. Every budget is game ticks: timeout_ticks is capped at
+		/// AgentGameClock.MaxWaitTicks, and min_ticks holds an event wait before it reports events. A connection-less request (no
+		/// connection) has nothing to wait for, so it times out at once. The events wait does not hold a lock the game thread needs;
+		/// it runs on the connection's thread.
 		/// </summary>
 		static string Wait(string cmd, JsonElement root, AgentConnection connection)
 		{
-			var timeoutMs = AgentOrderAwait.WallClockMs;
-			if (root.TryGetProperty("timeout_ms", out var timeoutElement) && timeoutElement.ValueKind != JsonValueKind.Null &&
-				(!timeoutElement.TryGetInt32(out timeoutMs) || timeoutMs < 0))
-				return Error(cmd, "timeout_ms must be a non-negative integer");
+			var timeoutTicks = AgentGameClock.MaxWaitTicks;
+			if (root.TryGetProperty("timeout_ticks", out var timeoutElement) && timeoutElement.ValueKind != JsonValueKind.Null &&
+				(timeoutElement.ValueKind != JsonValueKind.Number || !timeoutElement.TryGetInt32(out timeoutTicks) ||
+				timeoutTicks < 0 || timeoutTicks > AgentGameClock.MaxWaitTicks))
+				return Error(cmd, $"timeout_ticks must be an integer from 0 to {AgentGameClock.MaxWaitTicks}");
 
-			if (!root.TryGetProperty("job", out var jobElement))
-			{
-				var eventful = connection != null && connection.Turn.WaitForEvents(timeoutMs, AgentOrderAwait.Clock);
-				return Serialize(new WaitResultV1(true, cmd, eventful ? "events" : "timeout"));
-			}
+			var minTicks = 0;
+			if (root.TryGetProperty("min_ticks", out var minElement) && minElement.ValueKind != JsonValueKind.Null &&
+				(minElement.ValueKind != JsonValueKind.Number || !minElement.TryGetInt32(out minTicks) ||
+				minTicks < 0 || minTicks > AgentGameClock.MaxWaitTicks))
+				return Error(cmd, $"min_ticks must be an integer from 0 to {AgentGameClock.MaxWaitTicks}");
 
-			if (!jobElement.TryGetInt32(out var job))
-				return Error(cmd, "job must be an integer");
+			var hasJob = root.TryGetProperty("job", out var jobElement);
+			if (minTicks > 0 && hasJob)
+				return Error(cmd, "min_ticks applies only to a wait with no job");
+
+			if (minTicks > timeoutTicks)
+				return Error(cmd, "min_ticks must not exceed timeout_ticks");
 
 			try
 			{
-				var reply = Serialize(AgentOrderJobs.Wait(job, timeoutMs));
-				return string.Concat("{\"result\":\"job\",", reply.AsSpan(1));
+				if (!hasJob)
+				{
+					var start = AgentGameClock.Read();
+					if (start.World == null)
+						return Error(cmd, "no game world is loaded");
+
+					if (connection == null)
+						return Serialize(new WaitResultV1(true, cmd, "timeout", start.Tick, start.Tick, timeoutTicks, 0));
+
+					var result = connection.Turn.WaitForEvents(start, timeoutTicks, minTicks, AgentGameClock.Read);
+					var end = AgentGameClock.Read();
+					return Serialize(new WaitResultV1(true, cmd, result, start.Tick, end.Tick, timeoutTicks, end.Tick - start.Tick));
+				}
+
+				if (jobElement.ValueKind != JsonValueKind.Number || !jobElement.TryGetInt32(out var job))
+					return Error(cmd, "job must be an integer");
+
+				var reply = Serialize(AgentOrderJobs.Wait(job, timeoutTicks, out var startTick, out var tick));
+
+				// The job reply has its own tick, so the wait stats use start_tick and waited_ticks only.
+				var prefix = string.Create(CultureInfo.InvariantCulture,
+					$"{{\"result\":\"job\",\"start_tick\":{startTick},\"requested_ticks\":{timeoutTicks},\"waited_ticks\":{tick - startTick},");
+				return string.Concat(prefix, reply.AsSpan(1));
 			}
 			catch (Exception e)
 			{
@@ -447,44 +477,49 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Moves the snapshot clock in one step. The offset string names the direction by its first character:
-		/// "-s" restores the snapshot nearest s seconds before the live tick, "+s" the nearest s seconds after
-		/// it, and "@s" the nearest snapshot to the absolute game time s. A missing or unprefixed offset is
-		/// refused with the usage. The step runs on the game thread, because a restore swaps the active world;
-		/// the socket thread is blocked for its duration.
+		/// Moves the snapshot clock in one step. offset is a signed game-tick count: a negative one rewinds, a positive one
+		/// advances, and at_tick is an absolute game tick instead. Exactly one of them is required. The snapshot nearest the
+		/// target game time is restored; nothing is consumed. The step runs on the game thread, because a restore swaps the
+		/// active world; the socket thread is blocked for its duration.
 		/// </summary>
 		static string SnapshotStep(string cmd, JsonElement root)
 		{
-			if (!root.TryGetProperty("offset", out var element) || element.ValueKind != JsonValueKind.String)
+			var hasOffset = root.TryGetProperty("offset", out var offsetElement) && offsetElement.ValueKind != JsonValueKind.Null;
+			var hasAtTick = root.TryGetProperty("at_tick", out var atElement) && atElement.ValueKind != JsonValueKind.Null;
+			if (hasOffset == hasAtTick)
 				return Error(cmd, Usage);
 
-			var text = element.GetString();
-			if (string.IsNullOrEmpty(text) || (text[0] != '-' && text[0] != '+' && text[0] != '@') ||
-				!int.TryParse(text.AsSpan(1), out var seconds) || seconds < 0)
-				return Error(cmd, Usage);
+			int? offset = null;
+			if (hasOffset)
+			{
+				if (offsetElement.ValueKind != JsonValueKind.Number || !offsetElement.TryGetInt32(out var value))
+					return Error(cmd, Usage);
 
-			var prefix = text[0];
+				offset = value;
+			}
+
+			int? atTick = null;
+			if (hasAtTick)
+			{
+				if (atElement.ValueKind != JsonValueKind.Number || !atElement.TryGetInt32(out var value) || value < 0)
+					return Error(cmd, Usage);
+
+				atTick = value;
+			}
+
 			return Run(cmd, () =>
 			{
 				var world = AgentWorldBridge.RequireWorld();
 				var liveTick = world.WorldTick;
-				var deltaTicks = (long)seconds * TicksPerSecond;
-
-				var targetTick = prefix switch
-				{
-					'@' => deltaTicks,
-					'-' => Math.Max(0, liveTick - deltaTicks),
-					_ => liveTick + deltaTicks,
-				};
+				var targetTick = atTick ?? (int)Math.Clamp((long)liveTick + offset.Value, 0, int.MaxValue);
 
 				var renderer = AgentWorldBridge.ActiveRenderer;
-				if (!WorldForks.RestoreNearest(world, renderer, targetTick * world.Timestep, out var failureReason))
+				if (!WorldForks.RestoreNearest(world, renderer, targetTick * (long)world.Timestep, out var failureReason))
 					throw new InvalidOperationException(failureReason);
 
 				// The bridge repoints at the restored world through IWorldAdopted, so this reads the new tick.
 				var restoredTick = AgentWorldBridge.RequireWorld().WorldTick;
-				var requestedTick = (int)Math.Clamp(targetTick, 0, int.MaxValue);
-				return new SnapshotV1(true, cmd, restoredTick, requestedTick, restoredTick - liveTick, WorldForks.Count);
+				return new SnapshotV1(true, cmd, restoredTick, targetTick, restoredTick - liveTick, WorldForks.Count);
 			});
 		}
 

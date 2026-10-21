@@ -57,7 +57,7 @@ namespace OpenRA.Test
 			Game.Settings.Debug.AgentSocket = savedAgentSocket;
 		}
 
-		static int GapSeconds => (int)(WorldForks.MinGapMs / 1000);
+		static int GapTicks(HeadlessWorld hw) => (int)(WorldForks.MinGapMs / hw.World.Timestep);
 
 		/// <summary>Two checkpoints one gap apart, with the live clock a further gap past the second, so a one-gap undo has a target.</summary>
 		static HeadlessWorld SeedWindow()
@@ -80,9 +80,9 @@ namespace OpenRA.Test
 			return hw.CreateActor(Infantry, area + new CVec(2, 2));
 		}
 
-		static string UndoLine(string offset)
+		static string UndoLine(int offset)
 		{
-			return $"{{\"cmd\":\"undo\",\"offset\":\"{offset}\"}}";
+			return $"{{\"cmd\":\"undo\",\"offset\":{offset}}}";
 		}
 
 		static string MoveLine(Actor unit, CPos cell, string extra = "")
@@ -117,7 +117,7 @@ namespace OpenRA.Test
 				if (undoRaw != null || PendingAwaits(hw) == 0)
 					return;
 
-				using var undo = AgentStateDumpTest.Request(UndoLine($"-{GapSeconds}"));
+				using var undo = AgentStateDumpTest.Request(UndoLine(-GapTicks(hw)));
 				undoRaw = undo.RootElement.GetRawText();
 			});
 
@@ -143,7 +143,7 @@ namespace OpenRA.Test
 			Assert.That(job, Is.GreaterThan(0), issued.RootElement.ToString());
 			Assert.That(PendingAwaits(hw), Is.GreaterThan(0), "The job's Move had already settled, so the undo would not fail it.");
 
-			using (var undo = AgentStateDumpTest.Request(UndoLine($"-{GapSeconds}")))
+			using (var undo = AgentStateDumpTest.Request(UndoLine(-GapTicks(hw))))
 				Assert.That(undo.RootElement.GetProperty("ok").GetBoolean(), Is.True, undo.RootElement.ToString());
 
 			using var waited = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"wait\",\"job\":{job}}}");
@@ -158,7 +158,7 @@ namespace OpenRA.Test
 			using var hw = SeedWindow();
 			var liveTick = hw.OrderManager.World.WorldTick;
 
-			using var refused = AgentStateDumpTest.Request($"[{UndoLine($"-{GapSeconds}")},{Ping},{Ping}]");
+			using var refused = AgentStateDumpTest.Request($"[{UndoLine(-GapTicks(hw))},{Ping},{Ping}]");
 			var results = refused.RootElement.EnumerateArray().ToArray();
 
 			Assert.That(results.Length, Is.EqualTo(3));
@@ -170,7 +170,7 @@ namespace OpenRA.Test
 			Assert.That(WorldForks.Count, Is.EqualTo(2), "A refused undo consumed a snapshot.");
 
 			// Last in the array, undo is allowed: the earlier item runs, and undo rewinds.
-			using var last = AgentStateDumpTest.Request($"[{Ping},{UndoLine($"-{GapSeconds}")}]");
+			using var last = AgentStateDumpTest.Request($"[{Ping},{UndoLine(-GapTicks(hw))}]");
 			var lastResults = last.RootElement.EnumerateArray().ToArray();
 			Assert.That(lastResults[0].GetProperty("ok").GetBoolean(), Is.True, lastResults[0].ToString());
 			Assert.That(lastResults[1].GetProperty("ok").GetBoolean(), Is.True, lastResults[1].ToString());
@@ -184,7 +184,7 @@ namespace OpenRA.Test
 			using var before = AgentStateDumpTest.RawRequest(Ping);
 			var liveTick = EnvelopeTick(before);
 
-			using var undo = AgentStateDumpTest.RawRequest(UndoLine($"-{GapSeconds}"));
+			using var undo = AgentStateDumpTest.RawRequest(UndoLine(-GapTicks(hw)));
 			var rewoundTick = EnvelopeTick(undo);
 			Assert.That(rewoundTick, Is.LessThan(liveTick), "The undo envelope did not show a lower tick.");
 
@@ -219,7 +219,7 @@ namespace OpenRA.Test
 		public void StaticsResentAfterUndo()
 		{
 			using var hw = SeedWindow();
-			var envelopes = ServeConnection(Ping, UndoLine($"-{GapSeconds}"), Ping);
+			var envelopes = ServeConnection(Ping, UndoLine(-GapTicks(hw)), Ping);
 			try
 			{
 				Assert.That(envelopes, Has.Length.EqualTo(3));

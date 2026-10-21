@@ -187,7 +187,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>
 		/// Parks the socket thread until the deploy settles, then builds the reply. Throws when the await fails: restored, a stall,
-		/// a dead subject, or the wall-clock backstop. In a paused game it returns at once, unsettled. Must not run on the game thread.
+		/// a dead subject, or a tick budget. In a paused game it returns at once, unsettled. Must not run on the game thread.
 		/// </summary>
 		public static DeployedV1 Settle(DeployIssued issued)
 		{
@@ -198,7 +198,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return Reply("deploy", issued);
 			}
 
-			issued.Await.Wait();
+			try
+			{
+				issued.Await.Wait();
+			}
+			catch (AgentPausedException)
+			{
+				// The game paused while the wait was parked, so no tick will complete the deploy.
+				issued.Await.Abandon();
+				return Reply("deploy", issued);
+			}
+
 			return Reply("deploy", issued);
 		}
 	}

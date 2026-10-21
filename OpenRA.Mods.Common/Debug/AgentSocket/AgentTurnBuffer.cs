@@ -36,9 +36,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>How many events of each type a flush returns in full.</summary>
 		public const int FullPerType = 2;
 
-		/// <summary>How long a parked wait sleeps before it checks the clock and the buffer again, in milliseconds.</summary>
-		const int PollMs = 5;
-
 		static readonly string[] NeverAggregated = ["killed", "defeated", "game_over"];
 
 		// Every event DTO has an Event string and a Tick, as its first two fields. Read them once per DTO type.
@@ -68,30 +65,36 @@ namespace OpenRA.Mods.Common.AgentSocket
 				}
 
 				events.Enqueue((type, tick, dto));
-				Monitor.PulseAll(gate);
 			}
 		}
 
 		/// <summary>
-		/// Waits until the buffer holds an event, or timeoutMs has passed on clock (P3.4). Returns true when an event is waiting,
-		/// and false at the timeout. The wait releases the buffer's lock while it sleeps, so Add on the game thread never waits
-		/// for it.
+		/// Waits until the buffer holds an event at or after minTicks of game time, the tick budget runs out, the game pauses, or
+		/// the live world is replaced. Returns "events", "timeout", "paused", or "world_changed". clock reads the game
+		/// clock; the production caller passes AgentGameClock.Read. The buffer's lock is not held while the wait sleeps, so Add on
+		/// the game thread never waits for it.
 		/// </summary>
-		public bool WaitForEvents(long timeoutMs, Func<long> clock)
+		public string WaitForEvents(AgentGameClock.Reading start, int timeoutTicks, int minTicks, Func<AgentGameClock.Reading> clock)
 		{
-			var deadline = clock() + timeoutMs;
-			lock (gate)
+			var now = start;
+			while (true)
 			{
-				while (events.Count == 0)
+				lock (gate)
 				{
-					var remaining = deadline - clock();
-					if (remaining <= 0)
-						return false;
-
-					Monitor.Wait(gate, (int)Math.Min(remaining, PollMs));
+					if (events.Count != 0 && now.Tick - start.Tick >= minTicks)
+						return "events";
 				}
 
-				return true;
+				if (now.Paused)
+					return "paused";
+
+				if (now.Tick - start.Tick >= timeoutTicks)
+					return "timeout";
+
+				Thread.Sleep(AgentGameClock.PollMs);
+				now = clock();
+				if (now.World != start.World)
+					return "world_changed";
 			}
 		}
 

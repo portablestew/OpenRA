@@ -16,16 +16,13 @@ namespace OpenRA.Test
 {
 	/// <summary>
 	/// Drives the agent socket's undo command against a headless world with a real snapshot window: seed two
-	/// checkpoints, step with -/+ offsets and address one absolutely with @, and check both the reported ticks
+	/// checkpoints, step with a signed tick offset and address one absolutely with at_tick, and check both the reported ticks
 	/// and that the window is never consumed. The wire path and the game-thread marshalling are the live ones.
 	/// </summary>
 	[TestFixture]
 	sealed class AgentSnapshotTest
 	{
 		const int Seed = 0x5A9;
-
-		/// <summary>Seconds in one snapshot gap at the 25 ticks per second the offset is read in.</summary>
-		static int GapSeconds => (int)(WorldForks.MinGapMs / 1000);
 
 		bool savedAgentSocket;
 
@@ -76,14 +73,14 @@ namespace OpenRA.Test
 			return new Window(hw, om, gap, first, second);
 		}
 
-		[TestCase(TestName = "A - offset rewinds and a + offset advances, reporting the tick and holding the window")]
+		[TestCase(TestName = "A negative offset rewinds and a positive offset advances, reporting the tick and holding the window")]
 		public void StepByOffset()
 		{
 			using var window = SeedWindow();
 			var om = window.OrderManager;
 
 			var before = om.World.WorldTick;
-			using (var undo = AgentStateDumpTest.Request($"{{\"cmd\":\"undo\",\"offset\":\"-{GapSeconds}\"}}"))
+			using (var undo = AgentStateDumpTest.Request($"{{\"cmd\":\"undo\",\"offset\":-{window.Gap}}}"))
 			{
 				var root = undo.RootElement;
 				Assert.That(root.GetProperty("ok").GetBoolean(), Is.True);
@@ -96,14 +93,14 @@ namespace OpenRA.Test
 
 			Assert.That(om.World.WorldTick, Is.EqualTo(window.Second), "The rewind did not leave the second snapshot active.");
 
-			using (var undo = AgentStateDumpTest.Request($"{{\"cmd\":\"undo\",\"offset\":\"-{GapSeconds}\"}}"))
+			using (var undo = AgentStateDumpTest.Request($"{{\"cmd\":\"undo\",\"offset\":-{window.Gap}}}"))
 			{
 				Assert.That(undo.RootElement.GetProperty("ok").GetBoolean(), Is.True);
 				Assert.That(undo.RootElement.GetProperty("tick").GetInt32(), Is.EqualTo(window.First));
 				Assert.That(undo.RootElement.GetProperty("moved_ticks").GetInt32(), Is.EqualTo(-window.Gap));
 			}
 
-			using (var redo = AgentStateDumpTest.Request($"{{\"cmd\":\"undo\",\"offset\":\"+{GapSeconds}\"}}"))
+			using (var redo = AgentStateDumpTest.Request($"{{\"cmd\":\"undo\",\"offset\":{window.Gap}}}"))
 			{
 				Assert.That(redo.RootElement.GetProperty("ok").GetBoolean(), Is.True);
 				Assert.That(redo.RootElement.GetProperty("tick").GetInt32(), Is.EqualTo(window.Second));
@@ -114,14 +111,14 @@ namespace OpenRA.Test
 			Assert.That(WorldForks.Count, Is.EqualTo(2), "A restore consumed a snapshot.");
 		}
 
-		[TestCase(TestName = "An @ offset addresses an absolute game time, not a span from the live tick")]
+		[TestCase(TestName = "at_tick addresses an absolute game tick, not a span from the live tick")]
 		public void AbsoluteOffset()
 		{
 			using var window = SeedWindow();
 
-			// From the live clock (two gaps past the first checkpoint), @0 lands on the first checkpoint: the
+			// From the live clock (two gaps past the first checkpoint), tick zero lands on the first checkpoint: the
 			// nearest stored snapshot to game time zero, which is an absolute target, not a relative step.
-			using var response = AgentStateDumpTest.Request("{\"cmd\":\"undo\",\"offset\":\"@0\"}");
+			using var response = AgentStateDumpTest.Request("{\"cmd\":\"undo\",\"at_tick\":0}");
 			var root = response.RootElement;
 
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True);
@@ -129,16 +126,18 @@ namespace OpenRA.Test
 			Assert.That(root.GetProperty("requested_tick").GetInt32(), Is.Zero);
 		}
 
-		[TestCase(TestName = "A missing or unprefixed offset is refused with the usage")]
+		[TestCase(TestName = "A missing, malformed, or duplicated target is refused with the usage")]
 		public void BadOffsetIsRefused()
 		{
 			foreach (var request in new[]
 			{
 				"{\"cmd\":\"undo\"}",
+				"{\"cmd\":\"undo\",\"offset\":10,\"at_tick\":0}",
 				"{\"cmd\":\"undo\",\"offset\":\"10\"}",
-				"{\"cmd\":\"undo\",\"offset\":\"abc\"}",
-				"{\"cmd\":\"undo\",\"offset\":\"+\"}",
-				"{\"cmd\":\"undo\",\"offset\":5}",
+				"{\"cmd\":\"undo\",\"offset\":null}",
+				"{\"cmd\":\"undo\",\"offset\":1.5}",
+				"{\"cmd\":\"undo\",\"at_tick\":\"abc\"}",
+				"{\"cmd\":\"undo\",\"at_tick\":-1}",
 			})
 			{
 				using var response = AgentStateDumpTest.Request(request);
