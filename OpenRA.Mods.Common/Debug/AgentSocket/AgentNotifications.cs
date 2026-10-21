@@ -36,12 +36,23 @@ namespace OpenRA.Mods.Common.AgentSocket
 		static readonly ConditionalWeakTable<Player, HashSet<string>> BuildableAtLastNewOptions = new();
 
 		/// <summary>
-		/// Raises a notification event for a notification the engine plays. Sound.PlayNotification calls it before its guards, so it sees
-		/// every notification, whether or not the local player hears it. Raised only when a connection is listening.
+		/// Raises a notification event for a notification the engine plays. Sound.PlayNotification calls it before its guards, so it
+		/// sees every notification, whether or not the local player hears it. Only the local player's and its allies' notifications
+		/// are reported: an opponent's economy and tech state must not leak, and they must not wake a wait. The cash counter's tick
+		/// notifications are dropped because cash is in the state and production replies. Raised only when a connection is listening.
 		/// </summary>
 		public static void Raise(Player player, string name)
 		{
 			if (!AgentEvents.Enabled)
+				return;
+
+			// The counter plays one of these per animation tick, and every reply already carries cash.
+			if (name is "CashTickUp" or "CashTickDown")
+				return;
+
+			// A null player is a system notification. A player is reported only to its own side.
+			var local = player?.World.LocalPlayer;
+			if (player != null && local != null && !local.IsAlliedWith(player))
 				return;
 
 			var tick = player?.World.WorldTick ?? AgentWorldBridge.Active?.WorldTick ?? 0;

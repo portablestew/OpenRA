@@ -19,8 +19,9 @@ namespace OpenRA.Test
 {
 	/// <summary>
 	/// The notification event (P2.10). A refused non-queued DeployTransform plays the mcv's NoTransformNotification through
-	/// Transforms.DeployTransform, and Sound.PlayNotification reports it. The owner is the actor's owner, so the event also covers a
-	/// player that is not the local one. The connection is reached the way the other agent tests reach it.
+	/// Transforms.DeployTransform, and Sound.PlayNotification reports it. Notifications are reported only for the local player
+	/// and its allies, and the cash counter's tick notifications are dropped. The connection is reached the way the other
+	/// agent tests reach it.
 	/// </summary>
 	[TestFixture]
 	sealed class AgentNotificationTest
@@ -126,8 +127,8 @@ namespace OpenRA.Test
 				"The notification should carry the tick the refusal happened on.");
 		}
 
-		[TestCase(TestName = "A refused deploy by another player's mcv emits its notification with that player as owner")]
-		public void RefusedDeployOfAnotherOwnerNotifiesThatOwner()
+		[TestCase(TestName = "A refused deploy by another player emits no notification, so an opponent's state does not leak")]
+		public void RefusedDeployOfAnotherOwnerIsNotReported()
 		{
 			using var hw = HeadlessWorld.Create(Seed);
 			var enemy = hw.EnemyPlayer;
@@ -142,10 +143,8 @@ namespace OpenRA.Test
 			hw.Tick(3);
 			var notes = TakeNotifications();
 
-			var refusals = notes.Where(n => Field<string>(n, "Name") == RefusalNotification).ToList();
-			Assert.That(refusals, Has.Count.EqualTo(1), "The enemy's refused deploy should emit its notification.");
-			Assert.That(Field<string>(refusals[0], "Owner"), Is.EqualTo(enemy.PlayerName),
-				"The notification should name the enemy as owner, not the local player.");
+			Assert.That(notes.Where(n => Field<string>(n, "Name") == RefusalNotification), Is.Empty,
+				"An opponent's notification must not be sent.");
 		}
 
 		[TestCase(TestName = "A NewOptions notification for the local player lists the options it newly made buildable, and not the ones already buildable")]
@@ -176,8 +175,8 @@ namespace OpenRA.Test
 			Assert.That(Field<string[]>(proc, "Prerequisites"), Does.Contain("anypower"));
 		}
 
-		[TestCase(TestName = "A NewOptions notification for an enemy carries no options, so the enemy's tech progress does not leak")]
-		public void NewOptionsOfAnEnemyCarriesNoOptions()
+		[TestCase(TestName = "A NewOptions notification for an enemy is not sent, so the enemy's tech progress does not leak")]
+		public void NewOptionsOfAnEnemyIsNotSent()
 		{
 			using var hw = HeadlessWorld.Create(Seed);
 			var enemy = hw.EnemyPlayer;
@@ -192,10 +191,24 @@ namespace OpenRA.Test
 			hw.CreateActor("powr", hw.FindClearArea(new CPos(60, 60), 2, 2), enemy);
 			hw.Tick(1);
 			PlayNewOptions(hw, enemy);
-			var note = TakeNotifications().Single(n => Field<string>(n, "Name") == NewOptionsNotification);
+			var notes = TakeNotifications();
 
-			Assert.That(Field<string>(note, "Owner"), Is.EqualTo(enemy.PlayerName));
-			Assert.That(Field<object>(note, "Options"), Is.Null, "An enemy's NewOptions should carry no option records.");
+			Assert.That(notes.Where(n => Field<string>(n, "Name") == NewOptionsNotification), Is.Empty,
+				"An enemy's NewOptions must not be sent.");
+		}
+
+		[TestCase(TestName = "The cash counter's tick notifications are not sent: cash is in the state and production replies")]
+		public void CashTickNotificationsAreNotSent()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			Game.Sound.PlayNotification(hw.World.Map.Rules, local, "Sounds", "CashTickUp", local.Faction.InternalName);
+			Game.Sound.PlayNotification(hw.World.Map.Rules, local, "Sounds", "CashTickDown", local.Faction.InternalName);
+			hw.Tick(1);
+
+			Assert.That(TakeNotifications(), Is.Empty, "The counter's tick notifications should not be sent.");
 		}
 
 		static void PlayNewOptions(HeadlessWorld hw, Player owner)
