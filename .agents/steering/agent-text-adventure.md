@@ -7,6 +7,7 @@ description: OpenRA text_adventure patterns.
 # text_adventure
 
 - Banner: `{"cmd":"help"}`. Then `>` marks your turn.
+- A command is real JSON: an object, or an array of objects. A string holding JSON (`"{\"cmd\":\"ping\"}"`) is refused.
 - Start: `{"cmd":"load_skirmish"}` with tool `timeout_ms=90000, settle_ms=1000`.
 - Build: `{"cmd":"build","item":"e1","count":2}`. `eta_ticks` is cumulative; array builds resolve a tick later, so their etas are lower bounds.
 - Production: `{"cmd":"production"}` lists options only when changed; full catalog `{"cmd":"production_tree"}`.

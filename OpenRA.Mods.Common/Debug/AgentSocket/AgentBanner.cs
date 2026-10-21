@@ -204,7 +204,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static string Build()
 		{
 			var text = new StringBuilder();
-			text.Append("OpenRA agent debug socket, schema v1. Send one JSON object per line, or one JSON array of objects per line; one response line per request.\n");
+			text.Append("OpenRA agent debug socket, schema v1. Send one JSON object per line, or one JSON array of objects per line.\n");
+			text.Append("A command is real JSON, never a string holding JSON.\n"
+				+ " One response line per request.\n");
 			text.Append("Every response but help is an envelope: results, events, state, tick, map_state_png, map_state_tick, map_state_render,\n"
 					+ "    map_px_per_cell, map_origin, map_size.\n");
 			text.Append("Inside results, responses echo cmd and carry ok. Errors carry ok:false and error.\n");

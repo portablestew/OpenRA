@@ -152,9 +152,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 				&& cmd.ValueKind == JsonValueKind.String && cmd.GetString() == "undo";
 		}
 
-		/// <summary>Answers one request object. A value that is not an object is an error for that item alone.</summary>
+		/// <summary>Answers one request object. A value that is not an object is an error for that item alone; a string says so by name.</summary>
 		static string HandleItem(JsonElement root, AgentConnection connection, AgentSelection selection)
 		{
+			if (root.ValueKind == JsonValueKind.String)
+				return Error(null, "a command is a JSON object, or an array of objects, not a string holding JSON");
+
 			if (root.ValueKind != JsonValueKind.Object)
 				return Error(null, "expected a JSON object");
 

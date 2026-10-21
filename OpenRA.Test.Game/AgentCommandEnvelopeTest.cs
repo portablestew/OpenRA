@@ -119,5 +119,38 @@ namespace OpenRA.Test
 				Assert.That(root.GetProperty("error").GetString(), Is.EqualTo(error), cmd);
 			}
 		}
+
+		[TestCase(TestName = "A root array answers one result per item, in order, and a failing item does not stop the rest")]
+		public void ArrayRootGivesResultsInOrder()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			using var response = AgentStateDumpTest.RawRequest("[{\"cmd\":\"ping\"},{\"cmd\":\"bogus\"},{\"cmd\":\"ping\"}]");
+
+			var results = response.RootElement.GetProperty("results").EnumerateArray().ToArray();
+			Assert.That(results.Length, Is.EqualTo(3));
+			Assert.That(Keys(results[0]), Is.EquivalentTo(PingKeys));
+			Assert.That(results[0].GetProperty("ok").GetBoolean(), Is.True);
+			Assert.That(results[1].GetProperty("ok").GetBoolean(), Is.False);
+			Assert.That(results[1].GetProperty("error").GetString(), Is.EqualTo("unknown command"));
+			Assert.That(results[2].GetProperty("cmd").GetString(), Is.EqualTo("ping"));
+		}
+
+		[TestCase(TestName = "A command sent as a string holding JSON is refused by name, as the root or as a batch item")]
+		public void StringEncodedCommandIsRefused()
+		{
+			const string Refusal = "a command is a JSON object, or an array of objects, not a string holding JSON";
+
+			using (var root = AgentStateDumpTest.Request("\"{\\\"cmd\\\":\\\"ping\\\"}\""))
+			{
+				Assert.That(Keys(root.RootElement), Is.EquivalentTo(ErrorKeys));
+				Assert.That(root.RootElement.GetProperty("ok").GetBoolean(), Is.False);
+				Assert.That(root.RootElement.GetProperty("error").GetString(), Is.EqualTo(Refusal));
+			}
+
+			using var batch = AgentStateDumpTest.Request("[\"{\\\"cmd\\\":\\\"ping\\\"}\"]");
+			var item = batch.RootElement.EnumerateArray().Single();
+			Assert.That(Keys(item), Is.EquivalentTo(ErrorKeys));
+			Assert.That(item.GetProperty("error").GetString(), Is.EqualTo(Refusal));
+		}
 	}
 }
