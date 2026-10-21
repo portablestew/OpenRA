@@ -56,7 +56,7 @@ namespace OpenRA.Test
 			var map = hw.World.Map.Bounds;
 			var expectedSpawns = hw.World.Players
 				.Where(p => p.HomeLocation != CPos.Zero)
-				.Select(p => (Player: p.PlayerName, X: p.HomeLocation.X, Y: p.HomeLocation.Y))
+				.Select(p => (Player: p.PlayerName, Faction: p.Faction?.InternalName, X: p.HomeLocation.X, Y: p.HomeLocation.Y))
 				.ToArray();
 			Assert.That(expectedSpawns.Length, Is.GreaterThan(1), "The test map should have at least two players with a home cell.");
 
@@ -69,9 +69,10 @@ namespace OpenRA.Test
 
 			// spawns: exactly one entry per player with a home cell, each at that player's HomeLocation.
 			var spawns = root.GetProperty("spawns").EnumerateArray()
-				.Select(s => (Player: s.GetProperty("player").GetString(), X: s.GetProperty("cell")[0].GetInt32(), Y: s.GetProperty("cell")[1].GetInt32()))
+				.Select(s => (Player: s.GetProperty("player").GetString(), Faction: s.GetProperty("faction").GetString(),
+					X: s.GetProperty("cell")[0].GetInt32(), Y: s.GetProperty("cell")[1].GetInt32()))
 				.ToArray();
-			Assert.That(spawns, Is.EquivalentTo(expectedSpawns), "spawns should be exactly the players with a home cell, at their cells.");
+			Assert.That(spawns, Is.EquivalentTo(expectedSpawns), "spawns should be exactly the players with a home cell, at their cells, each with its faction.");
 		}
 
 		[TestCase(TestName = "The maps command still lists uid and title only, without bounds or spawns")]

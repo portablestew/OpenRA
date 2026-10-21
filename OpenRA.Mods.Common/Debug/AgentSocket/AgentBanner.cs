@@ -36,7 +36,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " game_over, local_player,"
 				+ " players, units, threats, selection\n"
 				+ "                -> map is uid, title, bounds ([x, y, width, height], Map.Bounds in cells) and spawns (one per player with a home"
-				+ " cell: player, cell [x, y]). Your own buildings in units are id, type, cell and hp, plus repairing (true while you are among its repairers)"
+				+ " cell: player, faction, cell [x, y]). Your own buildings in units are id, type, cell and hp, plus repairing (true while you are among its repairers)"
 				+ " and powered_down (its PowerDown toggle's state; omitted for a building without one)."
 				+ " selection is the sorted ids of the actors your orders selected, empty when none."
 				+ " players[].known_counts is the count by type of the actors you know: all of your own, and another player's only where known."

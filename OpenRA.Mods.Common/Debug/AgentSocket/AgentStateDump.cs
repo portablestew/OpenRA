@@ -41,8 +41,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// </summary>
 	public sealed record StateMapV1(string Uid, string Title, int[] Bounds, SpawnV1[] Spawns);
 
-	/// <summary>A player's home cell (P2.6): Cell is the top-left cell of Player's HomeLocation.</summary>
-	public sealed record SpawnV1(string Player, int[] Cell);
+	/// <summary>A player's home cell (P2.6): Cell is the top-left cell of Player's HomeLocation. Faction is the player's faction's internal name.</summary>
+	public sealed record SpawnV1(string Player, string Faction, int[] Cell);
 
 	/// <summary>
 	/// Funds, CashFunds, ResourceFunds and ResourceFundsCapacity are null for a player who is not allied with the local player: their
@@ -118,7 +118,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			var bounds = world.Map.Bounds;
 			var spawns = world.Players.Where(p => p.HomeLocation != CPos.Zero)
-				.Select(p => new SpawnV1(p.PlayerName, [p.HomeLocation.X, p.HomeLocation.Y]))
+				.Select(p => new SpawnV1(p.PlayerName, p.Faction?.InternalName, [p.HomeLocation.X, p.HomeLocation.Y]))
 				.ToArray();
 
 			return new StateMapV1(world.Map.Uid, world.Map.Title, [bounds.X, bounds.Y, bounds.Width, bounds.Height], spawns);

@@ -371,7 +371,11 @@ namespace OpenRA.Test
 
 			// The state half is the state shape, so a client reads it the same way.
 			Assert.That(root.GetProperty("players").GetArrayLength(), Is.GreaterThan(0));
-			Assert.That(root.GetProperty("map").GetProperty("uid").GetString(), Is.EqualTo(hw.World.Map.Uid));
+			var map = root.GetProperty("map");
+			Assert.That(map.GetProperty("uid").GetString(), Is.EqualTo(hw.World.Map.Uid));
+			Assert.That(map.GetProperty("title").GetString(), Is.EqualTo(hw.World.Map.Title));
+			Assert.That(map.GetProperty("bounds").GetArrayLength(), Is.EqualTo(4));
+			Assert.That(map.GetProperty("spawns")[0].TryGetProperty("faction", out _), Is.True, "each spawn carries its faction");
 		}
 
 		[TestCase(TestName = "load_map is gone: it is an unknown command with the help hint, and the banner lists load_skirmish instead")]
