@@ -98,6 +98,8 @@ FCOM:
 		RepairStep: 700
 		PlayerExperience: 5
 		RepairingNotification: Repairing
+		RepairingStoppedNotification: Cancelled
+		RepairingFinishedNotification: UnitRepaired
 	WithBuildingRepairDecoration:
 		Image: allyrepair
 		Sequence: repair
