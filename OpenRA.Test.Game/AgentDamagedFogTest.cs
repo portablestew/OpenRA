@@ -210,6 +210,39 @@ namespace OpenRA.Test
 			Assert.That(Field<string>(hit, "AttackerBearing"), Is.EqualTo("E"));
 		}
 
+		[TestCase(TestName = "A damaged event naming an already-disposed attacker is reported without identity or bearing, and without throwing")]
+		public void DisposedAttackerIsNotTouched()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			// The attacker is out of sight, so the fog rule falls through to the radar-dot check whose trait lookup throws on a
+			// disposed actor; a visible attacker would short-circuit before reaching it.
+			var (victim, attacker) = Pair(hw, Separation);
+			hw.Tick(SettleTicks);
+			Assert.That(local.Shroud.IsVisible(attacker.CenterPosition), Is.False, "Precondition: the attacker is out of sight.");
+
+			// A missile in flight names its firer as the attacker after that firer is gone: the world knows the attacker, but the
+			// local player cannot, and its traits are disposed. Reaching them throws (TraitDictionary.CheckDestroyed) - the crash
+			// this guards, from AgentFog.GpsDotShown's trait lookup during a damaged event.
+			attacker.Dispose();
+			hw.Tick(SettleTicks);
+			Assert.That(attacker.Disposed, Is.True, "Precondition: the disposed attacker is out of the world with its traits gone.");
+			Assert.That(Known(attacker, local), Is.False, "A disposed attacker is not known.");
+
+			Assert.DoesNotThrow(() => Hit(victim, attacker), "The hit must be reported, not thrown.");
+			var hits = TakeDamaged(victim.ActorID);
+
+			Assert.That(hits, Has.Count.EqualTo(1), "Expected one damaged event for the victim.");
+			var hit = hits[0];
+			Assert.That(Field<uint?>(hit, "Attacker"), Is.Null, "A disposed attacker is not named.");
+			Assert.That(Field<string>(hit, "AttackerType"), Is.Null, "A disposed attacker's type is not given.");
+			Assert.That(Field<string>(hit, "AttackerOwner"), Is.Null, "A disposed attacker's owner is not given.");
+			Assert.That(Field<bool>(hit, "AttackerShrouded"), Is.True, "A disposed attacker is shrouded.");
+			Assert.That(Field<string>(hit, "AttackerBearing"), Is.Null, "A disposed attacker has no live position, so it gives no bearing.");
+		}
+
 		/// <summary>The events of the named types, in the order they were raised. The connection carries every event; a test looks at its own.</summary>
 		static IEnumerable<object> Only(IEnumerable<object> events, params string[] types)
 		{

@@ -119,8 +119,8 @@ namespace OpenRA.Mods.Common
 			var attackerType = known ? attacker.Info.Name : null;
 			var attackerOwner = known ? attacker.Owner.PlayerName : null;
 			var shrouded = attacker != null && !known;
-			// An actor with no position, such as a player actor that fires a nuke, has no bearing to read.
-			var bearing = attacker is { OccupiesSpace: not null } && self.OccupiesSpace != null
+			// A removed attacker, or one with no position (a player actor fires a nuke), has no live position to read, so it gives no bearing.
+			var bearing = attacker is { IsInWorld: true, OccupiesSpace: not null } && self.OccupiesSpace != null
 				? AgentBearing.Of(self.CenterPosition, attacker.CenterPosition) : null;
 
 			AgentEvents.Raise(new DamagedV1("damaged", self.World.WorldTick, self.ActorID,

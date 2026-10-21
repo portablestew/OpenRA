@@ -30,7 +30,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>True when observer knows actor: visible, a valid last-known snapshot, or a GPS dot the satellite draws.</summary>
 		public static bool Known(Actor actor, Player observer)
 		{
-			if (actor == null || observer == null)
+			// A disposed actor is out of the world and its traits are gone, so the trait-backed checks below would throw.
+			// This is reached when a missile whose firer died before impact reports that dead firer as the attacker.
+			if (actor == null || observer == null || actor.Disposed)
 				return false;
 
 			// An actor with no IOccupySpace has no position, so neither the shroud nor the radar-dot rule can speak for it.
