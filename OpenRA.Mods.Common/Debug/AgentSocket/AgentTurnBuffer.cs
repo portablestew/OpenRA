@@ -41,7 +41,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		// Every event DTO has an Event string and a Tick, as its first two fields. Read them once per DTO type.
 		static readonly Dictionary<Type, (PropertyInfo Event, PropertyInfo Tick)> Accessors = [];
 
-		readonly object gate = new();
+		readonly Lock gate = new();
 		readonly Queue<(string Type, int Tick, object Dto)> events = new();
 		int dropped;
 

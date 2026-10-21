@@ -151,7 +151,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// The option signature each production queue last reported on this connection, keyed by actor and queue type (D-3).
 		/// Only the game thread reads or writes it, and a world change clears it, so the next production read lists every queue again.
 		/// </summary>
-		internal Dictionary<(uint Actor, string QueueType), string[]> SeenOptions { get; } = new();
+		internal Dictionary<(uint Actor, string QueueType), string[]> SeenOptions { get; } = [];
 
 		/// <summary>
 		/// Whether an envelope on this connection has carried the static data (the map, and each player's faction, color, bot and handicap)

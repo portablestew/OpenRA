@@ -166,7 +166,7 @@ namespace OpenRA.Test
 			var note = TakeNotifications().Single(n => Field<string>(n, "Name") == NewOptionsNotification);
 
 			var options = ((IEnumerable)Field<object>(note, "Options")).Cast<object>().ToList();
-			var names = options.Select(o => Field<string>(o, "Name")).ToList();
+			var names = options.ConvertAll(o => Field<string>(o, "Name"));
 			Assert.That(names, Does.Contain("proc"), "A powr should make proc newly buildable, so the notification should list it.");
 			Assert.That(names, Does.Not.Contain("powr"), "powr was buildable before the powr was built, so it is not newly available.");
 

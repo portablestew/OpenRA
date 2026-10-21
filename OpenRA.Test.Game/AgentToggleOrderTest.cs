@@ -23,12 +23,12 @@ namespace OpenRA.Test
 	[TestFixture]
 	sealed class AgentToggleOrderTest
 	{
+		/// <summary>Enough damage that a dome is still damaged after the settle window, when a repair step is 700 hit points.</summary>
+		const int RepairDamage = 50000;
+
 		// The toggle lives in OpenRA.Mods.Common, which this project reaches only by reflection.
 		static readonly Lazy<Type> ToggleType = new(() => HeadlessMod.ModData.ObjectCreator.FindType("Traits.ToggleConditionOnOrder"));
 		static readonly Lazy<Type> RepairableType = new(() => HeadlessMod.ModData.ObjectCreator.FindType("Traits.RepairableBuilding"));
-
-		/// <summary>Enough damage that a dome is still damaged after the settle window, when a repair step is 700 hit points.</summary>
-		const int RepairDamage = 50000;
 
 		bool savedAgentSocket;
 
@@ -231,7 +231,8 @@ namespace OpenRA.Test
 			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
 			hw.Tick(1);
 
-			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{hw.LocalPlayer.PlayerActor.ActorID},\"order\":\"RepairBuilding\",\"on\":true}}");
+			using var response = AgentStateDumpTest.Request(
+				$"{{\"cmd\":\"order\",\"actor\":{hw.LocalPlayer.PlayerActor.ActorID},\"order\":\"RepairBuilding\",\"on\":true}}");
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.False);
 			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo("RepairBuilding needs target_actor, the building to repair"));
 			Assert.That(IsRepairedBy(dome, hw.LocalPlayer), Is.False);

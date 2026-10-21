@@ -167,7 +167,8 @@ namespace OpenRA.Test
 				"After the launch, the far enemy should be counted in the enemy's infantry.");
 		}
 
-		[TestCase(TestName = "A player not allied with the local player has no funds, cash_funds, resource_funds, resource_funds_capacity or power, but keeps known_counts")]
+		[TestCase(TestName = "A player not allied with the local player has no funds, cash_funds, resource_funds, "
+			+ "resource_funds_capacity or power, but keeps known_counts")]
 		public void EnemyEconomyIsHiddenButKnownCountsRemain()
 		{
 			using var hw = HeadlessWorld.Create(Seed);

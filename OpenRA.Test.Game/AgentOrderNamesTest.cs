@@ -217,7 +217,8 @@ namespace OpenRA.Test
 
 			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{player},\"order\":\"RepairBuilding\",\"target_actor\":{dome.ActorID}}}");
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.False);
-			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo($"'RepairBuilding' is a toggle for actor {player}, so it needs on: true or on: false"));
+			Assert.That(response.RootElement.GetProperty("error").GetString(),
+				Is.EqualTo($"'RepairBuilding' is a toggle for actor {player}, so it needs on: true or on: false"));
 		}
 
 		// This asserts acceptance only. A toggle's execution (desired state against current state) is covered in AgentToggleOrderTest.
@@ -229,7 +230,8 @@ namespace OpenRA.Test
 			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
 			hw.Tick(1);
 
-			using var response = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"order\",\"actor\":{dome.ActorID},\"order\":\"PowerDown\",\"on\":{(on ? "true" : "false")}}}");
+			using var response = AgentStateDumpTest.RequestWithTicks(hw,
+				$"{{\"cmd\":\"order\",\"actor\":{dome.ActorID},\"order\":\"PowerDown\",\"on\":{(on ? "true" : "false")}}}");
 			Assert.That(response.RootElement.TryGetProperty("error", out _), Is.False, response.RootElement.ToString());
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
 		}
@@ -238,6 +240,7 @@ namespace OpenRA.Test
 		public void SellIsAcceptedWithoutOn()
 		{
 			using var hw = HeadlessWorld.Create(1);
+
 			// A wall, not a power plant: a building with a make animation never finishes selling headlessly, so the sale would not run.
 			var wall = hw.CreateActor("BRIK", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);

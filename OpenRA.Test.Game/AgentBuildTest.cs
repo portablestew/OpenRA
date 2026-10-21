@@ -142,7 +142,8 @@ namespace OpenRA.Test
 			Assert.That(root.GetProperty("ready").ValueKind, Is.EqualTo(JsonValueKind.Null), "No ATEK is queued, so there is no ready state");
 		}
 
-		[TestCase(TestName = "A build reports ready:false and an ETA for the copy it queues, counting the copies ahead of it; behind a finished head there is no ETA")]
+		[TestCase(TestName = "A build reports ready:false and an ETA for the copy it queues, counting the copies ahead of it; "
+			+ "behind a finished head there is no ETA")]
 		public void ReadyAndEtaDescribeTheCopyThisBuildQueues()
 		{
 			using var hw = HeadlessWorld.Create(1);
@@ -176,7 +177,8 @@ namespace OpenRA.Test
 			// The first copy is done and holds the queue until it is placed, so a copy queued behind it has no ETA; blocked_by names the head.
 			using var blocked = AgentStateDumpTest.Request("{\"cmd\":\"build\",\"item\":\"powr\"}");
 			Assert.That(blocked.RootElement.GetProperty("ready").ValueKind, Is.EqualTo(JsonValueKind.False));
-			Assert.That(blocked.RootElement.GetProperty("eta_ticks").ValueKind, Is.EqualTo(JsonValueKind.Null), "A finished head holds the queue, so the ETA depends on placement");
+			Assert.That(blocked.RootElement.GetProperty("eta_ticks").ValueKind, Is.EqualTo(JsonValueKind.Null),
+				"A finished head holds the queue, so the ETA depends on placement");
 			Assert.That(blocked.RootElement.GetProperty("blocked_by").GetString(), Is.EqualTo("powr"));
 		}
 

@@ -50,15 +50,15 @@ namespace OpenRA.Mods.Common.Traits
 	{
 		int conditionToken = Actor.InvalidConditionToken;
 
-		// If the trait is paused this may be true with no condition granted
+		/// <summary>
+		/// Whether the toggle is on. A pause keeps the value, and disabling the trait resets it, so it may be true with no
+		/// condition granted while the trait is paused.
+		/// </summary>
 		[VerifySync]
-		bool enabled = false;
+		public bool Enabled { get; private set; }
 
 		public ToggleConditionOnOrder(ToggleConditionOnOrderInfo info)
 			: base(info) { }
-
-		/// <summary>Whether the toggle is on. A pause keeps the value, and disabling the trait resets it.</summary>
-		public bool Enabled => enabled;
 
 		void SetCondition(Actor self, bool granted)
 		{
@@ -92,15 +92,15 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			if (!IsTraitDisabled && !IsTraitPaused && order.OrderString == Info.OrderName)
 			{
-				enabled = !enabled;
-				SetCondition(self, enabled);
+				Enabled = !Enabled;
+				SetCondition(self, Enabled);
 			}
 		}
 
 		protected override void TraitDisabled(Actor self)
 		{
 			// Disabling the trait resets the condition
-			enabled = false;
+			Enabled = false;
 			SetCondition(self, false);
 		}
 
@@ -114,7 +114,7 @@ namespace OpenRA.Mods.Common.Traits
 		protected override void TraitResumed(Actor self)
 		{
 			// Unpausing the trait restores the previous state
-			SetCondition(self, enabled);
+			SetCondition(self, Enabled);
 		}
 	}
 }

@@ -28,6 +28,9 @@ namespace OpenRA.Mods.Common
 	public sealed class AgentPlayerEventObserver : INotifyDamage, INotifyKilled, INotifyBuildingPlaced, INotifyPowerLevelChanged,
 		INotifyWinStateChanged
 	{
+		/// <summary>One healed event is sent per healer per actor per window, so a medic's repeated heals do not flood the stream.</summary>
+		const int HealWindowTicks = 25;
+
 		bool powerLow;
 
 		void INotifyDamage.Damaged(Actor self, AttackInfo e)
@@ -64,9 +67,6 @@ namespace OpenRA.Mods.Common
 
 			return e.Attacker != null && e.Attacker.Info.HasTraitInfo<RepairsUnitsInfo>();
 		}
-
-		/// <summary>One healed event is sent per healer per actor per window, so a medic's repeated heals do not flood the stream.</summary>
-		const int HealWindowTicks = 25;
 
 		static World healWorld;
 		static readonly Dictionary<(uint Actor, uint? Healer), int> LastHealed = [];
@@ -119,6 +119,7 @@ namespace OpenRA.Mods.Common
 			var attackerType = known ? attacker.Info.Name : null;
 			var attackerOwner = known ? attacker.Owner.PlayerName : null;
 			var shrouded = attacker != null && !known;
+
 			// A removed attacker, or one with no position (a player actor fires a nuke), has no live position to read, so it gives no bearing.
 			var bearing = attacker is { IsInWorld: true, OccupiesSpace: not null } && self.OccupiesSpace != null
 				? AgentBearing.Of(self.CenterPosition, attacker.CenterPosition) : null;
@@ -137,6 +138,7 @@ namespace OpenRA.Mods.Common
 				return;
 
 			var attacker = e.Attacker;
+
 			// A removed attacker has no live state to check, so it is not named.
 			var attackerKnown = attacker != null && attacker.IsInWorld && AgentFog.Reported(attacker, observer);
 			var cost = self.Info.TraitInfoOrDefault<ValuedInfo>()?.Cost ?? 0;

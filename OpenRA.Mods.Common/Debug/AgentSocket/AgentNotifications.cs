@@ -33,7 +33,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		// The options each player could build when its last NewOptions was played. A world's players are new objects, so the
 		// table starts empty in each world. Only allied players are tracked, because only they report options.
-		static readonly ConditionalWeakTable<Player, HashSet<string>> BuildableAtLastNewOptions = new();
+		static readonly ConditionalWeakTable<Player, HashSet<string>> BuildableAtLastNewOptions = [];
 
 		/// <summary>
 		/// Raises a notification event for a notification the engine plays. Sound.PlayNotification calls it before its guards, so it
@@ -76,7 +76,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		static ProductionOptionV1[] NewlyBuildable(Player player)
 		{
 			var now = AgentProduction.Buildable(player);
-			var before = BuildableAtLastNewOptions.TryGetValue(player, out var previous) ? previous : new HashSet<string>();
+			var before = BuildableAtLastNewOptions.TryGetValue(player, out var previous) ? previous : [];
 			BuildableAtLastNewOptions.AddOrUpdate(player, now.Select(o => o.Name).ToHashSet());
 
 			return now.Where(o => !before.Contains(o.Name)).ToArray();

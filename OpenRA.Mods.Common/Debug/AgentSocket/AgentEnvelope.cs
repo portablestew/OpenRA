@@ -11,6 +11,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -47,7 +48,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (includeState)
 				text.Append(",\"state\":").Append(state ?? "null");
 
-			text.Append(",\"tick\":").Append(tick.HasValue ? tick.Value.ToString() : "null");
+			text.Append(",\"tick\":").Append(tick.HasValue ? tick.Value.ToString(CultureInfo.InvariantCulture) : "null");
 			if (includeState)
 				AppendMap(text, map);
 
@@ -101,7 +102,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					var state = includeState ? AgentSocketCommands.Serialize(AgentStateDump.Snapshot(world, statics)) : null;
 					if (statics && state != null && connection != null)
 						connection.StaticsSent = true;
-					return ((int?)world.WorldTick, state, includeState ? RefreshMap(world) : null);
+					return (world.WorldTick, state, includeState ? RefreshMap(world) : null);
 				});
 			}
 			catch (Exception)

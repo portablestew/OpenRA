@@ -45,7 +45,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " A player not allied with you has null funds, cash_funds, resource_funds, resource_funds_capacity and power."
 				+ " funds is the spendable total, cash_funds + resource_funds: the in-game counter and the number costs compare against."
 				+ " cash_funds is only the uncapped pool, and resource_funds only the harvested pool capped by resource_funds_capacity."
-				+ " threats: the top 15 known enemy units by standoff (the engine's Enemy relationship: neutral civilians and allies are not listed; at most 3 per type; a recent attacker first), each with id, type, cell,"
+				+ " threats: the top 15 known enemy units by standoff (the engine's Enemy relationship: neutral civilians and allies"
+				+ " are not listed; at most 3 per type; a recent attacker first), each with id, type, cell,"
 				+ " hp, attack_target (the friendly it hit recently, or null: only a recent attacker has one), heading (its facing, not a bearing),"
 				+ " bearing (from its closest friendly),"
 				+ " friendly_id and distance (world units, 1024 per cell) of that friendly.",
@@ -62,7 +63,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("order", "exactly one of actor (uint), actors ([uint]), or type (string: a regex matched against the whole type name of"
 				+ " each owned actor, so \"e1\" is e1 only and \"e.\" is every e-type); order (string); at most one of cell [x,y],"
 				+ " pos [x,y,z], target_actor (uint); optional queued (bool), item (string), extra_data (uint), extra_location [x,y],"
-				+ " on (bool; required by a toggle order such as PowerDown or RepairBuilding, and refused for any other name), settle_ticks (Move and AttackMove), await (bool, default true; false is Move and AttackMove only, and single actor only)\n"
+				+ " on (bool; required by a toggle order such as PowerDown or RepairBuilding, and refused for any other name),"
+				+ " settle_ticks (Move and AttackMove), await (bool, default true; false is Move and AttackMove only, and single actor only)\n"
 					+ "                -> tick, min_effect_tick, settled, plus the order's resolution. Every order name reports the"
 					+ " resolution, and nothing waits for travel or completion, which are events. Every name except an Attack and a"
 					+ " DeployTransform reports valid, effect_tick and settled_ticks, and holds the settle window so trailing events"
@@ -73,8 +75,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 					+ " An AttackMove adds outcome (started | no_path), with no path, since its travel is not awaited."
 					+ " A DeployTransform replaces valid, effect_tick and settled_ticks with outcome (completed | canceled; null when"
 					+ " unsettled) and waits for the transform to end, with reason when canceled."
-				+ " A toggle order adds state (on or off: the state it left once settled, or the state already held) and unchanged (true when that state already held, so nothing was issued)."
-				+ " RepairBuilding is a toggle on the player actor, with target_actor the building: its state is on while you are among the building's repairers, so a building at its repairer cap stays off."
+				+ " A toggle order adds state (on or off: the state it left once settled, or the state already held) and unchanged"
+				+ " (true when that state already held, so nothing was issued)."
+				+ " RepairBuilding is a toggle on the player actor, with target_actor the building: its state is on while you are"
+				+ " among the building's repairers, so a building at its repairer cap stays off."
 				+ " Sell on a sellable structure replaces valid, effect_tick and settled_ticks with outcome (sold; null when unsettled), and a sold event follows."
 				+ " await:false returns job (the id for wait) with tick, min_effect_tick, and does not wait."
 				+ " A group returns ordered (the actor ids), matched, and results (one per actor: actor, valid, effect_tick, settled,"
@@ -91,8 +95,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ "                -> no job: result:\"events\"|\"timeout\"|\"paused\"|\"world_changed\";"
 				+ " events are your ordered movement, combat, production and notifications",
 				"{\"cmd\":\"wait\",\"timeout_ticks\":250}"),
-			("orders", "actor (uint) -> type, orders (every order name the actor accepts; use it to discover orders: Sell on a sellable structure, a toggle's name such as PowerDown on a toggle building, RepairBuilding on the player actor, and each support power's key on the player actor)", "{\"cmd\":\"orders\",\"actor\":12}"),
-			("production", "-> player, funds, cash_funds, resource_funds, power, queues (the local player's queues; see Production keys). funds is cash_funds + resource_funds, the total can_afford compares against. A queue's options are listed only when they changed since this connection last read them (changed says whether they were); the first read after connect, and the first read after a world change, lists them all", "{\"cmd\":\"production\"}"),
+			("orders", "actor (uint) -> type, orders (every order name the actor accepts; use it to discover orders: Sell on a sellable"
+				+ " structure, a toggle's name such as PowerDown on a toggle building, RepairBuilding on the player actor, and each"
+				+ " support power's key on the player actor)", "{\"cmd\":\"orders\",\"actor\":12}"),
+			("production", "-> player, funds, cash_funds, resource_funds, power, queues (the local player's queues; see Production"
+				+ " keys). funds is cash_funds + resource_funds, the total can_afford compares against. A queue's options are listed"
+				+ " only when they changed since this connection last read them (changed says whether they were); the first read after"
+				+ " connect, and the first read after a world change, lists them all", "{\"cmd\":\"production\"}"),
 			("production_tree", "-> the same keys as production: the full catalog, with every option of every queue in full", "{\"cmd\":\"production_tree\"}"),
 			("powers", "-> powers: each support power you can see, with its charge: order (the key an order names), owner, name, description,"
 				+ " ready, remaining_ticks, total_ticks, active, disabled, one_shot. Your own powers are always listed; another player's only when its"
@@ -115,7 +124,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"{\"cmd\":\"cancel\",\"item\":\"powr\",\"count\":1}"),
 			("place", "item (string); optional cell [x,y] (default: the producer's location)\n"
 				+ "                -> ok, item, requested_cell, search_from, cell, actor, settled, tick, min_effect_tick. The nearest"
-				+ " valid cell within 10 of search_from is used (cell is where it placed, not requested_cell), and the reply waits for the building, so actor names what it placed"
+				+ " valid cell within 10 of search_from is used (cell is where it placed, not requested_cell), and the reply waits for"
+				+ " the building, so actor names what it placed"
 				+ " (null when unsettled, in a paused game). Not done: ok:false, error. No valid cell: ok:false, error,"
 				+ " cells_checked, candidates (the nearest 8 cells, each with cell and reason), and look (the look command's reply over those"
 				+ " cells, so the blockers show). A successful place has no look. A refusal has one, empty with no candidates.",
@@ -145,13 +155,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " Overlays: blips in the owner's colour (players[].color; actors you know); selected units get a green crosshair, a yellow path ending in a red X,"
 				+ " and a red line to their attack target. Writes a file",
 				"{\"cmd\":\"map_state\"}"),
-			("look", "at [x, y] or points [[x, y], ...] (at most 16), an optional k (0 to 100, default 20; 0 returns cells and summary, no actors), and an optional radius (1 to 20\n"
+			("look", "at [x, y] or points [[x, y], ...] (at most 16), an optional k (0 to 100, default 20; 0 returns cells and"
+				+ " summary, no actors), and an optional radius (1 to 20\n"
 				+ "                cells, default 10) for the class summary\n"
 				+ "                -> cells (per cell: cell, terrain, buildable, and resource and density when the cell has them), actors (the k\n"
 				+ " nearest you know, of any owner: id, type, owner, cell, hp), and summary (one entry per point: pt, radius, cells, classes).\n"
 				+ " With points, each actor also has dist (world units, 1024 per cell) and pt, the point it is nearest to, and the k is shared\n"
 				+ " so each point gets a fair share. Scenery (trees, husks, map props, spawn markers) is left out, but a known crate is listed.\n"
-				+ " buildable means a construction yard could stand on the cell. Each summary class names kind (terrain, resource or blocking), the engine's own class, count\n"
+				+ " buildable means a construction yard could stand on the cell. Each summary class names kind (terrain, resource or"
+				+ " blocking), the engine's own class, count\n"
 				+ " (cells) and nearest (cell and distance in world units); cells is how many on-map cells within radius the counts cover, so a\n"
 				+ " summary is a neighbourhood, not a survey. terrain is the tileset's type (RA: Clear, Road, Rock, Water, River, Beach, Bridge,\n"
 				+ " Rough, Tree, Wall, Ore, Gems), resource is the mod's type (RA: Ore, Gems, at any density), and blocking is the map-editor\n"
@@ -205,7 +217,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    and extends to radar-dot actors once a GPS satellite is launched.\n");
 			text.Append("    An attacker is named only when known. Otherwise attacker, attacker_type and attacker_owner are null,\n");
 			text.Append("    attacker_shrouded is true, and attacker_bearing is given.\n");
-			text.Append("    The same rule holds for events: damaged, healed, killed, captured, crate, order, produced, placed, sold, stance, path and activity are sent only\n");
+			text.Append("    The same rule holds for events: damaged, healed, killed, captured, crate, order, produced, placed, sold,"
+				+ " stance, path and activity are sent only\n");
 			text.Append("    for your own actors and known ones. Path and move activity are sent only while an order you issued drives the actor,\n");
 			text.Append("    so an autonomous harvester stays quiet. A captor, producer, collector, attacker or order target is named only when known, else null.\n");
 			text.Append("    power_low, power_restored, defeated, game_over and overflow name no actor, so they are always sent. power_ready is sent for\n");
@@ -268,7 +281,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				.Append("    -> {\"ok\":true,\"cmd\":\"order\",\"job\":1,...}\n");
 			text.Append("  then {\"cmd\":\"wait\",\"job\":1,\"timeout_ticks\":250} -> the Move reply, or {\"status\":\"pending\"} when 250 ticks pass.\n");
 			text.Append("  An overflow event is sent before the events that follow it. dropped counts the events a full queue discarded.\n");
-			text.Append("  healed is any heal other than a repair: a medic's, for one. A repair, by a depot or a structure's own repair, raises neither damaged nor healed.\n");
+			text.Append("  healed is any heal other than a repair: a medic's, for one. A repair, by a depot or a structure's own"
+				+ " repair, raises neither damaged nor healed.\n");
 			text.Append("  The player actor is production.queues[].actor; each support power's key (see powers) is one of its orders.\n");
 			text.Append('\n');
 			return text.ToString();

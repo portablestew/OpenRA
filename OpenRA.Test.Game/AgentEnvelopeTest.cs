@@ -29,13 +29,15 @@ namespace OpenRA.Test
 		static readonly string[] PingKeys = ["ok", "cmd", "tick"];
 		static readonly string[] StateAckKeys = ["ok", "cmd", "tick"];
 		static readonly string[] HelpKeys = ["ok", "cmd", "banner"];
-		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "ms_per_tick", "paused", "game_over", "local_player", "players", "units", "threats", "selection"];
+		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "ms_per_tick", "paused", "game_over",
+			"local_player", "players", "units", "threats", "selection"];
 
 		/// <summary>
 		/// The digest keys that belong to no other part of a state reply: the ack carries ok, cmd and tick, and the
 		/// envelope carries tick and the map keys, so each of these must appear exactly once (9.3).
 		/// </summary>
-		static readonly string[] DigestOnlyKeys = ["net_frame", "map", "ms_per_tick", "paused", "game_over", "local_player", "players", "units", "threats", "selection"];
+		static readonly string[] DigestOnlyKeys = ["net_frame", "map", "ms_per_tick", "paused", "game_over", "local_player",
+			"players", "units", "threats", "selection"];
 
 		bool savedAgentSocket;
 
