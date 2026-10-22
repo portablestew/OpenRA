@@ -14,6 +14,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
+using OpenRA.Traits;
 
 namespace OpenRA.Test
 {
@@ -219,6 +220,40 @@ namespace OpenRA.Test
 			Assert.That(lastHitOnDead, Is.Not.Null);
 			Assert.That(Field<int>(lastHitOnDead, "Hp"), Is.EqualTo(0));
 			Assert.That(batch.IndexOf(lastHitOnDead), Is.LessThan(batch.IndexOf(kill)));
+		}
+
+		[TestCase(TestName = "A hit on a husk raises no damaged event")]
+		public void HuskDamageIsNotReported()
+		{
+			using var w = HeadlessWorld.Create(0xC0FFEE);
+			w.Tick(SettleTicks);
+			EnableHub();
+
+			var husk = w.CreateActor("3TNK.Husk", w.FindClearArea(w.LocalPlayer.HomeLocation, 3, 3), w.LocalPlayer);
+			var attacker = w.CreateActor("e1", w.FindClearArea(w.LocalPlayer.HomeLocation, 3, 3), w.EnemyPlayer);
+			w.Tick(SettleTicks);
+
+			husk.InflictDamage(attacker, new Damage(100));
+			w.Tick(1);
+
+			Assert.That(Pending("damaged"), Is.EqualTo(0), "A husk's damage must not be sent.");
+		}
+
+		[TestCase(TestName = "A husk's death raises no killed event")]
+		public void HuskDeathIsNotReported()
+		{
+			using var w = HeadlessWorld.Create(0xC0FFEE);
+			w.Tick(SettleTicks);
+			EnableHub();
+
+			var husk = w.CreateActor("3TNK.Husk", w.FindClearArea(w.LocalPlayer.HomeLocation, 3, 3), w.LocalPlayer);
+			var attacker = w.CreateActor("e1", w.FindClearArea(w.LocalPlayer.HomeLocation, 3, 3), w.EnemyPlayer);
+			w.Tick(SettleTicks);
+
+			husk.Kill(attacker);
+			w.Tick(1);
+
+			Assert.That(Pending("killed"), Is.EqualTo(0), "A husk's death must not be sent.");
 		}
 
 		[TestCase(TestName = "Captured payload names the old and new owner and the captor")]

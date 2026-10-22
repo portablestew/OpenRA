@@ -257,5 +257,28 @@ namespace OpenRA.Test
 			Assert.That(after[0].Id, Is.EqualTo(attacker.ActorID), "The recent attacker should be bumped to the front.");
 			Assert.That(after[0].AttackTarget, Is.EqualTo(victim.ActorID), "The bumped attacker should name the friendly it hit.");
 		}
+
+		[TestCase(TestName = "A husk is not a threat, even with a live enemy in range beside it")]
+		public void HuskInRangeIsNotAThreat()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			var enemy = hw.EnemyPlayer;
+			hw.Tick(SettleTicks);
+
+			var friend = hw.CreateActor(Infantry, Clearing(hw), local);
+			var husk = hw.CreateActor("3tnk.husk", friend.Location + new CVec(3, 0), enemy);
+			var live = hw.CreateActor(Infantry, friend.Location + new CVec(3, 1), enemy);
+			hw.Tick(SettleTicks);
+			LaunchSatellite(hw, local);
+			hw.Tick(SettleTicks);
+
+			Assert.That(husk.Info.Name, Is.EqualTo("3tnk.husk").IgnoreCase, "Premise: the actor should be a husk.");
+			Assert.That(Known(husk, local), Is.True, "Premise: the husk should be known, so only the husk rule can keep it out.");
+
+			var threats = Threats();
+			Assert.That(IndexOf(threats, husk), Is.EqualTo(-1), "A husk is wreckage, not a threat, so it must be absent from the threats.");
+			Assert.That(IndexOf(threats, live), Is.GreaterThanOrEqualTo(0), "The live enemy beside the husk should be a threat.");
+		}
 	}
 }

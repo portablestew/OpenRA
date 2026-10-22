@@ -199,6 +199,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
+		/// A husk is the wreck a destroyed unit leaves behind (the Husk trait). It is not a threat, and its damage and death are not reported.
+		/// </summary>
+		internal static bool IsHusk(Actor a)
+		{
+			return a.Info.HasTraitInfo<HuskInfo>();
+		}
+
+		/// <summary>
 		/// A unit moves or fights: it has Mobile (infantry, civilians, vehicles) or Armament (armed civilians, turrets). Trees, husks
 		/// and map props have neither, so they stay scenery (8.6).
 		/// </summary>

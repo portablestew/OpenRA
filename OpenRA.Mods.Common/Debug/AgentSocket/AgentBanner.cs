@@ -302,7 +302,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("  then {\"cmd\":\"wait\",\"job\":1,\"timeout_ticks\":250} -> the Move reply, or {\"status\":\"pending\"} when 250 ticks pass.\n");
 			text.Append("  An overflow event is sent before the events that follow it. dropped counts the events a full queue discarded.\n");
 			text.Append("  healed is any heal other than a repair: a medic's, for one. A repair, by a depot or a structure's own"
-				+ " repair, raises neither damaged nor healed.\n");
+				+ " repair, raises neither damaged nor healed. A husk's damage and death are not sent.\n");
 			text.Append("  The player actor is production.queues[].actor; each support power's key (see powers) is one of its orders.\n");
 			text.Append('\n');
 			return text.ToString();

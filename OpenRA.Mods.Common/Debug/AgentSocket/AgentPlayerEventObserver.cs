@@ -35,6 +35,10 @@ namespace OpenRA.Mods.Common
 
 		void INotifyDamage.Damaged(Actor self, AttackInfo e)
 		{
+			// A husk is a wreck, not a unit: its decay, and hits on it, are not reported.
+			if (AgentStateDump.IsHusk(self))
+				return;
+
 			// A repair is not damage: it is neither reported nor recorded as a hit.
 			if (IsRepair(self, e))
 				return;
@@ -131,6 +135,10 @@ namespace OpenRA.Mods.Common
 
 		void INotifyKilled.Killed(Actor self, AttackInfo e)
 		{
+			// A husk is a wreck, not a unit: its death is not reported.
+			if (AgentStateDump.IsHusk(self))
+				return;
+
 			// A kill is sent when the local player reported the victim before it died (AgentFog), which includes its own units. The
 			// attacker is named only when the local player reports it too.
 			var observer = self.World.LocalPlayer;

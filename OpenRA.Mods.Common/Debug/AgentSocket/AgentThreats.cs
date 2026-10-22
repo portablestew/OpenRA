@@ -54,7 +54,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var threats = world.Actors
 				.Where(a => a.OccupiesSpace != null && !a.IsDead && a.Owner != null
 					&& observer.RelationshipWith(a.Owner) == PlayerRelationship.Enemy
-					&& !AgentStateDump.IsScenery(a) && AgentFog.Known(a, observer))
+					&& !AgentStateDump.IsScenery(a) && !AgentStateDump.IsHusk(a) && AgentFog.Known(a, observer))
 				.ToArray();
 
 			// The range of a threat type against a friendly is cached for this list, so each pair is measured once.
