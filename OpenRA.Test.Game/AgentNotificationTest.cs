@@ -148,14 +148,15 @@ namespace OpenRA.Test
 				"An opponent's notification must not be sent.");
 		}
 
-		[TestCase(TestName = "A NewOptions notification for the local player names no options, and production lists the one that became buildable")]
-		public void NewOptionsNamesNoOptions()
+		[TestCase(TestName = "A NewOptions notification for the local player names the options that became buildable, and not those already buildable")]
+		public void NewOptionsNamesTheOptions()
 		{
 			using var hw = HeadlessWorld.Create(Seed);
 			var local = hw.LocalPlayer;
 			hw.Tick(SettleTicks);
 
-			// A fact makes powr buildable, and a powr makes proc buildable (proc needs anypower). The first NewOptions sets the baseline.
+			// A fact makes powr buildable, and a powr makes proc buildable (proc needs anypower). The first NewOptions sets the baseline,
+			// which names every option buildable then.
 			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), local);
 			hw.Tick(1);
 			PlayNewOptions(hw, local);
@@ -168,8 +169,9 @@ namespace OpenRA.Test
 
 			// The socket's JSON for the notification: the same naming policy the socket uses, and null keys left out.
 			using var json = JsonDocument.Parse(JsonSerializer.Serialize(note, SocketJson));
-			Assert.That(json.RootElement.EnumerateObject().Select(p => p.Name), Is.EquivalentTo(["event", "tick", "name", "owner"]),
-				"A NewOptions notification should carry no options: production lists what became buildable.");
+			var options = json.RootElement.GetProperty("options").EnumerateArray().Select(o => o.GetString()).ToArray();
+			Assert.That(options, Does.Contain("proc"), "proc became buildable with the powr, so the notification names it.");
+			Assert.That(options, Does.Not.Contain("powr"), "powr was already buildable when the fact stood, so it is not named as new.");
 
 			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
 			var proc = AgentProductionTest.Option(AgentProductionTest.QueueOf(production.RootElement, "Building"), "proc");

@@ -68,7 +68,7 @@ namespace OpenRA.Test
 			return HeadlessMod.ModData.ObjectCreator.FindType(name);
 		}
 
-		[TestCase(TestName = "A finished structure's ConstructionComplete names the item, and says it waits for placement, with no cell")]
+		[TestCase(TestName = "A finished structure's ConstructionComplete names the item and its queue, and says it waits for placement, with no cell")]
 		public void FinishedStructureWaitsForPlacement()
 		{
 			using var hw = HeadlessWorld.Create(Seed);
@@ -78,12 +78,13 @@ namespace OpenRA.Test
 			var note = FinishedNotification(hw, "{\"cmd\":\"build\",\"item\":\"powr\"}", StructureNotification);
 
 			Assert.That(note.GetProperty("item").GetString(), Is.EqualTo("powr"), "The notification should name the structure's type.");
+			Assert.That(note.GetProperty("queue_type").GetString(), Is.EqualTo("Building"), "The notification should name the queue that built the structure.");
 			Assert.That(note.GetProperty("placement_required").GetBoolean(), Is.True, "A finished structure waits for placement.");
 			Assert.That(note.TryGetProperty("cell", out _), Is.False, "A finished structure has no cell until place puts it.");
 			Assert.That(note.GetProperty("owner").GetString(), Is.EqualTo(hw.LocalPlayer.PlayerName));
 		}
 
-		[TestCase(TestName = "A finished unit's UnitReady names the item and the cell it was built on, with no placement_required")]
+		[TestCase(TestName = "A finished unit's UnitReady names the item, its queue and the cell it was built on, with no placement_required")]
 		public void FinishedUnitHasItsCell()
 		{
 			using var hw = HeadlessWorld.Create(Seed);
@@ -98,6 +99,7 @@ namespace OpenRA.Test
 			var note = FinishedNotification(hw, "{\"cmd\":\"build\",\"item\":\"e1\"}", UnitNotification);
 
 			Assert.That(note.GetProperty("item").GetString(), Is.EqualTo("e1"), "The notification should name the unit's type.");
+			Assert.That(note.GetProperty("queue_type").GetString(), Is.EqualTo("Infantry"), "The notification should name the queue that built the unit.");
 			Assert.That(note.TryGetProperty("placement_required", out _), Is.False, "A finished unit is not placed, so it has no placement_required.");
 
 			var cell = note.GetProperty("cell").EnumerateArray().Select(c => c.GetInt32()).ToArray();

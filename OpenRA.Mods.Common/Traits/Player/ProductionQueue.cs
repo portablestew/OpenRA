@@ -507,7 +507,7 @@ namespace OpenRA.Mods.Common.Traits
 							var isBuilding = unit.HasTraitInfo<BuildingInfo>();
 							if (isBuilding && !notified)
 							{
-								AgentNotifications.Finishing(self.Owner, unit);
+								AgentNotifications.Finishing(self.Owner, unit, Info.Type);
 								Game.Sound.PlayNotification(rules, self.Owner, "Speech", Info.ReadyAudio, self.Owner.Faction.InternalName);
 								AgentNotifications.Finished();
 								TextNotificationsManager.AddTransientLine(self.Owner, Info.ReadyTextNotification);
@@ -517,7 +517,7 @@ namespace OpenRA.Mods.Common.Traits
 							{
 								if (BuildUnit(unit))
 								{
-									AgentNotifications.Finishing(self.Owner, unit);
+									AgentNotifications.Finishing(self.Owner, unit, Info.Type);
 									Game.Sound.PlayNotification(rules, self.Owner, "Speech", Info.ReadyAudio, self.Owner.Faction.InternalName);
 									AgentNotifications.Finished();
 									TextNotificationsManager.AddTransientLine(self.Owner, Info.ReadyTextNotification);

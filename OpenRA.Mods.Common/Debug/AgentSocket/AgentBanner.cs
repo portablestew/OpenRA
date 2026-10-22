@@ -247,9 +247,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    your own powers, and for another player's only when its timer is shown to you (see powers). notification is sent only for your\n");
 			text.Append("    side and your allies, and the cash counter's tick notifications are not sent: cash is in state and production.\n");
 			text.Append("    power_seen is sent once per power, the first time its timer is shown to you, with its key and name (see powers).\n");
-			text.Append("    A notification that announces a finished item (ConstructionComplete for a structure, UnitReady for a unit) names it in item.\n");
-			text.Append("    A structure has placement_required true: place it. A unit has cell, where it was built. NewOptions names no options:\n");
-			text.Append("    production lists the ones that became buildable.\n");
+			text.Append("    A notification that announces a finished item (ConstructionComplete for a structure, UnitReady for a unit) names it in item,\n");
+			text.Append("    and queue_type names the queue that built it. A structure has placement_required true: place it. A unit has cell, where it was built.\n");
+			text.Append("    NewOptions names in options the options that became buildable since the last one (empty when none). An ally's has no options.\n");
 			text.Append("  Null and omitted: a null key is present with no value (an unknown value, or an optional request key left out).\n");
 			text.Append("    A key that does not apply is omitted:\n");
 			text.Append("    dist and pt in look actors without reference points, and look on a refusal with no local player.\n");
