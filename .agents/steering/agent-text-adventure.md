@@ -43,4 +43,4 @@ description: OpenRA text_adventure patterns.
 - Stage an attack by moving the group slowly, or by guarding the slower units with the faster ones. Check with `state` or `actors` that the group stays together and on track. Units that arrive one by one die one by one.
 - Do not attack piecemeal: it feeds kills to tesla coils.
 - Hidden artillery can hit your base from fog.
-- Attacked from the shroud: `attacker:null` with `attacker_shrouded:true` is a real but unseen attacker. `attacker_type` still names it; `attacker_bearing` points from the victim at it (null when the firer died before the shot landed).
+- Attacked from the shroud: `attacker:null` with `attacker_shrouded:true` is a real but unseen attacker. `attacker_bearing` points from the victim at it (null when the firer died before the shot landed).
