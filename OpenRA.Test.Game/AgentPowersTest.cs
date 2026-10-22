@@ -109,10 +109,22 @@ namespace OpenRA.Test
 				p.GetProperty("disabled").GetBoolean(), p.GetProperty("one_shot").GetBoolean())).ToArray();
 		}
 
-		/// <summary>Whether the owner's power with this key prefix is ready, read from the live trait so a tick loop stays cheap.</summary>
+		/// <summary>The opponent's nuke as the powers command reports it.</summary>
+		static Power EnemyNuke(HeadlessWorld hw)
+		{
+			return PowersOf().Single(p => p.Order.StartsWith(NukePrefix, StringComparison.Ordinal) && p.Owner == hw.EnemyPlayer.PlayerName);
+		}
+
+		/// <summary>Whether the local player's power with this key prefix is ready.</summary>
 		static bool Ready(HeadlessWorld hw, string prefix)
 		{
-			var manager = ModTrait(hw.LocalPlayer.PlayerActor, "Traits.SupportPowerManager");
+			return Ready(hw.LocalPlayer, prefix);
+		}
+
+		/// <summary>Whether the owner's power with this key prefix is ready, read from the live trait so a tick loop stays cheap.</summary>
+		static bool Ready(Player owner, string prefix)
+		{
+			var manager = ModTrait(owner.PlayerActor, "Traits.SupportPowerManager");
 			var powers = (IDictionary)manager.GetType().GetField("Powers").GetValue(manager);
 			foreach (DictionaryEntry entry in powers)
 				if (((string)entry.Key).StartsWith(prefix, StringComparison.Ordinal))
@@ -285,6 +297,95 @@ namespace OpenRA.Test
 				"An enemy airstrike that finished charging is not reported.");
 			Assert.That(events.Count(e => e.GetType().Name == "PowerReadyV1" && (string)Field(e, "Owner") == own), Is.GreaterThanOrEqualTo(1),
 				"The local player's own airstrike is reported when it finishes charging.");
+		}
+
+		[TestCase(TestName = "An enemy silo that is built but not charging is listed, not ready, with its whole charge left")]
+		public void EnemySiloNotChargingIsListed()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("mslo", hw.FindClearArea(new CPos(50, 50), 2, 1), hw.EnemyPlayer);
+			hw.Tick(5);
+
+			var nuke = EnemyNuke(hw);
+			Assert.That(nuke.Ready, Is.False);
+			Assert.That(nuke.Active, Is.False, "A silo with no power is paused, so its charge does not run.");
+			Assert.That(nuke.RemainingTicks, Is.EqualTo(13500));
+			Assert.That(nuke.TotalTicks, Is.EqualTo(13500));
+		}
+
+		[TestCase(TestName = "An enemy silo that is charging is listed active, and its remaining ticks fall as the world ticks")]
+		public void EnemySiloChargingCountsDown()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("mslo", hw.FindClearArea(new CPos(50, 50), 2, 1), hw.EnemyPlayer);
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(40, 50), 2, 2), hw.EnemyPlayer);
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(40, 53), 2, 2), hw.EnemyPlayer);
+			hw.Tick(1);
+
+			var first = EnemyNuke(hw);
+			Assert.That(first.Ready, Is.False);
+			Assert.That(first.Active, Is.True);
+			Assert.That(first.RemainingTicks, Is.GreaterThan(0).And.LessThan(first.TotalTicks));
+
+			hw.Tick(100);
+			var later = PowersOf().Single(p => p.Order == first.Order);
+			Assert.That(later.Ready, Is.False);
+			Assert.That(later.RemainingTicks, Is.EqualTo(first.RemainingTicks - 100));
+		}
+
+		[TestCase(TestName = "An enemy silo that has finished charging is listed ready, with no ticks left")]
+		public void EnemySiloReadyIsListed()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("mslo", hw.FindClearArea(new CPos(50, 50), 2, 1), hw.EnemyPlayer);
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(40, 50), 2, 2), hw.EnemyPlayer);
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(40, 53), 2, 2), hw.EnemyPlayer);
+			hw.Tick(1);
+
+			Assert.That(hw.TickUntil(() => Ready(hw.EnemyPlayer, NukePrefix), ChargeBudget), Is.Not.Null, Describe(hw));
+
+			var nuke = EnemyNuke(hw);
+			Assert.That(nuke.Ready, Is.True);
+			Assert.That(nuke.Active, Is.True);
+			Assert.That(nuke.RemainingTicks, Is.EqualTo(0));
+		}
+
+		[TestCase(TestName = "With no enemy silo built, no enemy nuke is listed, since the power exists only once the structure does")]
+		public void EnemyNukeIsAbsentBeforeTheSiloIsBuilt()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.Tick(1);
+
+			Assert.That(PowersOf().Any(p => p.Owner == hw.EnemyPlayer.PlayerName && p.Order.StartsWith(NukePrefix, StringComparison.Ordinal)),
+				Is.False);
+		}
+
+		[TestCase(TestName = "An enemy silo in an area the local player has never seen is listed, since the engine's timer has no fog check")]
+		public void EnemySiloUnderFogIsListed()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var shroud = hw.LocalPlayer.Shroud;
+			Assert.That(shroud.FogEnabled, Is.True, "The test needs fog on.");
+
+			var silo = hw.CreateActor("mslo", hw.FindClearArea(new CPos(50, 50), 2, 1), hw.EnemyPlayer);
+			hw.Tick(5);
+			Assert.That(shroud.IsVisible(silo.CenterPosition), Is.False, "The enemy silo should start out of sight.");
+
+			Assert.That(EnemyNuke(hw).Order, Does.StartWith(NukePrefix));
+		}
+
+		[TestCase(TestName = "A destroyed enemy silo is no longer listed, since its power goes with it")]
+		public void EnemyNukeIsGoneWhenTheSiloIsGone()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var silo = hw.CreateActor("mslo", hw.FindClearArea(new CPos(50, 50), 2, 1), hw.EnemyPlayer);
+			hw.Tick(5);
+			Assert.That(EnemyNuke(hw).Order, Does.StartWith(NukePrefix), "The silo is built, so its nuke is listed first.");
+
+			hw.World.AddFrameEndTask(w => w.Remove(silo));
+			hw.Tick(1);
+			Assert.That(PowersOf().Any(p => p.Owner == hw.EnemyPlayer.PlayerName && p.Order.StartsWith(NukePrefix, StringComparison.Ordinal)),
+				Is.False);
 		}
 
 		/// <summary>The power_ready events for the owner's power with this key prefix.</summary>

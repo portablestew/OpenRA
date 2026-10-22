@@ -111,6 +111,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("powers", "-> powers: each support power you can see, with its charge: order (the key an order names), owner, name, description,"
 				+ " ready, remaining_ticks, total_ticks, active, disabled, one_shot. Your own powers are always listed; another player's only when its"
 				+ " timer is shown to you, as the engine shows it (DisplayTimerRelationships includes your relationship with its owner)."
+				+ " An opponent's power is absent until its building exists, and it is absent for good when the engine hides its timer from"
+				+ " you (TS's nuke has DisplayTimerRelationships None), so an empty list does not mean no opponent power is charging."
 				+ " Each key is also one of the player actor's orders, and an order for a power that is not ready is refused with ok:false,"
 				+ " error, ready:false and remaining_ticks", "{\"cmd\":\"powers\"}"),
 			("build", "item (string); optional count (positive int, default 1)\n"
