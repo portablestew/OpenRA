@@ -17,6 +17,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using OpenRA.Traits;
 
 namespace OpenRA.Test
 {
@@ -35,7 +36,10 @@ namespace OpenRA.Test
 		static readonly string[] StateKeys = ["ok", "cmd", "tick", "net_frame", "map", "ms_per_tick", "paused", "game_over",
 			"local_player", "players", "units", "threats", "selection"];
 		static readonly string[] StateAckKeys = ["ok", "cmd", "tick"];
-		static readonly string[] UnitKeys = ["id", "type", "owner", "cell", "pos", "facing", "hp", "max_hp", "damage", "idle", "activity"];
+
+		// A unit row always has these. damage and activity come only when they apply (UnitV1).
+		static readonly string[] UnitKeys = ["id", "type", "owner", "cell", "facing", "hp", "max_hp", "idle"];
+		static readonly string[] UnitOptionalKeys = ["damage", "activity"];
 		static readonly string[] PowerKeys = ["provided", "drained", "excess", "state"];
 
 		sealed record PowerReading(int Provided, int Drained, int Excess, string State);
@@ -175,7 +179,64 @@ namespace OpenRA.Test
 
 			var units = root.GetProperty("units");
 			Assert.That(units.GetArrayLength(), Is.GreaterThan(0), "The starting map has no units to check.");
-			Assert.That(Keys(units[0]), Is.EquivalentTo(UnitKeys));
+			Assert.That(Keys(units[0]), Is.SupersetOf(UnitKeys));
+			Assert.That(Keys(units[0]), Is.SubsetOf(UnitKeys.Concat(UnitOptionalKeys)));
+			Assert.That(Keys(units[0]), Does.Not.Contain("pos"));
+		}
+
+		[TestCase(TestName = "A full-health idle unit's row has no pos, damage or activity key")]
+		public void FullHealthIdleUnitRowOmitsOptionalKeys()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using var state = State();
+			var row = OwnUnit(state.RootElement, unit.ActorID);
+			Assert.That(row.GetProperty("idle").GetBoolean(), Is.True, "Precondition: a new unit with no order is idle.");
+			Assert.That(Keys(row), Is.EquivalentTo(UnitKeys));
+			Assert.That(Keys(row), Does.Not.Contain("pos"));
+			Assert.That(Keys(row), Does.Not.Contain("damage"));
+			Assert.That(Keys(row), Does.Not.Contain("activity"));
+		}
+
+		[TestCase(TestName = "A damaged unit's row carries damage, the damage state's name, and no pos")]
+		public void DamagedUnitRowCarriesDamageState()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			var enemy = hw.CreateActor("e1", unit.Location + new CVec(2, 0), hw.EnemyPlayer);
+			hw.Tick(1);
+
+			unit.TraitOrDefault<IHealth>().InflictDamage(unit, enemy, new Damage(10), true);
+			hw.Tick(1);
+
+			using var state = State();
+			var row = OwnUnit(state.RootElement, unit.ActorID);
+			Assert.That(Keys(row), Does.Contain("damage"));
+			Assert.That(row.GetProperty("damage").GetString(), Is.Not.EqualTo("Undamaged"));
+			Assert.That(Keys(row), Does.Not.Contain("pos"));
+		}
+
+		[TestCase(TestName = "A unit with an activity carries its class name, and no damage at full health")]
+		public void ActiveUnitRowCarriesActivity()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+
+			// await false answers at once, so the move is still under way when the state is read.
+			var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}],\"await\":false}}";
+			using (var response = RequestWithTicks(hw, line))
+				Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True, response.RootElement.ToString());
+			hw.Tick(3);
+
+			using var state = State();
+			var row = OwnUnit(state.RootElement, unit.ActorID);
+			Assert.That(row.GetProperty("activity").GetString(), Is.Not.Null.And.Not.Empty);
+			Assert.That(Keys(row), Does.Not.Contain("damage"));
+			Assert.That(Keys(row), Does.Not.Contain("pos"));
 		}
 
 		[TestCase(TestName = "A power plant and a consumer move the local player's provided and drained, and excess and state follow")]

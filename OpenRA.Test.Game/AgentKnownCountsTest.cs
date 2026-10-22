@@ -141,8 +141,8 @@ namespace OpenRA.Test
 				"An own structure should carry only id, type, cell, hp and repairing (powered_down only with a PowerDown toggle).");
 
 			var full = units.Single(u => u.GetProperty("id").GetUInt32() == unit.ActorID);
-			Assert.That(Keys(full), Does.Contain("pos").And.Contain("facing").And.Contain("activity"),
-				"An own unit keeps its full entry.");
+			Assert.That(Keys(full), Does.Contain("facing").And.Not.Contain("pos"),
+				"An own unit keeps its full entry, without pos.");
 
 			var beforeEnemy = KnownCountsOf(before.RootElement, enemy.PlayerName);
 			Assert.That(beforeEnemy, Is.EqualTo(Expected(hw, enemy, local)),

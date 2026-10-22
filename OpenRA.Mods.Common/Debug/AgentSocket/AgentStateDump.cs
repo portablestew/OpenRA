@@ -68,11 +68,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record PowerV1(int Provided, int Drained, int Excess, string State);
 
 	/// <summary>
-	/// Cell is the top-left cell. Pos is the centre in world units (1024 per cell). Facing is WAngle.Angle (1024 per turn).
-	/// Hp, MaxHp, Damage are null for an actor without IHealth. Activity is the class name of the current activity, or null.
+	/// Cell is the top-left cell. Facing is WAngle.Angle (1024 per turn). Hp and MaxHp are null for an actor without IHealth.
+	/// Damage is the DamageState name, and is omitted while the actor is at full health. Activity is the class name of the current
+	/// activity, and is omitted when there is none. The row carries no centre position: cell is the location.
 	/// </summary>
-	public sealed record UnitV1(uint Id, string Type, string Owner, int[] Cell, int[] Pos, int? Facing, int? Hp, int? MaxHp,
-		string Damage, bool Idle, string Activity);
+	public sealed record UnitV1(uint Id, string Type, string Owner, int[] Cell, int? Facing, int? Hp, int? MaxHp,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Damage, bool Idle,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Activity);
 
 	/// <summary>
 	/// An own structure in the state units (P2.5): only the keys the agent needs to address it and see its health. Cell is the
@@ -225,11 +227,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			var health = a.TraitOrDefault<IHealth>();
 			var facing = a.TraitOrDefault<IFacing>();
-			var pos = a.CenterPosition;
+
+			// Undamaged is exactly full health (Health.DamageState), so a damage state is sent only below it.
+			var damaged = health != null && health.DamageState != DamageState.Undamaged;
 
 			return new UnitV1(a.ActorID, a.Info.Name, a.Owner?.PlayerName,
-				[a.Location.X, a.Location.Y], [pos.X, pos.Y, pos.Z],
-				facing?.Facing.Angle, health?.HP, health?.MaxHP, health?.DamageState.ToString(),
+				[a.Location.X, a.Location.Y],
+				facing?.Facing.Angle, health?.HP, health?.MaxHP, damaged ? health.DamageState.ToString() : null,
 				a.IsIdle, a.CurrentActivity?.GetType().Name);
 		}
 
