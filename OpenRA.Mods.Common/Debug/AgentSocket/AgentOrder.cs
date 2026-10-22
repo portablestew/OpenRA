@@ -612,8 +612,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>
 		/// Builds the reply to a grouped order once every ordered actor's await has settled or failed (P1.14). A failed await becomes
-		/// that actor's error, and the other actors still report. A paused game leaves every actor unsettled. Throws when an await's
-		/// game-tick budget passes first, and then abandons every await. Must not run on the game thread.
+		/// that actor's error, and the other actors still report. A paused game, or a budget of game ticks that runs out first,
+		/// leaves the awaits not yet settled unsettled: they are abandoned, and each of their actors reports why. Must not run on the game thread.
 		/// </summary>
 		public static GroupedOrderV1 SettleGroup(GroupIssued issued)
 		{
@@ -631,23 +631,31 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, matched, ids.Select(id => new GroupResultV1(id, false)).ToArray(), skipped);
 			}
 
-			try
-			{
-				foreach (var await in awaits)
-					await.Wait();
-			}
-			catch (AgentPausedException)
-			{
-				// The game paused while the group was parked, so no tick will complete the remaining awaits.
-				foreach (var await in awaits)
-					await.Abandon();
-
-				return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, matched, ids.Select(id => new GroupResultV1(id, false)).ToArray(), skipped);
-			}
-
+			// One budget for the whole group, so N awaits cannot wait N times the budget. GroupResult runs only on an await that
+			// settled: an abandoned await never completes, so its ThrowIfFailed would block.
 			var results = new GroupResultV1[ids.Length];
-			for (var i = 0; i < ids.Length; i++)
-				results[i] = GroupResult(ids[i], awaits[i]);
+			var remaining = AgentGameClock.MaxWaitTicks;
+			for (var i = 0; i < awaits.Length; i++)
+			{
+				var wait = awaits[i].WaitFor(remaining);
+				remaining -= wait.WaitedTicks;
+				if (wait.Outcome == AwaitWait.Settled)
+				{
+					results[i] = GroupResult(ids[i], awaits[i]);
+					continue;
+				}
+
+				// The game paused, or the budget ran out, before this await settled. No later await can settle in time either.
+				for (var j = i; j < awaits.Length; j++)
+				{
+					awaits[j].Abandon();
+					results[j] = wait.Outcome == AwaitWait.Paused
+						? new GroupResultV1(ids[j], false)
+						: new GroupResultV1(ids[j], false, Error: $"the order did not settle within {AgentGameClock.MaxWaitTicks} ticks");
+				}
+
+				break;
+			}
 
 			return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, matched, results, skipped);
 		}

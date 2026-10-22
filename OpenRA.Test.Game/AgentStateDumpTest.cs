@@ -131,11 +131,11 @@ namespace OpenRA.Test
 		}
 
 		/// <summary>Like <see cref="RequestWithTicks(HeadlessWorld, string)"/>, and returns the whole turn envelope, as <see cref="RawRequest"/> does (P2.13).</summary>
-		internal static JsonDocument RawRequestWithTicks(HeadlessWorld hw, string line, Action onTick = null)
+		internal static JsonDocument RawRequestWithTicks(HeadlessWorld hw, string line, Action onTick = null, int deadlineSeconds = 10)
 		{
 			var request = Task.Run(() => (string)Handle.Value.Invoke(null, [line, null]));
 
-			var deadline = DateTime.UtcNow.AddSeconds(10);
+			var deadline = DateTime.UtcNow.AddSeconds(deadlineSeconds);
 			while (!request.IsCompleted && DateTime.UtcNow < deadline)
 			{
 				hw.TickOnce();

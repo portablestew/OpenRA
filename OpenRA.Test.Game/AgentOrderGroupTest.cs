@@ -266,6 +266,79 @@ namespace OpenRA.Test
 			Assert.That(hw.TickUntil(() => mine.Location != start, 500), Is.Not.Null, "The living e1 should leave its start cell.");
 		}
 
+		[TestCase(TestName = "A group whose actor dies after it is matched and before it resolves reports that actor's failure and orders the rest")]
+		public void DeadAtResolveIsSkippedAndTheRestOrdered()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var mine = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			var dead = hw.CreateActor("e1", hw.FindClearArea(new CPos(60, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			var start = mine.Location;
+			var destination = hw.FindClearArea(new CPos(50, 56), 1, 1, 4);
+
+			// Both awaits are registered and unresolved, so the order has not taken effect yet. The kill lands there, once.
+			var killed = false;
+			var line = $"{{\"cmd\":\"order\",\"actors\":[{mine.ActorID},{dead.ActorID}],\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, line, () =>
+			{
+				if (!killed && PendingAwaits(hw.World) == 2)
+				{
+					dead.Kill(dead);
+					killed = true;
+				}
+			});
+			var root = response.RootElement;
+
+			Assert.That(killed, Is.True, "The kill never landed between match and resolve, so the window was not exercised.");
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+			Assert.That(OrderedIds(root), Is.EquivalentTo([mine.ActorID, dead.ActorID]), "Both actors matched, so both are in ordered.");
+
+			var results = root.GetProperty("results").EnumerateArray().ToArray();
+			Assert.That(results.Length, Is.EqualTo(2), root.ToString());
+
+			var living = results.Single(r => r.GetProperty("actor").GetUInt32() == mine.ActorID);
+			Assert.That(living.GetProperty("settled").GetBoolean(), Is.True, living.ToString());
+			Assert.That(living.GetProperty("valid").GetBoolean(), Is.True, living.ToString());
+
+			var failed = results.Single(r => r.GetProperty("actor").GetUInt32() == dead.ActorID);
+			Assert.That(failed.GetProperty("settled").GetBoolean(), Is.False, failed.ToString());
+			Assert.That(failed.GetProperty("error").GetString(), Is.EqualTo($"actor {dead.ActorID} died before the order resolved"));
+
+			Assert.That(hw.TickUntil(() => mine.Location != start, 500), Is.Not.Null, "The living e1 should leave its start cell.");
+		}
+
+		[TestCase(TestName = "A group whose settle outlasts the wait budget reports each actor's timeout and returns, without hanging")]
+		public void BudgetTimeoutDoesNotHang()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var a = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			var b = hw.CreateActor("e1", hw.FindClearArea(new CPos(60, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			var start = a.Location;
+			var destination = hw.FindClearArea(new CPos(50, 56), 1, 1, 4);
+
+			// A settle longer than the 1000-tick wait budget (AgentGameClock.MaxWaitTicks) makes the group's wait run out.
+			var line = $"{{\"cmd\":\"order\",\"actors\":[{a.ActorID},{b.ActorID}],\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}],\"settle_ticks\":1500}}";
+
+			// The budget is 1000 game ticks, which takes longer than the default 10-second wait, so this request gets 60 seconds.
+			using var envelope = AgentStateDumpTest.RawRequestWithTicks(hw, line, deadlineSeconds: 60);
+			using var response = AgentStateDumpTest.Results(envelope);
+			var root = response.RootElement;
+
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+			Assert.That(OrderedIds(root), Is.EquivalentTo([a.ActorID, b.ActorID]));
+
+			var results = root.GetProperty("results").EnumerateArray().ToArray();
+			Assert.That(results.Length, Is.EqualTo(2), root.ToString());
+			foreach (var result in results)
+			{
+				Assert.That(result.GetProperty("settled").GetBoolean(), Is.False, result.ToString());
+				Assert.That(result.GetProperty("error").GetString(), Is.EqualTo("the order did not settle within 1000 ticks"));
+			}
+
+			Assert.That(hw.TickUntil(() => a.Location != start, 500), Is.Not.Null, "The e1 should still leave its start cell after the budget ran out.");
+		}
+
 		[TestCase(TestName = "A group with both actor and type is rejected, with the help hint")]
 		public void ActorPlusTypeIsRejected()
 		{
@@ -316,6 +389,13 @@ namespace OpenRA.Test
 			using var response = AgentStateDumpTest.Request("{\"cmd\":\"order\",\"type\":\"e1\",\"order\":\"Move\",\"cell\":[1,1],\"await\":false}");
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.False);
 			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo("await:false applies only to a single actor"));
+		}
+
+		/// <summary>The awaits on world that are registered and not yet resolved. Test use, read through AgentOrderAwait.PendingCount.</summary>
+		static int PendingAwaits(World world)
+		{
+			var awaitType = HeadlessMod.ModData.ObjectCreator.FindType("AgentSocket.AgentOrderAwait");
+			return (int)awaitType.GetMethod("PendingCount").Invoke(null, [world]);
 		}
 
 		static uint[] OrderedIds(JsonElement root)
