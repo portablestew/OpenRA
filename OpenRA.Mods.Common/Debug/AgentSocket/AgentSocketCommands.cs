@@ -99,7 +99,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 					var items = root.EnumerateArray().ToArray();
 					var results = "[" + string.Join(",", items.Select((item, index) =>
 						UndoRefusal(item, index, items.Length) ?? HandleItem(item, connection, selection))) + "]";
-					return AgentEnvelope.Wrap(results, AgentEnvelope.WantsState(items), connection?.Turn.Flush(), first, connection);
+					return AgentEnvelope.Wrap(results, AgentEnvelope.WantsState(items), connection?.Turn.Flush(), first, connection,
+						AgentEnvelope.DetailOf(items));
 				}
 
 				// help is documentation, not a turn: it answers with the banner alone, and leaves the first envelope to the next request.
@@ -108,7 +109,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 					return HandleItem(root, connection, selection);
 
 				var initialTurn = StartTurn(ref initial, connection);
-				return AgentEnvelope.Wrap(HandleItem(root, connection, selection), AgentEnvelope.WantsState(root), connection?.Turn.Flush(), initialTurn, connection);
+				return AgentEnvelope.Wrap(HandleItem(root, connection, selection), AgentEnvelope.WantsState(root), connection?.Turn.Flush(), initialTurn, connection,
+					AgentEnvelope.DetailOf(root));
 			}
 		}
 
@@ -169,7 +171,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			{
 				"ping" => Ping(cmd),
 				"help" => Serialize(new HelpV1(true, cmd, AgentSocketServer.Banner)),
-				"state" => Run(cmd, () => AgentStateDump.Ack(AgentWorldBridge.RequireWorld())),
+				"state" => State(cmd, root),
 				"actors" => Actors(cmd, root),
 				"maps" => Run(cmd, AgentMaps.List),
 				"load_skirmish" => LoadSkirmish(cmd, root),
@@ -194,6 +196,19 @@ namespace OpenRA.Mods.Common.AgentSocket
 		static string Ping(string cmd)
 		{
 			return Run(cmd, () => new PingResponse(true, cmd, AgentWorldBridge.RequireWorld().WorldTick));
+		}
+
+		/// <summary>
+		/// The state refresh (9.3). detail is "full" (the default) or "summary" (step 8); the digest itself is the envelope's state, so
+		/// the reply is the ack. Any other detail is refused, so a typo does not quietly answer in full.
+		/// </summary>
+		static string State(string cmd, JsonElement root)
+		{
+			if (root.TryGetProperty("detail", out var detail) && detail.ValueKind != JsonValueKind.Null &&
+				(detail.ValueKind != JsonValueKind.String || detail.GetString() is not ("full" or "summary")))
+				return Error(cmd, "detail must be \"full\" or \"summary\"");
+
+			return Run(cmd, () => AgentStateDump.Ack(AgentWorldBridge.RequireWorld()));
 		}
 
 		/// <summary>Reads the optional owner and type filters on the socket thread, then lists the matching units on the game thread.</summary>

@@ -31,8 +31,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 		[
 			("ping", "-> tick", "{\"cmd\":\"ping\"}"),
 			("help", "-> banner (this text, as one string)", "{\"cmd\":\"help\"}"),
-			("state", "-> tick, ok, cmd: a refresh ack, so this result carries no digest\n"
-				+ "                -> the digest is the envelope's state: ok, cmd, tick, net_frame, map, ms_per_tick, paused,"
+			("state", "detail (string: \"full\", the default, or \"summary\")\n"
+					+ "                -> tick, ok, cmd: a refresh ack, so this result carries no digest\n"
+				+ "                -> with detail summary, the envelope's state is the header a wait reply carries: tick, game_over, winner (once the"
+					+ " game is over), local_player, funds, capacity and power (yours), known_counts (by player, the types you know of each),"
+					+ " threats (as below) and unit_counts (units per owner). It has no units, map or player data.\n"
+					+ "                -> the full digest is the envelope's state: ok, cmd, tick, net_frame, map, ms_per_tick, paused,"
 				+ " game_over, local_player,"
 				+ " players, units, threats, selection\n"
 				+ "                -> map is uid, title, bounds ([x, y, width, height], Map.Bounds in cells) and spawns (one per player with a home"
@@ -98,7 +102,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ "                -> with job: the job reply with result:\"job\", start_tick, requested_ticks, waited_ticks;"
 				+ " status:\"pending\"|\"paused\" keeps the job open\n"
 				+ "                -> no job: result:\"events\"|\"timeout\"|\"paused\"|\"world_changed\";"
-				+ " events are your ordered movement, combat, production and notifications",
+				+ " events are your ordered movement, combat, production and notifications"
+					+ " -> the envelope's state is the summary header (tick, game_over, winner, local_player, funds, capacity, power,"
+					+ " known_counts, threats, unit_counts), with no units and no map. Call state for the rest: the units list (the ids of"
+					+ " your units to order, and each unit's facing, activity and idle), an enemy beyond the 15 threats for its id, and the"
+					+ " map and players' faction, colour, bot and handicap. A threat row already has its id, cell, hp and bearing",
 				"{\"cmd\":\"wait\",\"timeout_ticks\":250}"),
 			("orders", "actor (uint) -> type, orders (every order name the actor accepts; use it to discover orders: Sell on a sellable"
 				+ " structure, a toggle's name such as PowerDown on a toggle building, RepairBuilding on the player actor, and each"

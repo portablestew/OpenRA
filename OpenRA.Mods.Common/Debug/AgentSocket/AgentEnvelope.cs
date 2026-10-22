@@ -29,19 +29,28 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public static class AgentEnvelope
 	{
 		/// <summary>
+		/// Which digest the envelope's state carries (step 8). Full is the digest with the units list, the map and the static data.
+		/// Summary is the header (AgentStateDump.Summary): a wait's reply carries it, and it drops the map keys too.
+		/// </summary>
+		public enum StateDetail { Full, Summary }
+
+		/// <summary>
 		/// Wraps one serialized result, or an array of them, after the request has run. The game thread is asked for the
 		/// tick (and the digest and map image, when wanted) only when a world is loaded, so a request with no world never
 		/// waits on it. A read that fails leaves tick and state null rather than failing the request; a render that fails
 		/// reports map_state_render "unavailable" and does not fail the request either. events is the turn's events, already
-		/// flushed and aggregated by the caller; null, or no events, writes an empty array.
+		/// flushed and aggregated by the caller; null, or no events, writes an empty array. detail picks the digest; the
+		/// first envelope of a connection always carries the full one.
 		/// </summary>
 		public static string Wrap(string results, bool includeState, IReadOnlyList<object> events = null, bool initial = false,
-			AgentConnection connection = null)
+			AgentConnection connection = null, StateDetail detail = StateDetail.Full)
 		{
 			// A connection's first envelope always carries the state in full, whatever digest the request set (P3.5).
 			includeState |= initial;
+			if (initial)
+				detail = StateDetail.Full;
 
-			var (tick, state, map) = Read(includeState, connection);
+			var (tick, state, map) = Read(includeState, connection, detail);
 
 			var text = new StringBuilder("{\"results\":").Append(results).Append(",\"events\":")
 				.Append(AgentSocketCommands.Serialize(events ?? []));
@@ -49,7 +58,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				text.Append(",\"state\":").Append(state ?? "null");
 
 			text.Append(",\"tick\":").Append(tick.HasValue ? tick.Value.ToString(CultureInfo.InvariantCulture) : "null");
-			if (includeState)
+			if (includeState && detail == StateDetail.Full)
 				AppendMap(text, map);
 
 			if (initial)
@@ -83,9 +92,34 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return items.Length == 0 || items.Any(WantsState);
 		}
 
+		/// <summary>
+		/// The digest a request asks for. A wait carries the summary (step 8), and so does a state that sets detail:"summary". Every
+		/// other request, and a state with any other detail, carries the full digest.
+		/// </summary>
+		public static StateDetail DetailOf(JsonElement request)
+		{
+			if (request.ValueKind != JsonValueKind.Object || !request.TryGetProperty("cmd", out var cmd) || cmd.ValueKind != JsonValueKind.String)
+				return StateDetail.Full;
+
+			return cmd.GetString() switch
+			{
+				"wait" => StateDetail.Summary,
+				"state" when request.TryGetProperty("detail", out var detail) && detail.ValueKind == JsonValueKind.String
+					&& detail.GetString() == "summary" => StateDetail.Summary,
+				_ => StateDetail.Full,
+			};
+		}
+
+		/// <summary>An array's digest is the summary only when every item asks for it. Otherwise the full digest, which is what each item saw before.</summary>
+		public static StateDetail DetailOf(JsonElement[] items)
+		{
+			return items.Length > 0 && items.All(item => DetailOf(item) == StateDetail.Summary) ? StateDetail.Summary : StateDetail.Full;
+		}
+
 		// The static data (C) rides with the state until the connection has been sent it. A null connection always gets it. The flag is
-		// read and set on the game thread with the snapshot, so a world change cannot interleave with it.
-		static (int? Tick, string State, MapStateV1 Map) Read(bool includeState, AgentConnection connection)
+		// read and set on the game thread with the snapshot, so a world change cannot interleave with it. The summary carries no static
+		// data, so it does not touch the flag.
+		static (int? Tick, string State, MapStateV1 Map) Read(bool includeState, AgentConnection connection, StateDetail detail)
 		{
 			if (!AgentWorldBridge.Loaded)
 				return (null, null, null);
@@ -97,6 +131,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 					var world = AgentWorldBridge.Active;
 					if (world == null)
 						return ((int?)null, (string)null, (MapStateV1)null);
+
+					if (detail == StateDetail.Summary)
+						return (world.WorldTick, includeState ? AgentSocketCommands.Serialize(AgentStateDump.Summary(world)) : null, null);
 
 					var statics = connection == null || !connection.StaticsSent;
 					var state = includeState ? AgentSocketCommands.Serialize(AgentStateDump.Snapshot(world, statics)) : null;

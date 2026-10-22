@@ -85,6 +85,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record StructureV1(uint Id, string Type, int[] Cell, int? Hp, bool Repairing,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? PoweredDown = null);
 
+	/// <summary>
+	/// The summary digest (step 8): the header a wait reply carries, and what state returns with detail:"summary". Tick is the game
+	/// clock. GameOver is the world's IsGameOver, and Winner is the player with WinState.Won, named only once the game is over. Funds,
+	/// Capacity and Power are the local player's economy and power, null without a local player. KnownCounts is each player's count
+	/// of known units by type, as in the full digest. Threats is the threat list. UnitCounts is the number of units the full digest
+	/// would list, per owner. The units list, the map and the static player data are left out (docs/3-wait-header.md).
+	/// </summary>
+	public sealed record StateSummaryV1(int Tick, bool GameOver, string Winner, string LocalPlayer, int? Funds, int? Capacity,
+		PowerV1 Power, Dictionary<string, Dictionary<string, int>> KnownCounts, ThreatV1[] Threats, Dictionary<string, int> UnitCounts);
+
 	/// <summary>Builds the schema v1 snapshot. Must run on the game thread: it reads live world state.</summary>
 	public static class AgentStateDump
 	{
@@ -107,6 +117,39 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static StateAckV1 Ack(World world)
 		{
 			return new StateAckV1(true, "state", world.WorldTick);
+		}
+
+		/// <summary>The summary digest (step 8) as of the world's tick. Must run on the game thread: it reads live world state.</summary>
+		public static StateSummaryV1 Summary(World world)
+		{
+			var observer = world.LocalPlayer;
+			var resources = observer?.PlayerActor.TraitOrDefault<PlayerResources>();
+			var power = observer?.PlayerActor.TraitOrDefault<PowerManager>();
+
+			return new StateSummaryV1(world.WorldTick, world.IsGameOver, world.IsGameOver ? Winner(world) : null, observer?.PlayerName,
+				observer == null ? null : resources?.GetCashAndResources() ?? 0,
+				observer == null ? null : resources?.ResourceCapacity ?? 0,
+				observer == null ? null : Power(power),
+				observer == null ? null : world.Players.ToDictionary(p => p.PlayerName, p => KnownCounts(p, observer)),
+				AgentThreats.Build(world, observer), UnitCounts(world, observer));
+		}
+
+		/// <summary>The player whose WinState is Won, or null when none won.</summary>
+		static string Winner(World world)
+		{
+			return world.Players.FirstOrDefault(p => p.WinState == WinState.Won)?.PlayerName;
+		}
+
+		/// <summary>The number of units the full digest lists for each owner (units with no owner are left out: a map key cannot be null).</summary>
+		static Dictionary<string, int> UnitCounts(World world, Player observer)
+		{
+			if (observer == null)
+				return null;
+
+			return StateActors(world, observer).Where(a => a.Owner != null)
+				.GroupBy(a => a.Owner.PlayerName)
+				.OrderBy(g => g.Key, StringComparer.Ordinal)
+				.ToDictionary(g => g.Key, g => g.Count());
 		}
 
 		/// <summary>The ids of the actors the world has selected, in ActorID order. Empty when nothing is selected.</summary>
@@ -171,11 +214,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 		static object[] StateUnits(World world)
 		{
 			var observer = world.LocalPlayer;
-			return world.Actors
-				.Where(a => a.OccupiesSpace != null && !a.IsDead && !IsScenery(a) && IsInState(a, observer))
+			return StateActors(world, observer)
 				.OrderBy(a => a.ActorID)
 				.Select(a => IsOwnStructure(a, observer) ? (object)StructureState(a, observer) : UnitState(a))
 				.ToArray();
+		}
+
+		/// <summary>The actors the state's units list holds, in no particular order: the occupying, non-scenery actors the observer knows.</summary>
+		static IEnumerable<Actor> StateActors(World world, Player observer)
+		{
+			return world.Actors.Where(a => a.OccupiesSpace != null && !a.IsDead && !IsScenery(a) && IsInState(a, observer));
 		}
 
 		/// <summary>
