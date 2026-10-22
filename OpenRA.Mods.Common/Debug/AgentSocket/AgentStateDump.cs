@@ -79,11 +79,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// <summary>
 	/// An own structure in the state units (P2.5): only the keys the agent needs to address it and see its health. Cell is the
 	/// top-left cell. Hp is null for a structure without IHealth. The full UnitV1 entry is kept for every other unit.
-	/// Repairing is true while the local player is among the structure's repairers. PoweredDown is the state of its
-	/// toggle, and is omitted (null) for a structure without one.
+	/// Repairing is true while the local player is among the structure's repairers. PowerState is down (its PowerDown toggle is
+	/// on) or starved (the low-power effect applies to it), and is omitted (null) while the structure is on.
 	/// </summary>
 	public sealed record StructureV1(uint Id, string Type, int[] Cell, int? Hp, bool Repairing,
-		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? PoweredDown = null);
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string PowerState = null);
 
 	/// <summary>
 	/// The summary digest (step 8): the header a wait reply carries, and what state returns with detail:"summary". Tick is the game
@@ -248,17 +248,41 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return observer != null && a.Owner == observer && a.Info.HasTraitInfo<BuildingInfo>();
 		}
 
+		/// <summary>The values of a structure's power_state (Req 6). They are named here only, so a rename is one edit.</summary>
+		public const string PowerStateDown = "down";
+		public const string PowerStateStarved = "starved";
+
 		static StructureV1 StructureState(Actor a, Player observer)
 		{
 			var repairable = a.TraitOrDefault<RepairableBuilding>();
 			return new StructureV1(a.ActorID, a.Info.Name, [a.Location.X, a.Location.Y], a.TraitOrDefault<IHealth>()?.HP,
-				repairable != null && repairable.Repairers.Contains(observer), PowerDownState(a));
+				repairable != null && repairable.Repairers.Contains(observer), StructurePowerState(a));
 		}
 
 		/// <summary>The state of the structure's toggle, or null when it has none. A structure's only toggle is its power-down one, so it is read whatever its order name.</summary>
 		static bool? PowerDownState(Actor a)
 		{
 			return a.TraitsImplementing<ToggleConditionOnOrder>().FirstOrDefault()?.Enabled;
+		}
+
+		/// <summary>
+		/// The structure's power_state, or null while it is on. Down is its PowerDown toggle being on. Starved is the grid's
+		/// low power applying to it: the owner's grid is Low or Critical, and the structure has a GrantConditionOnPowerState
+		/// that is enabled and valid for that state. This is the same test GrantConditionOnPowerState runs, so a building
+		/// without such a trait is never starved. Down wins, since a toggled-off structure is off either way.
+		/// </summary>
+		static string StructurePowerState(Actor a)
+		{
+			if (PowerDownState(a) == true)
+				return PowerStateDown;
+
+			var power = a.Owner.PlayerActor.TraitOrDefault<PowerManager>();
+			if (power == null || power.PowerState == PowerState.Normal)
+				return null;
+
+			var starved = a.TraitsImplementing<GrantConditionOnPowerState>()
+				.Any(g => !g.IsTraitDisabled && g.Info.ValidPowerStates.HasFlag(power.PowerState));
+			return starved ? PowerStateStarved : null;
 		}
 
 		/// <summary>

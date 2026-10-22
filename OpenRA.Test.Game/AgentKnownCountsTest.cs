@@ -138,7 +138,7 @@ namespace OpenRA.Test
 
 			var slim = units.Single(u => u.GetProperty("id").GetUInt32() == structure.ActorID);
 			Assert.That(Keys(slim), Is.EquivalentTo(["id", "type", "cell", "hp", "repairing"]),
-				"An own structure should carry only id, type, cell, hp and repairing (powered_down only with a PowerDown toggle).");
+				"An own structure should carry only id, type, cell, hp and repairing (power_state only when it is down or starved).");
 
 			var full = units.Single(u => u.GetProperty("id").GetUInt32() == unit.ActorID);
 			Assert.That(Keys(full), Does.Contain("facing").And.Not.Contain("pos"),

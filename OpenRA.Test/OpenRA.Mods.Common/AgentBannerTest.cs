@@ -154,13 +154,13 @@ namespace OpenRA.Test
 			Assert.That(AgentSocketServer.Banner, Does.Not.Contain("Game.AgentSocket"));
 		}
 
-		[TestCase(TestName = "The banner documents the structure state flags, and that powered_down is omitted without a PowerDown toggle")]
+		[TestCase(TestName = "The banner documents the structure state flags, and that power_state is omitted when the structure is on")]
 		public void BannerDocumentsTheStructureFlags()
 		{
 			var banner = AgentSocketServer.Banner;
 
 			Assert.That(banner, Does.Contain("repairing (true while you are among its repairers)"));
-			Assert.That(banner, Does.Contain("powered_down (its PowerDown toggle's state; omitted for a building without one)"));
+			Assert.That(banner, Does.Contain("power_state (\"down\" when its PowerDown toggle is on, \"starved\" when low power applies to it; omitted when it is on)"));
 		}
 
 		[TestCase(TestName = "The banner documents the on key, the toggle and Sell replies, and the healed rule")]

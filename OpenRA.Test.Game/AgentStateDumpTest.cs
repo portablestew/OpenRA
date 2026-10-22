@@ -359,11 +359,16 @@ namespace OpenRA.Test
 		// The repairable and toggle traits live in OpenRA.Mods.Common, which this project reaches only by reflection.
 		static readonly Lazy<Type> RepairableType = new(() => HeadlessMod.ModData.ObjectCreator.FindType("Traits.RepairableBuilding"));
 		static readonly string[] OwnStructureKeys = ["id", "type", "cell", "hp", "repairing"];
-		static readonly string[] PoweredDownStructureKeys = ["id", "type", "cell", "hp", "repairing", "powered_down"];
 
 		static JsonElement OwnUnit(JsonElement state, uint id)
 		{
 			return state.GetProperty("units").EnumerateArray().Single(u => u.GetProperty("id").GetUInt32() == id);
+		}
+
+		// The power_state of an own structure, or null when it is omitted (the structure is on).
+		static string PowerStateOf(JsonElement state, uint id)
+		{
+			return OwnUnit(state, id).TryGetProperty("power_state", out var value) ? value.GetString() : null;
 		}
 
 		static object ModTrait(Actor actor, Type type)
@@ -371,19 +376,19 @@ namespace OpenRA.Test
 			return actor.TraitsImplementing<object>().Single(t => t.GetType() == type);
 		}
 
-		[TestCase(TestName = "An own structure's state carries repairing, and powered_down only when it has a PowerDown toggle")]
-		public void OwnStructureStateCarriesRepairingAndPowerDown()
+		[TestCase(TestName = "An own structure's state carries repairing, and power_state only when it is down or starved")]
+		public void OwnStructureStateCarriesRepairingAndPowerState()
 		{
 			using var hw = HeadlessWorld.Create(1);
 			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
 			var plant = hw.CreateActor("powr", hw.FindClearArea(new CPos(60, 50), 2, 2), hw.LocalPlayer);
 			hw.Tick(1);
 
+			// The plant covers the dome's draw, so the dome is on and omits power_state.
 			using var state = State();
 			var domeState = OwnUnit(state.RootElement, dome.ActorID);
-			Assert.That(Keys(domeState), Is.EquivalentTo(PoweredDownStructureKeys));
+			Assert.That(Keys(domeState), Is.EquivalentTo(OwnStructureKeys));
 			Assert.That(domeState.GetProperty("repairing").GetBoolean(), Is.False);
-			Assert.That(domeState.GetProperty("powered_down").GetBoolean(), Is.False);
 
 			Assert.That(Keys(OwnUnit(state.RootElement, plant.ActorID)), Is.EquivalentTo(OwnStructureKeys));
 		}
@@ -407,8 +412,8 @@ namespace OpenRA.Test
 				Assert.That(OwnUnit(idle.RootElement, dome.ActorID).GetProperty("repairing").GetBoolean(), Is.False);
 		}
 
-		[TestCase(TestName = "powered_down follows the PowerDown toggle once its on order settles")]
-		public void PoweredDownFollowsThePowerDownOrder()
+		[TestCase(TestName = "A toggled-off structure's power_state is down once its on order settles")]
+		public void PowerStateIsDownAfterThePowerDownOrder()
 		{
 			using var hw = HeadlessWorld.Create(1);
 			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
@@ -418,14 +423,73 @@ namespace OpenRA.Test
 				Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True, response.RootElement.ToString());
 
 			using var state = State();
-			Assert.That(OwnUnit(state.RootElement, dome.ActorID).GetProperty("powered_down").GetBoolean(), Is.True);
+			Assert.That(PowerStateOf(state.RootElement, dome.ActorID), Is.EqualTo("down"));
+		}
+
+		[TestCase(TestName = "A structure on a starved grid is starved, when it has a low-power trait")]
+		public void StarvedStructureIsStarved()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			// The dome draws 40 and there is no plant, so the grid is Critical and the dome's low-power effect applies.
+			Assert.That(Power().State, Is.EqualTo("Critical"));
+			using var state = State();
+			Assert.That(PowerStateOf(state.RootElement, dome.ActorID), Is.EqualTo("starved"));
+		}
+
+		[TestCase(TestName = "A structure on a normal grid omits power_state")]
+		public void FullPowerOmitsPowerState()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(60, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+
+			Assert.That(Power().State, Is.EqualTo("Normal"));
+			using var state = State();
+			Assert.That(OwnUnit(state.RootElement, dome.ActorID).TryGetProperty("power_state", out _), Is.False);
+		}
+
+		[TestCase(TestName = "down wins over starved: a toggled-off structure is down while another on the same starved grid is starved")]
+		public void DownWinsOverStarved()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var off = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			var on = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 60), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using (var response = RequestWithTicks(hw, $"{{\"cmd\":\"order\",\"actor\":{off.ActorID},\"order\":\"PowerDown\",\"on\":true}}"))
+				Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True, response.RootElement.ToString());
+
+			// The toggled-off dome draws nothing, and the one still on draws 40 with no plant, so the grid is Critical.
+			Assert.That(Power().State, Is.EqualTo("Critical"));
+			using var state = State();
+			Assert.That(PowerStateOf(state.RootElement, off.ActorID), Is.EqualTo("down"));
+			Assert.That(PowerStateOf(state.RootElement, on.ActorID), Is.EqualTo("starved"));
+		}
+
+		[TestCase(TestName = "A structure with no low-power trait is never starved, even on a starved grid")]
+		public void StructureWithoutLowPowerTraitIsNotStarved()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			var fact = hw.CreateActor("fact", hw.FindClearArea(new CPos(60, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			// The fact draws and provides nothing, so the dome's draw alone makes the grid Critical.
+			Assert.That(Power().State, Is.EqualTo("Critical"));
+			using var state = State();
+			Assert.That(PowerStateOf(state.RootElement, dome.ActorID), Is.EqualTo("starved"));
+			Assert.That(PowerStateOf(state.RootElement, fact.ActorID), Is.Null);
 		}
 
 		// The toggle's Info is read by reflection, since this project cannot reference OpenRA.Mods.Common.
 		static readonly Lazy<Type> ToggleInfoType = new(() => HeadlessMod.ModData.ObjectCreator.FindType("Traits.ToggleConditionOnOrderInfo"));
 
-		[TestCase(TestName = "powered_down reports a structure's toggle under any order name, so a toggle named differently is reported too")]
-		public void PoweredDownReportsAToggleWithAnotherName()
+		[TestCase(TestName = "power_state reports a structure's toggle under any order name, so a toggle named differently is reported too")]
+		public void PowerStateReportsAToggleWithAnotherName()
 		{
 			using var hw = HeadlessWorld.Create(1);
 			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
@@ -442,7 +506,7 @@ namespace OpenRA.Test
 					Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True, response.RootElement.ToString());
 
 				using var state = State();
-				Assert.That(OwnUnit(state.RootElement, dome.ActorID).GetProperty("powered_down").GetBoolean(), Is.True);
+				Assert.That(PowerStateOf(state.RootElement, dome.ActorID), Is.EqualTo("down"));
 			}
 			finally
 			{

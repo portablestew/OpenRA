@@ -41,7 +41,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " players, units, threats, selection\n"
 				+ "                -> map is uid, title, bounds ([x, y, width, height], Map.Bounds in cells) and spawns (one per player with a home"
 				+ " cell: player, faction, cell [x, y]). Your own buildings in units are id, type, cell and hp, plus repairing (true while you are among its repairers)"
-				+ " and powered_down (its PowerDown toggle's state; omitted for a building without one)."
+				+ " and power_state (\"down\" when its PowerDown toggle is on, \"starved\" when low power applies to it; omitted when it is on)."
 				+ " Every other unit has id, type, owner, cell, facing, hp, max_hp and idle; damage (its damage state) is sent only below"
 					+ " full health, and activity (the current activity's class name) only while it has one. No unit row has a pos."
 					+ " selection is the sorted ids of the actors your orders selected, empty when none."
