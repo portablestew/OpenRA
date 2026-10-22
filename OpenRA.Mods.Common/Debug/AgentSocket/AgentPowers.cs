@@ -34,7 +34,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record SupportPowerV1(string Order, string Owner, string Name, string Description, bool Ready, int RemainingTicks,
 		int TotalTicks, bool Active, bool Disabled, bool OneShot);
 
-	/// <summary>Builds the powers reply, and holds the visibility rule that power_ready shares. Must run on the game thread.</summary>
+	/// <summary>Builds the powers reply, and holds the visibility rule that power_ready and power_seen share. Must run on the game thread.</summary>
 	public static class AgentPowers
 	{
 		/// <summary>The powers the local player can see, in player order and then key order. Must run on the game thread.</summary>

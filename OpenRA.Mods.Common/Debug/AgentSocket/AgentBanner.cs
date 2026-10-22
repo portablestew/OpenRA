@@ -206,6 +206,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("power", "power_low", typeof(PowerEventV1)),
 			("power", "power_restored", typeof(PowerEventV1)),
 			("power", "power_ready", typeof(PowerReadyV1)),
+			("power", "power_seen", typeof(PowerSeenV1)),
 			("player", "defeated", typeof(DefeatedV1)),
 			("player", "game_over", typeof(GameOverV1)),
 			("notification", "notification", typeof(NotificationV1)),
@@ -245,6 +246,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    power_low, power_restored, defeated, game_over and overflow name no actor, so they are always sent. power_ready is sent for\n");
 			text.Append("    your own powers, and for another player's only when its timer is shown to you (see powers). notification is sent only for your\n");
 			text.Append("    side and your allies, and the cash counter's tick notifications are not sent: cash is in state and production.\n");
+			text.Append("    power_seen is sent once per power, the first time its timer is shown to you, with its key and name (see powers).\n");
 			text.Append("    A notification that announces a finished item (ConstructionComplete for a structure, UnitReady for a unit) names it in item.\n");
 			text.Append("    A structure has placement_required true: place it. A unit has cell, where it was built. NewOptions names no options:\n");
 			text.Append("    production lists the ones that became buildable.\n");

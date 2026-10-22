@@ -71,6 +71,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 	// A support power finished charging, once per charge. Order is its key, the one an order names (AgentPowers). Name is its display name.
 	public sealed record PowerReadyV1(string Event, int Tick, string Owner, string Order, string Name);
 
+	// A support power's timer first became visible to the local player, once per power (AgentPowerSeen). Order is its key, the one an
+	// order names (AgentPowers). Name is its display name, as the powers command reports it.
+	public sealed record PowerSeenV1(string Event, int Tick, string Owner, string Order, string Name);
+
 	public sealed record DefeatedV1(string Event, int Tick, string Owner);
 
 	public sealed record GameOverV1(string Event, int Tick, string Winner);

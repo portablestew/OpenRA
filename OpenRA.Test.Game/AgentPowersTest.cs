@@ -39,7 +39,8 @@ namespace OpenRA.Test
 		object savedSink;
 		Type hub;
 
-		sealed record Power(string Order, string Owner, bool Ready, int RemainingTicks, int TotalTicks, bool Active, bool Disabled, bool OneShot);
+		sealed record Power(string Order, string Owner, bool Ready, int RemainingTicks, int TotalTicks, bool Active, bool Disabled, bool OneShot,
+			string Name);
 
 		[OneTimeSetUp]
 		public void InitializeMod()
@@ -106,7 +107,7 @@ namespace OpenRA.Test
 			return root.GetProperty("powers").EnumerateArray().Select(p => new Power(
 				p.GetProperty("order").GetString(), p.GetProperty("owner").GetString(), p.GetProperty("ready").GetBoolean(),
 				p.GetProperty("remaining_ticks").GetInt32(), p.GetProperty("total_ticks").GetInt32(), p.GetProperty("active").GetBoolean(),
-				p.GetProperty("disabled").GetBoolean(), p.GetProperty("one_shot").GetBoolean())).ToArray();
+				p.GetProperty("disabled").GetBoolean(), p.GetProperty("one_shot").GetBoolean(), p.GetProperty("name").GetString())).ToArray();
 		}
 
 		/// <summary>The opponent's nuke as the powers command reports it.</summary>
@@ -386,6 +387,53 @@ namespace OpenRA.Test
 			hw.Tick(1);
 			Assert.That(PowersOf().Any(p => p.Owner == hw.EnemyPlayer.PlayerName && p.Order.StartsWith(NukePrefix, StringComparison.Ordinal)),
 				Is.False);
+		}
+
+		[TestCase(TestName = "An enemy silo whose timer is shown to the local player raises one power_seen, naming the power, when it is built")]
+		public void EnemySiloSeenWhenTimerShown()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var events = WatchEvents();
+			hw.CreateActor("mslo", hw.FindClearArea(new CPos(50, 50), 2, 1), hw.EnemyPlayer);
+			hw.Tick(5);
+
+			var seen = SeenEvents(events, NukePrefix, hw.EnemyPlayer);
+			Assert.That(seen, Has.Count.EqualTo(1), "The enemy nuke's timer is shown to enemies, so its first appearance raises one power_seen.");
+			Assert.That(Field(seen[0], "Name"), Is.EqualTo(EnemyNuke(hw).Name), "power_seen names the power as the powers command does.");
+		}
+
+		[TestCase(TestName = "A power_seen is raised once per power, and not again while the timer stays visible")]
+		public void PowerSeenFiresOncePerPower()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var events = WatchEvents();
+			hw.CreateActor("mslo", hw.FindClearArea(new CPos(50, 50), 2, 1), hw.EnemyPlayer);
+			hw.Tick(5);
+			hw.Tick(300);
+
+			Assert.That(SeenEvents(events, NukePrefix, hw.EnemyPlayer), Has.Count.EqualTo(1), "The timer stayed visible, so the power is seen once.");
+		}
+
+		[TestCase(TestName = "An enemy airstrike whose timer is shown only to its owner raises no power_seen, and the owner's own does")]
+		public void EnemyPowerSeenOnlyWhenTimerShown()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var events = WatchEvents();
+			hw.CreateActor("powerproxy.parabombs", hw.FindClearArea(new CPos(50, 60), 1, 1), hw.EnemyPlayer);
+			hw.CreateActor("powerproxy.parabombs", hw.FindClearArea(new CPos(60, 60), 1, 1), hw.LocalPlayer);
+			hw.Tick(5);
+
+			Assert.That(SeenEvents(events, AirstrikePrefix, hw.EnemyPlayer), Is.Empty,
+				"The enemy airstrike's timer is shown only to its owner, so the local player does not see it.");
+			Assert.That(SeenEvents(events, AirstrikePrefix, hw.LocalPlayer), Has.Count.EqualTo(1),
+				"The local player's own airstrike is seen when it appears.");
+		}
+
+		/// <summary>The power_seen events for the owner's power with this key prefix.</summary>
+		static List<object> SeenEvents(List<object> events, string prefix, Player owner)
+		{
+			return events.Where(e => e.GetType().Name == "PowerSeenV1" && (string)Field(e, "Owner") == owner.PlayerName
+				&& ((string)Field(e, "Order")).StartsWith(prefix, StringComparison.Ordinal)).ToList();
 		}
 
 		/// <summary>The power_ready events for the owner's power with this key prefix.</summary>
