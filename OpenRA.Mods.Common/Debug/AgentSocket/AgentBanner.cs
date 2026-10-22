@@ -287,13 +287,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("  After the banner, and after every response, the server sends a lone > line as a prompt: it is your turn.\n");
 			text.Append("  A > line is not a response and not an event; skip lines that are just >.\n");
 			text.Append("  An array is one request: the items run in order and results is one JSON array, one result per item.\n");
-			text.Append("  The envelope: results (the request's result, or the array), events (the turn's events, each once: the first 2 of a type in full,"
-				+ " then {event, aggregated, tick_from, tick_to, actors}), state (the digest: the fields the state\n"
+			text.Append("  The envelope: results (the request's result, or the array), events (the turn's events, each once: the first 2 of each type and name in full,"
+				+ " then {event, aggregated, tick_from, tick_to, actors, name}), state (the digest: the fields the state\n"
 				+ "    row lists), tick (the game clock after the request). The map image: map_state_png (its workspace path, or\n");
 			text.Append("    null), map_state_tick (the tick it was rendered at, equal to tick after a world-changing request), map_state_render\n");
 			text.Append("    (ok or unavailable), and map_px_per_cell, map_origin, map_size (its geometry).\n"
 				+ "    A marker's aggregated is the true count of its events. actors names up to 10 of the distinct actors they covered,\n"
-				+ "    and is left out when they name none.\n"
+				+ "    and is left out when they name none. name is the notification or power name they share, and is left out when there is none.\n"
 				+ "    A connection's first envelope has initial:true, its state in full, and no events from before its first request.\n"
 				+ "    The static data (state.map, state.ms_per_tick, and players' faction, color, bot and handicap) rides with the state until a world change (an undo,\n"
 				+ "    a load_skirmish, a new world) or a reconnect; in the envelopes between, those keys are null.\n"

@@ -17,7 +17,7 @@ using OpenRA.Mods.Common.AgentSocket;
 namespace OpenRA.Test
 {
 	/// <summary>
-	/// The turn buffer's flush (P3.2): the first two of each type in full, one aggregated marker for the rest, never
+	/// The turn buffer's flush (P3.2): the first two of each type and name in full, one aggregated marker for the rest, never
 	/// aggregating killed, defeated, or game_over, the overflow marker surviving a flush, and a stable order. The events are
 	/// synthetic records with the Event and Tick fields every event DTO has.
 	/// </summary>
@@ -217,6 +217,38 @@ namespace OpenRA.Test
 			var json = JsonSerializer.Serialize(marker, Json);
 
 			Assert.That(json, Does.Not.Contain("actors"), "Events without an actor field should not add an actors key.");
+			}
+
+			[TestCase(TestName = "Notifications aggregate per name, so a finished structure is never hidden behind other notifications")]
+			public void NotificationsAggregatePerName()
+			{
+				var buffer = new AgentTurnBuffer();
+				var silos = Enumerable.Range(1, 3).Select(i => new NotificationV1("notification", i, "SilosNeeded", "P", null, null, null, null)).ToList();
+				var lowPower = Enumerable.Range(4, 3).Select(i => new NotificationV1("notification", i, "LowPower", "P", null, null, null, null)).ToList();
+				var built = new NotificationV1("notification", 7, "ConstructionComplete", "P", "powr", [3, 4], true, "Building");
+				foreach (var e in silos.Concat(lowPower).Append(built))
+					buffer.Add(e);
+
+				var batch = buffer.Flush();
+
+				Assert.That(batch, Does.Contain(built), "ConstructionComplete should flush in full, not behind the SilosNeeded and LowPower markers.");
+				Assert.That(batch.OfType<AggregatedV1>(), Is.EqualTo(new[]
+				{
+					new AggregatedV1("notification", 1, 3, 3, null, "SilosNeeded"),
+					new AggregatedV1("notification", 1, 6, 6, null, "LowPower"),
+				}), "Each suppressed name should get its own marker, and the marker should name it.");
+			}
+
+			[TestCase(TestName = "An event with no name field aggregates by its type alone, and its marker has no name key")]
+			public void MarkerWithoutANameHasNoNameKey()
+			{
+				var buffer = new AgentTurnBuffer();
+				foreach (var e in Enumerable.Range(1, 3).Select(i => Damaged(9 + i, i)))
+					buffer.Add(e);
+
+				var json = JsonSerializer.Serialize(buffer.Flush()[2], Json);
+
+				Assert.That(json, Does.Not.Contain("name"), "A marker for events that name nothing should not add a name key.");
 		}
 	}
 }
