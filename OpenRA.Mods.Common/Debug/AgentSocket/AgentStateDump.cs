@@ -90,7 +90,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// clock. GameOver is the world's IsGameOver, and Winner is the player with WinState.Won, named only once the game is over. Funds,
 	/// Capacity and Power are the local player's economy and power, null without a local player. KnownCounts is each player's count
 	/// of known units by type, as in the full digest. Threats is the threat list. UnitCounts is the number of units the full digest
-	/// would list, per owner. The units list, the map and the static player data are left out (docs/3-wait-header.md).
+	/// would list, per owner. The units list, the map and the static player data are left out.
 	/// </summary>
 	public sealed record StateSummaryV1(int Tick, bool GameOver, string Winner, string LocalPlayer, int? Funds, int? Capacity,
 		PowerV1 Power, Dictionary<string, Dictionary<string, int>> KnownCounts, ThreatV1[] Threats, Dictionary<string, int> UnitCounts);
