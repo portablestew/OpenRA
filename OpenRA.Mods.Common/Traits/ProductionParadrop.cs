@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using OpenRA.Activities;
 using OpenRA.Mods.Common.Activities;
+using OpenRA.Mods.Common.AgentSocket;
 using OpenRA.Primitives;
 using OpenRA.Traits;
 
@@ -146,6 +147,7 @@ namespace OpenRA.Mods.Common.Traits
 			self.World.AddFrameEndTask(w =>
 			{
 				var newUnit = self.World.CreateActor(producee.Name, td);
+				AgentNotifications.Produced(newUnit);
 				newUnit.Trait<Parachutable>().IgnoreActor = self;
 
 				var move = newUnit.TraitOrDefault<IMove>();

@@ -10,6 +10,7 @@
 #endregion
 
 using System.Linq;
+using OpenRA.Mods.Common.AgentSocket;
 using OpenRA.Primitives;
 using OpenRA.Traits;
 
@@ -90,6 +91,7 @@ namespace OpenRA.Mods.Common.Traits
 				};
 
 				var newUnit = self.World.CreateActor(producee.Name, td);
+				AgentNotifications.Produced(newUnit);
 
 				var move = newUnit.TraitOrDefault<IMove>();
 				if (move != null)
