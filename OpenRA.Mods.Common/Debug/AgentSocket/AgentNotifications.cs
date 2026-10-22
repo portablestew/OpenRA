@@ -125,7 +125,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		static string[] BecameBuildable(Player player)
 		{
 			var now = AgentProduction.Buildable(player).Select(o => o.Name).ToArray();
-			var before = lastBuildable is { } last && last.Owner == player ? last.Names : new HashSet<string>();
+			var before = lastBuildable is { } last && last.Owner == player ? last.Names : [];
 			lastBuildable = (player, now.ToHashSet());
 			return now.Where(n => !before.Contains(n)).ToArray();
 		}
