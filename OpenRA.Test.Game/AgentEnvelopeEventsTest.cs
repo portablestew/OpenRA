@@ -204,6 +204,10 @@ namespace OpenRA.Test
 			Assert.That(markers[0].GetProperty("event").GetString(), Is.EqualTo("path"));
 			Assert.That(markers[0].GetProperty("aggregated").GetInt32(), Is.GreaterThanOrEqualTo(2),
 				"The marker should count the path events past the first two.");
+
+			var named = markers[0].GetProperty("actors").EnumerateArray().Select(a => a.GetUInt32()).ToList();
+			Assert.That(named, Is.Not.Empty.And.SubsetOf(units.Select(u => u.ActorID)),
+				"The marker should name the units whose path events it covers.");
 		}
 	}
 }

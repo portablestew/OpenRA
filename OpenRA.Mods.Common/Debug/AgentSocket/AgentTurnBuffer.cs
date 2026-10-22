@@ -12,15 +12,18 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Text.Json.Serialization;
 using System.Threading;
 
 namespace OpenRA.Mods.Common.AgentSocket
 {
 	/// <summary>
 	/// The suppressed events of one type in one turn: how many, and the ticks they cover (P3.2). Event is the event type,
-	/// as the event key names it. The wire keys are event, aggregated, tick_from, and tick_to.
+	/// as the event key names it. The wire keys are event, aggregated, tick_from, tick_to, and actors. Actors names up to ten
+	/// distinct actors those events covered, in arrival order, and is null when the events name no actor.
 	/// </summary>
-	public sealed record AggregatedV1(string Event, int Aggregated, int TickFrom, int TickTo);
+	public sealed record AggregatedV1(string Event, int Aggregated, int TickFrom, int TickTo,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint[] Actors = null);
 
 	/// <summary>
 	/// The events one connection has seen since its last flush (P3.2). Add records an event as it is raised. Flush returns the
@@ -36,13 +39,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>How many events of each type a flush returns in full.</summary>
 		public const int FullPerType = 2;
 
+		/// <summary>The most distinct actors an aggregated marker names.</summary>
+		const int MaxActors = 10;
+
 		static readonly string[] NeverAggregated = ["killed", "defeated", "game_over"];
 
-		// Every event DTO has an Event string and a Tick, as its first two fields. Read them once per DTO type.
-		static readonly Dictionary<Type, (PropertyInfo Event, PropertyInfo Tick)> Accessors = [];
+		// Every event DTO has an Event string and a Tick, as its first two fields, and most have an Actor. Read them once per DTO type.
+		static readonly Dictionary<Type, (PropertyInfo Event, PropertyInfo Tick, PropertyInfo Actor)> Accessors = [];
 
 		readonly Lock gate = new();
-		readonly Queue<(string Type, int Tick, object Dto)> events = new();
+		readonly Queue<(string Type, int Tick, uint? Actor, object Dto)> events = new();
 		int dropped;
 
 		/// <summary>
@@ -55,7 +61,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (read is null)
 				return;
 
-			var (type, tick) = read.Value;
+			var (type, tick, actor) = read.Value;
 			lock (gate)
 			{
 				if (events.Count == Capacity)
@@ -64,7 +70,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					dropped++;
 				}
 
-				events.Enqueue((type, tick, dto));
+				events.Enqueue((type, tick, actor, dto));
 			}
 		}
 
@@ -140,7 +146,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				var slots = new Dictionary<string, Slot>();
 				while (events.Count > 0)
 				{
-					var (type, tick, dto) = events.Dequeue();
+					var (type, tick, actor, dto) = events.Dequeue();
 					if (Array.IndexOf(NeverAggregated, type) < 0 && full.GetValueOrDefault(type) >= FullPerType)
 					{
 						if (!slots.TryGetValue(type, out var slot))
@@ -150,7 +156,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 							batch.Add(null);
 						}
 
-						slot.Add(tick);
+						slot.Add(tick, actor);
 						continue;
 					}
 
@@ -159,22 +165,22 @@ namespace OpenRA.Mods.Common.AgentSocket
 				}
 
 				foreach (var slot in slots.Values)
-					batch[slot.Index] = new AggregatedV1(slot.Type, slot.Count, slot.From, slot.To);
+					batch[slot.Index] = new AggregatedV1(slot.Type, slot.Count, slot.From, slot.To, slot.Actors.Count == 0 ? null : slot.Actors.ToArray());
 
 				return batch;
 			}
 		}
 
-		/// <summary>The event type and tick of dto, or null when dto has no Event and Tick field.</summary>
-		static (string Type, int Tick)? Read(object dto)
+		/// <summary>The event type, tick, and actor of dto, or null when dto has no Event and Tick field. The actor is null when dto has no Actor field.</summary>
+		static (string Type, int Tick, uint? Actor)? Read(object dto)
 		{
 			var type = dto.GetType();
-			(PropertyInfo Event, PropertyInfo Tick) accessors;
+			(PropertyInfo Event, PropertyInfo Tick, PropertyInfo Actor) accessors;
 			lock (Accessors)
 			{
 				if (!Accessors.TryGetValue(type, out accessors))
 				{
-					accessors = (type.GetProperty("Event"), type.GetProperty("Tick"));
+					accessors = (type.GetProperty("Event"), type.GetProperty("Tick"), type.GetProperty("Actor"));
 					Accessors[type] = accessors;
 				}
 			}
@@ -182,14 +188,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (accessors.Event == null || accessors.Tick == null)
 				return null;
 
-			return ((string)accessors.Event.GetValue(dto), (int)accessors.Tick.GetValue(dto));
+			var actor = accessors.Actor?.GetValue(dto) is uint id ? id : (uint?)null;
+			return ((string)accessors.Event.GetValue(dto), (int)accessors.Tick.GetValue(dto), actor);
 		}
 
-		/// <summary>One aggregated run under construction: its position in the batch, and the ticks it covers.</summary>
+		/// <summary>One aggregated run under construction: its position in the batch, the ticks it covers, and the distinct actors it names.</summary>
 		sealed class Slot
 		{
 			public readonly string Type;
 			public readonly int Index;
+			public readonly List<uint> Actors = [];
 			public int Count;
 			public int From;
 			public int To;
@@ -202,11 +210,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 				To = tick;
 			}
 
-			public void Add(int tick)
+			public void Add(int tick, uint? actor)
 			{
 				Count++;
 				From = Math.Min(From, tick);
 				To = Math.Max(To, tick);
+				if (actor is uint id && Actors.Count < MaxActors && !Actors.Contains(id))
+					Actors.Add(id);
 			}
 		}
 	}

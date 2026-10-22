@@ -10,6 +10,7 @@
 #endregion
 
 using System.Linq;
+using System.Text.Json;
 using NUnit.Framework;
 using OpenRA.Mods.Common.AgentSocket;
 
@@ -23,11 +24,18 @@ namespace OpenRA.Test
 	[TestFixture]
 	sealed class AgentTurnBufferTest
 	{
+		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
+
 		sealed record Fake(string Event, int Tick, int Id);
+
+		/// <summary>An event that names its actor, as the event DTOs do.</summary>
+		sealed record Hit(string Event, int Tick, uint Actor);
 
 		static Fake Damaged(int tick, int id) => new("damaged", tick, id);
 
 		static Fake Killed(int tick, int id) => new("killed", tick, id);
+
+		static Hit Damaged(int tick, uint actor) => new("damaged", tick, actor);
 
 		[TestCase(TestName = "The third event of one type flushes as an aggregated marker, not in full")]
 		public void ThirdEventAggregates()
@@ -155,6 +163,60 @@ namespace OpenRA.Test
 
 			Assert.That(buffer.Pending, Is.Zero, "Only event payloads should be buffered.");
 			Assert.That(buffer.Flush(), Is.Empty);
+		}
+
+		[TestCase(TestName = "An aggregated marker names the actors its suppressed events covered, in arrival order")]
+		public void MarkerNamesItsActors()
+		{
+			var buffer = new AgentTurnBuffer();
+			foreach (var e in Enumerable.Range(1, 5).Select(i => Damaged(9 + i, (uint)(100 + i))))
+				buffer.Add(e);
+
+			var marker = (AggregatedV1)buffer.Flush()[2];
+
+			Assert.That(marker.Aggregated, Is.EqualTo(3), "The marker should count the three suppressed events.");
+			Assert.That(marker.Actors, Is.EqualTo(new uint[] { 103, 104, 105 }),
+				"The marker should name the actors of the three suppressed events, in arrival order.");
+		}
+
+		[TestCase(TestName = "A marker names at most ten actors, and its count is still the true total")]
+		public void MarkerCapsActorsAtTen()
+		{
+			var buffer = new AgentTurnBuffer();
+			foreach (var e in Enumerable.Range(1, 15).Select(i => Damaged(i, (uint)i)))
+				buffer.Add(e);
+
+			var marker = buffer.Flush().OfType<AggregatedV1>().Single();
+
+			Assert.That(marker.Aggregated, Is.EqualTo(13), "Fifteen events, two in full, leave thirteen suppressed, and the count should say so.");
+			Assert.That(marker.Actors, Is.EqualTo(Enumerable.Range(3, 10).Select(i => (uint)i)),
+				"The marker should name the first ten suppressed actors, not all thirteen.");
+		}
+
+		[TestCase(TestName = "An actor hit many times in one turn is named once in the marker")]
+		public void MarkerNamesAnActorOnce()
+		{
+			var buffer = new AgentTurnBuffer();
+			foreach (var e in Enumerable.Range(1, 5).Select(i => Damaged(i, 7u)))
+				buffer.Add(e);
+
+			var marker = (AggregatedV1)buffer.Flush()[2];
+
+			Assert.That(marker.Aggregated, Is.EqualTo(3), "The three suppressed hits should still be counted.");
+			Assert.That(marker.Actors, Is.EqualTo(new uint[] { 7 }), "Actor 7 should be named once.");
+		}
+
+		[TestCase(TestName = "A marker for events with no actor field has no actors key on the wire")]
+		public void MarkerWithoutAnActorHasNoActorsKey()
+		{
+			var buffer = new AgentTurnBuffer();
+			foreach (var e in Enumerable.Range(1, 3).Select(i => Damaged(9 + i, i)))
+				buffer.Add(e);
+
+			var marker = buffer.Flush()[2];
+			var json = JsonSerializer.Serialize(marker, Json);
+
+			Assert.That(json, Does.Not.Contain("actors"), "Events without an actor field should not add an actors key.");
 		}
 	}
 }
