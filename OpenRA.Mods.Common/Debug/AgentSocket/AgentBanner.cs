@@ -199,6 +199,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("production", "produced", typeof(ProducedV1)),
 			("production", "placed", typeof(PlacedV1)),
 			("production", "sold", typeof(SoldV1)),
+			("visibility", "spotted", typeof(SpottedV1)),
 			("stance", "stance", typeof(StanceV1)),
 			("path", "path", typeof(PathV1)),
 			("activity", "activity", typeof(ActivityV1)),
@@ -239,6 +240,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " stance, path and activity are sent only\n");
 			text.Append("    for your own actors and known ones. Path and move activity are sent only while an order you issued drives the actor,\n");
 			text.Append("    so an autonomous harvester stays quiet. A captor, producer, collector, attacker or order target is named only when known, else null.\n");
+			text.Append("    spotted is sent once per enemy actor, when you first come to know it (visible, a last-known snapshot, or a GPS dot).\n");
+			text.Append("    A re-reveal from fog is not sent again. Scenery and husks are never spotted. Its cell is its top-left cell.\n");
 			text.Append("    power_low, power_restored, defeated, game_over and overflow name no actor, so they are always sent. power_ready is sent for\n");
 			text.Append("    your own powers, and for another player's only when its timer is shown to you (see powers). notification is sent only for your\n");
 			text.Append("    side and your allies, and the cash counter's tick notifications are not sent: cash is in state and production.\n");

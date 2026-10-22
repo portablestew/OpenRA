@@ -78,6 +78,7 @@ namespace OpenRA.Mods.Common
 		{
 			AgentOrderAwait.Tick(self.World);
 			AgentOrderInterest.Tick(self.World);
+			AgentSpotted.Tick(self.World);
 		}
 
 		public void WorldAdopted(World w, WorldRenderer wr)
