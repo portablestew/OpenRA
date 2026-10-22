@@ -75,7 +75,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					+ " resolution, and nothing waits for travel or completion, which are events. Every name except an Attack and a"
 					+ " DeployTransform reports valid, effect_tick and settled_ticks, and holds the settle window so trailing events"
 					+ " land in this reply; valid:false adds reason and orders (the names the actor accepts)."
-					+ " A Move adds path, the cells it planned."
+					+ " A Move adds nothing: its path comes as path events, with metrics and no planned cells."
 					+ " An Attack replaces valid, effect_tick and settled_ticks with outcome (started | no_valid_target; null when"
 					+ " unsettled) and returns at the attack's start or its resolve budget, with reason when it did not start."
 					+ " An AttackMove adds outcome (started | no_path), with no path, since its travel is not awaited."
