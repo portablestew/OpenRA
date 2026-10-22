@@ -168,8 +168,8 @@ namespace OpenRA.Test
 			Assert.That(OrderedIds(root), Is.EquivalentTo([a.ActorID, b.ActorID]));
 		}
 
-		[TestCase(TestName = "A group with an actor the local player does not own is refused, and nothing moves")]
-		public void UnownedActorInListRefusesTheGroup()
+		[TestCase(TestName = "A group with an actor the local player does not own orders the rest and skips it with its reason")]
+		public void UnownedActorInListIsSkippedAndTheRestOrdered()
 		{
 			using var hw = HeadlessWorld.Create(1);
 			var mine = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
@@ -179,12 +179,91 @@ namespace OpenRA.Test
 			var destination = hw.FindClearArea(new CPos(50, 56), 1, 1, 4);
 
 			var line = $"{{\"cmd\":\"order\",\"actors\":[{mine.ActorID},{enemy.ActorID}],\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, line);
+			var root = response.RootElement;
+
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+			Assert.That(OrderedIds(root), Is.EqualTo(new[] { mine.ActorID }));
+			Assert.That(root.GetProperty("matched").GetInt32(), Is.EqualTo(2));
+			Assert.That(root.GetProperty("results").GetArrayLength(), Is.EqualTo(1));
+
+			var skipped = root.GetProperty("skipped").EnumerateArray().ToArray();
+			Assert.That(skipped.Length, Is.EqualTo(1), root.ToString());
+			Assert.That(skipped[0].GetProperty("actor").GetUInt32(), Is.EqualTo(enemy.ActorID));
+			Assert.That(skipped[0].GetProperty("error").GetString(), Is.EqualTo($"Actor {enemy.ActorID} is not owned by the local player"));
+			Assert.That(skipped[0].TryGetProperty("orders", out _), Is.False, "Only an actor that refused the name lists the names it accepts.");
+
+			Assert.That(hw.TickUntil(() => mine.Location != start, 500), Is.Not.Null, "The owned e1 should leave its start cell.");
+		}
+
+		[TestCase(TestName = "A group whose actor does not accept the order name orders the rest and lists the names it accepts")]
+		public void IneligibleActorIsSkippedWithItsAcceptedNames()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var infantry = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			var building = hw.CreateActor("fact", hw.FindClearArea(new CPos(70, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			// Scatter is named only for an actor that can move, so the building refuses it and the infantry is still ordered.
+			var line = $"{{\"cmd\":\"order\",\"actors\":[{infantry.ActorID},{building.ActorID}],\"order\":\"Scatter\"}}";
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, line);
+			var root = response.RootElement;
+
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+			Assert.That(OrderedIds(root), Is.EqualTo(new[] { infantry.ActorID }));
+
+			var skipped = root.GetProperty("skipped").EnumerateArray().ToArray();
+			Assert.That(skipped.Length, Is.EqualTo(1), root.ToString());
+			Assert.That(skipped[0].GetProperty("actor").GetUInt32(), Is.EqualTo(building.ActorID));
+			Assert.That(skipped[0].GetProperty("error").GetString(), Does.StartWith($"actor {building.ActorID} does not accept order 'Scatter'"));
+			Assert.That(skipped[0].GetProperty("orders").GetArrayLength(), Is.GreaterThan(0), "A refused name lists the names the actor accepts.");
+		}
+
+		[TestCase(TestName = "A group whose actors are all dead or not owned is refused, and nothing moves")]
+		public void AllInvalidGroupIsRefused()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var mine = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			var enemy = hw.CreateActor("e1", hw.FindClearArea(new CPos(60, 50), 1, 1), hw.EnemyPlayer);
+			hw.Tick(1);
+			var start = mine.Location;
+			var destination = hw.FindClearArea(new CPos(50, 56), 1, 1, 4);
+
+			var line = $"{{\"cmd\":\"order\",\"actors\":[{enemy.ActorID}],\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
 			using var response = AgentStateDumpTest.Request(line);
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.False);
 			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo($"Actor {enemy.ActorID} is not owned by the local player"));
+			Assert.That(response.RootElement.TryGetProperty("skipped", out _), Is.False, "A refused group has no ordered actors to report.");
 
 			hw.Tick(10);
 			Assert.That(mine.Location, Is.EqualTo(start));
+		}
+
+		[TestCase(TestName = "A group with a dead actor orders the living and skips the dead one")]
+		public void DeadActorIsSkippedAndTheRestOrdered()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var mine = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			var dead = hw.CreateActor("e1", hw.FindClearArea(new CPos(60, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			dead.Kill(dead);
+			hw.Tick(1);
+			var start = mine.Location;
+			var destination = hw.FindClearArea(new CPos(50, 56), 1, 1, 4);
+
+			var line = $"{{\"cmd\":\"order\",\"actors\":[{mine.ActorID},{dead.ActorID}],\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, line);
+			var root = response.RootElement;
+
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+			Assert.That(OrderedIds(root), Is.EqualTo(new[] { mine.ActorID }));
+
+			var skipped = root.GetProperty("skipped").EnumerateArray().ToArray();
+			Assert.That(skipped.Length, Is.EqualTo(1), root.ToString());
+			Assert.That(skipped[0].GetProperty("actor").GetUInt32(), Is.EqualTo(dead.ActorID));
+			Assert.That(skipped[0].GetProperty("error").GetString(), Is.Not.Empty, "A skipped actor says why it was skipped.");
+
+			Assert.That(hw.TickUntil(() => mine.Location != start, 500), Is.Not.Null, "The living e1 should leave its start cell.");
 		}
 
 		[TestCase(TestName = "A group with both actor and type is rejected, with the help hint")]

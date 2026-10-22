@@ -10,6 +10,7 @@
 #endregion
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -64,11 +65,20 @@ namespace OpenRA.Mods.Common.AgentSocket
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Error = null);
 
 	/// <summary>
+	/// A matched actor that a grouped order left out (P1.14). It was dead, not owned, unknown, or refused the order name or the on
+	/// key, and Error says why. Orders is the names the actor accepts, set only when it refused the name.
+	/// </summary>
+	public sealed record SkippedActorV1(uint Actor, string Error,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Orders = null);
+
+	/// <summary>
 	/// The reply to a grouped order (P1.14). Ordered is the ids of the actors the one engine order went to, and Matched is how many
-	/// actors the selector matched. A request is refused as a whole when any matched actor refuses the order, so the two are equal.
+	/// actors the selector matched: Ordered plus Skipped. Skipped is omitted when every matched actor was ordered, so its presence
+	/// marks a partial success. A request is refused as a whole only when no matched actor can take the order.
 	/// Results has one entry per ordered actor, in the same order as Ordered.
 	/// </summary>
-	public sealed record GroupedOrderV1(bool Ok, string Cmd, int Tick, int MinEffectTick, uint[] Ordered, int Matched, GroupResultV1[] Results);
+	public sealed record GroupedOrderV1(bool Ok, string Cmd, int Tick, int MinEffectTick, uint[] Ordered, int Matched, GroupResultV1[] Results,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SkippedActorV1[] Skipped = null);
 
 	/// <summary>
 	/// The sell reply (3.4). Outcome is sold once the owner sold the actor. The actor is disposed by then, so the reply names no
@@ -78,9 +88,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	/// <summary>
 	/// What IssueGroup returns on the game thread. Awaits has one await per ordered actor, in the same order as Ordered, one for
-	/// every order name (9.2). Paused is true when the game is paused, so nothing will tick the awaits.
+	/// every order name (9.2). Paused is true when the game is paused, so nothing will tick the awaits. Skipped is null when no
+	/// matched actor was left out.
 	/// </summary>
-	public sealed record GroupIssued(OrderV1 Ack, uint[] Ordered, AgentOrderAwait[] Awaits, bool Paused);
+	public sealed record GroupIssued(OrderV1 Ack, uint[] Ordered, AgentOrderAwait[] Awaits, bool Paused, SkippedActorV1[] Skipped);
 
 	/// <summary>
 	/// The Move reply (P1.3). Valid and EffectTick are null, and Settled is false, when the game was paused and the reply did not
@@ -577,13 +588,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>
 		/// Validates a grouped request (P1.14) and issues it as one engine Order with GroupedActors, so the engine resolves each actor
-		/// on its own. Every matched actor is checked before anything is issued, and one that does not accept the order name refuses
-		/// the whole request. Each ordered actor is selected (P1.15). Each actor gets its own await, on the per-subject copy the engine
-		/// resolves, so each actor reports its own outcome. Must run on the game thread: it reads live world state.
+		/// on its own. Every matched actor is checked before anything is issued. One that cannot take the order is skipped and
+		/// reported, and the rest are issued. Each ordered actor is selected (P1.15). Each actor gets its own await, on the per-subject
+		/// copy the engine resolves, so each actor reports its own outcome. Must run on the game thread: it reads live world state.
 		/// </summary>
 		public static GroupIssued IssueGroup(World world, OrderRequest request, AgentSelection selection)
 		{
-			var actors = GroupActors(world, request);
+			var (actors, skipped) = GroupActors(world, request);
 			var order = ToGroupOrder(world, request, actors);
 			var move = order.OrderString is "Move" or "AttackMove";
 
@@ -596,7 +607,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				selection.Ordered(world, actor);
 
 			var ack = new OrderV1(true, "order", world.WorldTick, world.WorldTick + 1);
-			return new GroupIssued(ack, actors.Select(a => a.ActorID).ToArray(), awaits, world.Paused);
+			return new GroupIssued(ack, actors.Select(a => a.ActorID).ToArray(), awaits, world.Paused, skipped);
 		}
 
 		/// <summary>
@@ -609,13 +620,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var ack = issued.Ack;
 			var ids = issued.Ordered;
 			var awaits = issued.Awaits;
+			var skipped = issued.Skipped;
+			var matched = ids.Length + (skipped?.Length ?? 0);
 			if (issued.Paused)
 			{
 				// Nothing ticks the awaits in a paused game, so drop them here, or they stay in the registry until the world is disposed.
 				foreach (var await in awaits)
 					await.Abandon();
 
-				return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, ids.Length, ids.Select(id => new GroupResultV1(id, false)).ToArray());
+				return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, matched, ids.Select(id => new GroupResultV1(id, false)).ToArray(), skipped);
 			}
 
 			try
@@ -629,14 +642,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 				foreach (var await in awaits)
 					await.Abandon();
 
-				return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, ids.Length, ids.Select(id => new GroupResultV1(id, false)).ToArray());
+				return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, matched, ids.Select(id => new GroupResultV1(id, false)).ToArray(), skipped);
 			}
 
 			var results = new GroupResultV1[ids.Length];
 			for (var i = 0; i < ids.Length; i++)
 				results[i] = GroupResult(ids[i], awaits[i]);
 
-			return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, ids.Length, results);
+			return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, matched, results, skipped);
 		}
 
 		/// <summary>
@@ -683,22 +696,41 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// The actors a grouped request selects, each checked to be owned, live and to accept the order name. A list is checked as
-		/// given. A type matches the owned, live actors whose type name the pattern matches. No match is an error (fail loud).
+		/// The actors a grouped request orders, and the matched ones it leaves out. A list is checked as given. A type matches the
+		/// owned, live actors whose type name the pattern matches. Each matched actor is checked to be owned, live and to accept the
+		/// order name and the on key. One that fails is skipped with its reason, and the rest are still ordered. No type match is an
+		/// error (fail loud), and so is a request where every matched actor is skipped: the first skip's error is thrown then.
 		/// Must run on the game thread.
 		/// </summary>
-		static Actor[] GroupActors(World world, OrderRequest request)
+		static (Actor[] Accepted, SkippedActorV1[] Skipped) GroupActors(World world, OrderRequest request)
 		{
-			if (request.Actors != null)
-				return request.Actors.Select(id => Accept(world, id, request.Order, request.On)).ToArray();
-
-			var matched = world.Actors
+			var ids = request.Actors ?? world.Actors
 				.Where(a => a.Owner == world.LocalPlayer && !a.IsDead && request.TypePattern.IsMatch(a.Info.Name))
+				.Select(a => a.ActorID)
 				.ToArray();
-			if (matched.Length == 0)
+			if (request.Actors == null && ids.Length == 0)
 				throw new ArgumentException($"no owned actor's type matches \"{request.Type}\"");
 
-			return matched.Select(a => Accept(world, a.ActorID, request.Order, request.On)).ToArray();
+			var accepted = new List<Actor>();
+			var skipped = new List<SkippedActorV1>();
+			Exception first = null;
+			foreach (var id in ids)
+			{
+				try
+				{
+					accepted.Add(Accept(world, id, request.Order, request.On));
+				}
+				catch (Exception e) when (e is ArgumentException or OrderRefusedException or PowerRefusedException)
+				{
+					first ??= e;
+					skipped.Add(new SkippedActorV1(id, e.Message, (e as OrderRefusedException)?.Available));
+				}
+			}
+
+			if (accepted.Count == 0)
+				throw first ?? new ArgumentException("the actors list is empty");
+
+			return (accepted.ToArray(), skipped.Count == 0 ? null : skipped.ToArray());
 		}
 
 		/// <summary>The Order a grouped request stands for. Its subject is null, as the engine's own grouped orders are: each actor's copy has its subject. Must run on the game thread.</summary>
