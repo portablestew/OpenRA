@@ -118,6 +118,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>True once the await has held its settle ticks. A failed await never settles.</summary>
 		public bool Settled { get; private set; }
 
+		/// <summary>
+		/// True when the subject died before the order resolved, so the order never took effect on it. A group skips such an actor
+		/// rather than reporting it as ordered.
+		/// </summary>
+		public bool DiedBeforeResolve { get; private set; }
+
 		/// <summary>The path a Move planned, source cell first. Null until the Move's first path evaluation is captured.</summary>
 		public int[][] Path { get; private set; }
 
@@ -419,7 +425,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 							Fail(p, new InvalidOperationException($"actor {p.subject.ActorID} died before it was sold"));
 					}
 					else if (p.subject.IsDead)
+					{
+						// A Move that has resolved took effect before its subject died, so only a death before resolve is a skip.
+						p.DiedBeforeResolve = !p.Resolved;
 						Fail(p, new InvalidOperationException($"actor {p.subject.ActorID} died before the order resolved"));
+					}
 					else if (world.WorldTick - p.registeredTick >= ResolveBudgetTicks)
 						Fail(p, new TimeoutException($"the order did not resolve within {ResolveBudgetTicks} ticks"));
 				}

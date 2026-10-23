@@ -169,6 +169,18 @@ namespace OpenRA.Test
 			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo($"Actor {target.ActorID} is dead"));
 		}
 
+		[TestCase(TestName = "An order whose target_actor is unknown returns the unknown-target error, not the unknown-actor error")]
+		public void UnknownTargetActorIsAnError()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"target_actor\":999999}}");
+			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.False);
+			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo("Unknown target_actor 999999"));
+		}
+
 		[TestCase(TestName = "An order for an actor the local player does not own is refused with an explicit error")]
 		public void NotOwnedActorIsAnError()
 		{

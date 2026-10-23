@@ -219,6 +219,18 @@ namespace OpenRA.Test
 			Assert.That(skipped[0].GetProperty("orders").GetArrayLength(), Is.GreaterThan(0), "A refused name lists the names the actor accepts.");
 		}
 
+		[TestCase(TestName = "A group order with an unknown target_actor is refused with the unknown-target error")]
+		public void UnknownTargetInGroupIsRefused()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var mine = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using var response = AgentStateDumpTest.Request($"{{\"cmd\":\"order\",\"actors\":[{mine.ActorID}],\"order\":\"Move\",\"target_actor\":999999}}");
+			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.False, response.RootElement.ToString());
+			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo("Unknown target_actor 999999"));
+		}
+
 		[TestCase(TestName = "A group whose actors are all dead or not owned is refused, and nothing moves")]
 		public void AllInvalidGroupIsRefused()
 		{
@@ -266,7 +278,7 @@ namespace OpenRA.Test
 			Assert.That(hw.TickUntil(() => mine.Location != start, 500), Is.Not.Null, "The living e1 should leave its start cell.");
 		}
 
-		[TestCase(TestName = "A group whose actor dies after it is matched and before it resolves reports that actor's failure and orders the rest")]
+		[TestCase(TestName = "A group whose actor dies after it is matched and before it resolves lists that actor in skipped and orders the rest")]
 		public void DeadAtResolveIsSkippedAndTheRestOrdered()
 		{
 			using var hw = HeadlessWorld.Create(1);
@@ -291,20 +303,55 @@ namespace OpenRA.Test
 
 			Assert.That(killed, Is.True, "The kill never landed between match and resolve, so the window was not exercised.");
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
-			Assert.That(OrderedIds(root), Is.EquivalentTo([mine.ActorID, dead.ActorID]), "Both actors matched, so both are in ordered.");
+			Assert.That(OrderedIds(root), Is.EquivalentTo([mine.ActorID]), "The dead actor never took the order, so only the living one is ordered.");
+			Assert.That(root.GetProperty("matched").GetInt32(), Is.EqualTo(2), "Both actors matched, so both count as matched.");
+
+			var skipped = root.GetProperty("skipped").EnumerateArray().ToArray();
+			Assert.That(skipped.Length, Is.EqualTo(1), root.ToString());
+			Assert.That(skipped[0].GetProperty("actor").GetUInt32(), Is.EqualTo(dead.ActorID));
+			Assert.That(skipped[0].GetProperty("error").GetString(), Is.EqualTo($"actor {dead.ActorID} died before the order resolved"));
 
 			var results = root.GetProperty("results").EnumerateArray().ToArray();
-			Assert.That(results.Length, Is.EqualTo(2), root.ToString());
+			Assert.That(results.Length, Is.EqualTo(1), root.ToString());
 
 			var living = results.Single(r => r.GetProperty("actor").GetUInt32() == mine.ActorID);
 			Assert.That(living.GetProperty("settled").GetBoolean(), Is.True, living.ToString());
 			Assert.That(living.GetProperty("valid").GetBoolean(), Is.True, living.ToString());
 
-			var failed = results.Single(r => r.GetProperty("actor").GetUInt32() == dead.ActorID);
-			Assert.That(failed.GetProperty("settled").GetBoolean(), Is.False, failed.ToString());
-			Assert.That(failed.GetProperty("error").GetString(), Is.EqualTo($"actor {dead.ActorID} died before the order resolved"));
-
 			Assert.That(hw.TickUntil(() => mine.Location != start, 500), Is.Not.Null, "The living e1 should leave its start cell.");
+		}
+
+		[TestCase(TestName = "A group whose every actor dies before it resolves is ok, with all of them in skipped and none ordered")]
+		public void EveryActorDeadAtResolveIsSkipped()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var first = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			var second = hw.CreateActor("e1", hw.FindClearArea(new CPos(60, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			var destination = hw.FindClearArea(new CPos(50, 56), 1, 1, 4);
+
+			// Both awaits are registered and unresolved, so the order has not taken effect. Both kills land there, once.
+			var killed = false;
+			var line = $"{{\"cmd\":\"order\",\"actors\":[{first.ActorID},{second.ActorID}],\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, line, () =>
+			{
+				if (!killed && PendingAwaits(hw.World) == 2)
+				{
+					first.Kill(first);
+					second.Kill(second);
+					killed = true;
+				}
+			});
+			var root = response.RootElement;
+
+			Assert.That(killed, Is.True, "The kills never landed between match and resolve, so the window was not exercised.");
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+			Assert.That(OrderedIds(root), Is.Empty, "Neither actor took the order, so none is ordered.");
+			Assert.That(root.GetProperty("results").GetArrayLength(), Is.EqualTo(0), root.ToString());
+			Assert.That(root.GetProperty("matched").GetInt32(), Is.EqualTo(2), root.ToString());
+
+			var skipped = root.GetProperty("skipped").EnumerateArray().Select(s => s.GetProperty("actor").GetUInt32()).ToArray();
+			Assert.That(skipped, Is.EquivalentTo([first.ActorID, second.ActorID]), root.ToString());
 		}
 
 		[TestCase(TestName = "A group whose settle outlasts the wait budget reports each actor's timeout and returns, without hanging")]

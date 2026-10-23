@@ -612,8 +612,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>
 		/// Builds the reply to a grouped order once every ordered actor's await has settled or failed (P1.14). A failed await becomes
-		/// that actor's error, and the other actors still report. A paused game, or a budget of game ticks that runs out first,
-		/// leaves the awaits not yet settled unsettled: they are abandoned, and each of their actors reports why. Must not run on the game thread.
+		/// that actor's error, and the other actors still report. An actor that dies before the order resolves never took it, so it
+		/// moves from ordered to skipped. A paused game, or a budget of game ticks that runs out first, leaves the awaits not yet
+		/// settled unsettled: they are abandoned, and each of their actors reports why. Must not run on the game thread.
 		/// </summary>
 		public static GroupedOrderV1 SettleGroup(GroupIssued issued)
 		{
@@ -633,7 +634,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			// One budget for the whole group, so N awaits cannot wait N times the budget. GroupResult runs only on an await that
 			// settled: an abandoned await never completes, so its ThrowIfFailed would block.
-			var results = new GroupResultV1[ids.Length];
+			var ordered = new List<uint>(ids.Length);
+			var results = new List<GroupResultV1>(ids.Length);
+			var died = new List<SkippedActorV1>();
 			var remaining = AgentGameClock.MaxWaitTicks;
 			for (var i = 0; i < awaits.Length; i++)
 			{
@@ -641,7 +644,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 				remaining -= wait.WaitedTicks;
 				if (wait.Outcome == AwaitWait.Settled)
 				{
-					results[i] = GroupResult(ids[i], awaits[i]);
+					if (awaits[i].DiedBeforeResolve)
+						died.Add(new SkippedActorV1(ids[i], $"actor {ids[i]} died before the order resolved"));
+					else
+					{
+						ordered.Add(ids[i]);
+						results.Add(GroupResult(ids[i], awaits[i]));
+					}
+
 					continue;
 				}
 
@@ -649,15 +659,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 				for (var j = i; j < awaits.Length; j++)
 				{
 					awaits[j].Abandon();
-					results[j] = wait.Outcome == AwaitWait.Paused
+					ordered.Add(ids[j]);
+					results.Add(wait.Outcome == AwaitWait.Paused
 						? new GroupResultV1(ids[j], false)
-						: new GroupResultV1(ids[j], false, Error: $"the order did not settle within {AgentGameClock.MaxWaitTicks} ticks");
+						: new GroupResultV1(ids[j], false, Error: $"the order did not settle within {AgentGameClock.MaxWaitTicks} ticks"));
 				}
 
 				break;
 			}
 
-			return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ids, matched, results, skipped);
+			var allSkipped = died.Count == 0 ? skipped : (skipped ?? []).Concat(died).ToArray();
+			return new GroupedOrderV1(true, "order", ack.Tick, ack.MinEffectTick, ordered.ToArray(), matched, results.ToArray(), allSkipped);
 		}
 
 		/// <summary>
@@ -783,7 +795,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return Target.FromPos(pos);
 
 			if (request.TargetActor is { } targetId)
-				return Target.FromActor(Live(world, targetId));
+				return Target.FromActor(Live(world, targetId, "target_actor"));
 
 			return Target.Invalid;
 		}
@@ -833,12 +845,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return actor;
 		}
 
-		/// <summary>Finds an actor by ID. An unknown ID and a dead actor are reported as different errors.</summary>
-		internal static Actor Live(World world, uint id)
+		/// <summary>
+		/// Finds an actor by ID. An unknown ID and a dead actor are reported as different errors. The role names the field the ID came
+		/// from, so an unknown target_actor is reported as an unknown target, not as an unknown actor.
+		/// </summary>
+		internal static Actor Live(World world, uint id, string role = "actor")
 		{
 			var actor = world.Actors.FirstOrDefault(a => a.ActorID == id);
 			if (actor == null)
-				throw new ArgumentException($"Unknown actor {id}");
+				throw new ArgumentException($"Unknown {role} {id}");
 
 			if (actor.IsDead)
 				throw new ArgumentException($"Actor {id} is dead");

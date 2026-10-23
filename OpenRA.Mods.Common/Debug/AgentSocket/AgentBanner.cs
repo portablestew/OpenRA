@@ -90,7 +90,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " A group returns ordered (the actor ids), matched, and results (one per ordered actor: actor, valid, effect_tick, settled,"
 				+ " settled_ticks, outcome, reason, orders, error; an Attack or a DeployTransform actor carries only actor,"
 				+ " settled, outcome and reason). A group is partial:"
-					+ " a matched actor that is dead, not owned, or refuses the name or on is skipped, and the rest are ordered."
+					+ " a matched actor that is dead, not owned, or refuses the name or on, or that dies before the order resolves, is skipped, and the rest are ordered."
 					+ " skipped (omitted when none) lists each one with error, and orders when it refused the name."
 					+ " The group is refused only when no matched actor can take it."
 				+ " A name the actor does not accept is refused: ok:false, error, available (the names it accepts)."
