@@ -168,12 +168,34 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var changed = seen == null || !seen.TryGetValue(key, out var previous) || !previous.SequenceEqual(signature);
 			var options = changed ? ordered.Select(i => OptionOf(queue, i, buildable, funds)).ToArray() : null;
 
-			// The engine ticks only the head of a queue, so a finished head holds everything behind it.
-			var head = queue.AllQueued().FirstOrDefault();
-			var blocker = head is { Done: true } ? head.Item : null;
+			var blocker = FinishedHead(queue)?.Item;
 
 			return new ProductionQueueV1(actor.ActorID, producers, queue.Info.Type, queue.Enabled, options, changed,
 				queue.AllQueued().Select(i => ItemOf(queue, i)).ToArray(), blocker);
+		}
+
+		/// <summary>
+		/// The item at the head of a queue when it is finished and waits for placement, or null. The engine ticks only the head of a
+		/// queue, so a finished head holds everything behind it.
+		/// </summary>
+		static ProductionItem FinishedHead(ProductionQueue queue)
+		{
+			return queue.AllQueued().FirstOrDefault() is { Done: true } head ? head : null;
+		}
+
+		/// <summary>
+		/// The finished heads of the player's queues, each with its queue, in the order the production reply lists the queues. Must run
+		/// on the game thread.
+		/// </summary>
+		public static (ProductionQueue Queue, ProductionItem Head)[] FinishedHeads(World world, Player player)
+		{
+			return world.ActorsWithTrait<ProductionQueue>()
+				.Where(t => t.Actor.Owner == player && t.Actor.IsInWorld && !t.Actor.IsDead)
+				.OrderBy(t => t.Actor.ActorID)
+				.ThenBy(t => t.Trait.Info.Type, StringComparer.Ordinal)
+				.Select(t => (Queue: t.Trait, Head: FinishedHead(t.Trait)))
+				.Where(h => h.Head != null)
+				.ToArray();
 		}
 
 		static ProductionOptionV1 OptionOf(ProductionQueue queue, ActorInfo info, ISet<string> buildable, int cash)

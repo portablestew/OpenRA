@@ -26,6 +26,9 @@ namespace OpenRA.Test
 	{
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
+		/// <summary>The wire form of an event DTO. Records compare their actors array by reference, so markers are compared through it.</summary>
+		static string Wire(object dto) => JsonSerializer.Serialize(dto, Json);
+
 		sealed record Fake(string Event, int Tick, int Id);
 
 		/// <summary>An event that names its actor, as the event DTOs do.</summary>
@@ -49,7 +52,7 @@ namespace OpenRA.Test
 
 			Assert.That(batch, Has.Count.EqualTo(3), "Two in full, then one marker for the third.");
 			Assert.That(batch.Take(2), Is.EqualTo(threes.Take(2)), "The first two should flush in full, in arrival order.");
-			Assert.That(batch[2], Is.EqualTo(new AggregatedV1("damaged", 1, 12, 12)),
+			Assert.That(Wire(batch[2]), Is.EqualTo(Wire(new AggregatedV1("damaged", 1, 12, 12, []))),
 				"The marker should count the third event and cover its tick, 12.");
 		}
 
@@ -65,7 +68,7 @@ namespace OpenRA.Test
 
 			Assert.That(batch, Has.Count.EqualTo(3), "Two in full, then one marker for the three suppressed.");
 			Assert.That(batch.Take(2), Is.EqualTo(fives.Take(2)), "The first two should flush in full, in arrival order.");
-			Assert.That(batch[2], Is.EqualTo(new AggregatedV1("damaged", 3, 12, 14)),
+			Assert.That(Wire(batch[2]), Is.EqualTo(Wire(new AggregatedV1("damaged", 3, 12, 14, []))),
 				"The marker should count the three suppressed events and cover their ticks, 12 to 14.");
 		}
 
@@ -116,8 +119,8 @@ namespace OpenRA.Test
 
 			var batch = buffer.Flush();
 
-			var expected = new object[] { d1, k1, d2, new AggregatedV1("damaged", 3, 11, 13), p1, k2 };
-			Assert.That(batch, Is.EqualTo(expected),
+			var expected = new object[] { d1, k1, d2, new AggregatedV1("damaged", 3, 11, 13, []), p1, k2 };
+			Assert.That(batch.Select(Wire), Is.EqualTo(expected.Select(Wire)),
 				"The turn should flush in arrival order, with the damaged marker where d3 arrived.");
 			Assert.That(buffer.Pending, Is.Zero, "A flush should empty the buffer.");
 			Assert.That(buffer.Flush(), Is.Empty, "A second flush with nothing added should be empty.");
@@ -191,6 +194,10 @@ namespace OpenRA.Test
 			Assert.That(marker.Aggregated, Is.EqualTo(13), "Fifteen events, two in full, leave thirteen suppressed, and the count should say so.");
 			Assert.That(marker.Actors, Is.EqualTo(Enumerable.Range(3, 10).Select(i => (uint)i)),
 				"The marker should name the first ten suppressed actors, not all thirteen.");
+
+			using var wire = JsonDocument.Parse(Wire(marker));
+			Assert.That(wire.RootElement.GetProperty("actors").GetArrayLength(), Is.EqualTo(10),
+				"On the wire the marker's actors should hold the same ten ids.");
 		}
 
 		[TestCase(TestName = "An actor hit many times in one turn is named once in the marker")]
@@ -206,17 +213,40 @@ namespace OpenRA.Test
 			Assert.That(marker.Actors, Is.EqualTo(new uint[] { 7 }), "Actor 7 should be named once.");
 		}
 
-		[TestCase(TestName = "A marker for events with no actor field has no actors key on the wire")]
-		public void MarkerWithoutAnActorHasNoActorsKey()
+		[TestCase(TestName = "A marker covering one suppressed event has aggregated 1 and one actor, and its first two events stay in full")]
+		public void MarkerOfOneEventNamesItsActor()
+		{
+			var buffer = new AgentTurnBuffer();
+			var hits = new[] { Damaged(1, 5u), Damaged(2, 6u), Damaged(3, 7u) };
+			foreach (var e in hits)
+				buffer.Add(e);
+
+			var batch = buffer.Flush();
+
+			Assert.That(batch.Take(2), Is.EqualTo(hits.Take(2)), "The first two of the type should flush in full.");
+			var marker = (AggregatedV1)batch[2];
+			Assert.That(marker.Aggregated, Is.EqualTo(1), "One event is suppressed, so the marker counts one.");
+			Assert.That(marker.Actors, Is.EqualTo(new uint[] { 7 }), "The marker should name the actor of the one suppressed event.");
+
+			using var wire = JsonDocument.Parse(Wire(marker));
+			Assert.That(wire.RootElement.GetProperty("actors").ValueKind, Is.EqualTo(JsonValueKind.Array),
+				"On the wire the marker's actors should be an array.");
+			Assert.That(wire.RootElement.GetProperty("actors").EnumerateArray().Select(a => a.GetUInt32()), Is.EqualTo(new uint[] { 7 }));
+		}
+
+		[TestCase(TestName = "A marker for events with no actor field has an empty actors array on the wire")]
+		public void MarkerWithoutAnActorHasEmptyActorsArray()
 		{
 			var buffer = new AgentTurnBuffer();
 			foreach (var e in Enumerable.Range(1, 3).Select(i => Damaged(9 + i, i)))
 				buffer.Add(e);
 
 			var marker = buffer.Flush()[2];
-			var json = JsonSerializer.Serialize(marker, Json);
 
-			Assert.That(json, Does.Not.Contain("actors"), "Events without an actor field should not add an actors key.");
+			using var wire = JsonDocument.Parse(Wire(marker));
+			Assert.That(wire.RootElement.TryGetProperty("actors", out var actors), Is.True, "The marker should always carry an actors key.");
+			Assert.That(actors.ValueKind, Is.EqualTo(JsonValueKind.Array), "The actors key should hold an array.");
+			Assert.That(actors.GetArrayLength(), Is.Zero, "Events without an actor field should name no actors.");
 			}
 
 			[TestCase(TestName = "Notifications aggregate per name, so a finished structure is never hidden behind other notifications")]
@@ -232,10 +262,10 @@ namespace OpenRA.Test
 				var batch = buffer.Flush();
 
 				Assert.That(batch, Does.Contain(built), "ConstructionComplete should flush in full, not behind the SilosNeeded and LowPower markers.");
-				Assert.That(batch.OfType<AggregatedV1>(), Is.EqualTo(new[]
+				Assert.That(batch.OfType<AggregatedV1>().Select(Wire), Is.EqualTo(new[]
 				{
-					new AggregatedV1("notification", 1, 3, 3, null, "SilosNeeded"),
-					new AggregatedV1("notification", 1, 6, 6, null, "LowPower"),
+					Wire(new AggregatedV1("notification", 1, 3, 3, [], "SilosNeeded")),
+					Wire(new AggregatedV1("notification", 1, 6, 6, [], "LowPower")),
 				}), "Each suppressed name should get its own marker, and the marker should name it.");
 			}
 

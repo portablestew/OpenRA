@@ -57,7 +57,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 						continue;
 
 					Seen.Add((player, key));
-					AgentEvents.Raise(new PowerSeenV1("power_seen", world.WorldTick, player.PlayerName, key, power.Name));
+					AgentEvents.Raise(new PowerSeenV1("power_seen", world.WorldTick, player.PlayerName, key, power.Name,
+						power.RemainingTicks, power.TotalTicks));
 				}
 			}
 		}

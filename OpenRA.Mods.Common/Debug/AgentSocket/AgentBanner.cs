@@ -246,9 +246,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    power_low, power_restored, defeated, game_over and overflow name no actor, so they are always sent. power_ready is sent for\n");
 			text.Append("    your own powers, and for another player's only when its timer is shown to you (see powers). notification is sent only for your\n");
 			text.Append("    side and your allies, and the cash counter's tick notifications are not sent: cash is in state and production.\n");
-			text.Append("    power_seen is sent once per power, the first time its timer is shown to you, with its key and name (see powers).\n");
+			text.Append("    power_seen is sent once per power, the first time its timer is shown to you, with its key, name, remaining_ticks"
+				+ " and total_ticks (see powers).\n");
 			text.Append("    A notification that announces a finished item (ConstructionComplete for a structure, UnitReady for a unit) names it in item,\n");
 			text.Append("    and queue_type names the queue that built it. A structure has placement_required true: place it. A unit has cell, where it was built.\n");
+			text.Append("    A structure of yours also has placeable, every finished structure place accepts now, and blocked_by when items wait behind it.\n");
 			text.Append("    NewOptions names in options the options that became buildable since the last one (empty when none). An ally's has no options.\n");
 			text.Append("  Null and omitted: a null key is present with no value (an unknown value, or an optional request key left out).\n");
 			text.Append("    A key that does not apply is omitted:\n");
@@ -292,8 +294,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ "    row lists), tick (the game clock after the request). The map image: map_state_png (its workspace path, or\n");
 			text.Append("    null), map_state_tick (the tick it was rendered at, equal to tick after a world-changing request), map_state_render\n");
 			text.Append("    (ok or unavailable), and map_px_per_cell, map_origin, map_size (its geometry).\n"
-				+ "    A marker's aggregated is the true count of its events. actors names up to 10 of the distinct actors they covered,\n"
-				+ "    and is left out when they name none. name is the notification or power name they share, and is left out when there is none.\n"
+				+ "    A marker's aggregated is the true count of its events, and a marker may cover a single event. actors is always present:\n"
+				+ "    up to 10 of the distinct actors they covered, and [] when they name none. name is the notification or power name they share,\n"
+				+ "    and is left out when there is none.\n"
 				+ "    A connection's first envelope has initial:true, its state in full, and no events from before its first request.\n"
 				+ "    The static data (state.map, state.ms_per_tick, and players' faction, color, bot and handicap) rides with the state until a world change (an undo,\n"
 				+ "    a load_skirmish, a new world) or a reconnect; in the envelopes between, those keys are null.\n"

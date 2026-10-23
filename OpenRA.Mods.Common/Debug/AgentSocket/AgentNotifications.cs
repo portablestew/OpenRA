@@ -24,14 +24,18 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// as the rules name them) also names it in Item, and QueueType names the queue that built it. A finished structure waits for
 	/// placement: PlacementRequired is true, and place puts it. A finished unit has its Cell, the cell it was built on. Those keys are
 	/// left out of the JSON otherwise. A NewOptions notification of the local player names in Options the options that became buildable
-	/// since the last one (empty when none); an ally's has no Options.
+	/// since the last one (empty when none); an ally's has no Options. A finished structure of the local player also names in Placeable
+	/// every finished queue head the player can place now, this one included, and BlockedBy names it when items wait behind it. An
+	/// ally's ConstructionComplete has neither.
 	/// </summary>
 	public sealed record NotificationV1(string Event, int Tick, string Name, string Owner,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Item = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int[] Cell = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? PlacementRequired = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string QueueType = null,
-		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Options = null);
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Options = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string BlockedBy = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Placeable = null);
 
 	public static class AgentNotifications
 	{
@@ -114,8 +118,21 @@ namespace OpenRA.Mods.Common.AgentSocket
 			}
 
 			var options = name == NewOptionsName && player != null && player == local ? BecameBuildable(player) : null;
+
+			// A finished structure of the local player names what place accepts now, and the head it holds items behind.
+			string[] placeable = null;
+			string blockedBy = null;
+			if (item != null && player != null && player == local)
+			{
+				var heads = AgentProduction.FinishedHeads(local.World, player);
+				placeable = heads.Select(h => h.Head.Item).ToArray();
+				var holder = heads.Where(h => h.Queue.Info.Type == queueType && h.Head.Item == item.Name)
+					.Select(h => h.Queue).FirstOrDefault();
+				blockedBy = holder != null && holder.AllQueued().Skip(1).Any() ? item.Name : null;
+			}
+
 			AgentEvents.Raise(new NotificationV1("notification", tick, name, player?.PlayerName, item?.Name,
-				null, item == null ? null : true, queueType, options));
+				null, item == null ? null : true, queueType, options, blockedBy, placeable));
 		}
 
 		/// <summary>

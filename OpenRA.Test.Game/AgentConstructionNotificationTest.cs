@@ -82,6 +82,45 @@ namespace OpenRA.Test
 			Assert.That(note.GetProperty("placement_required").GetBoolean(), Is.True, "A finished structure waits for placement.");
 			Assert.That(note.TryGetProperty("cell", out _), Is.False, "A finished structure has no cell until place puts it.");
 			Assert.That(note.GetProperty("owner").GetString(), Is.EqualTo(hw.LocalPlayer.PlayerName));
+			Assert.That(PlaceableOf(note), Is.EqualTo(new[] { "powr" }), "The only finished structure is this one, so it is the one place accepts.");
+			Assert.That(note.TryGetProperty("blocked_by", out _), Is.False, "Nothing is queued behind the structure, so nothing waits on it.");
+		}
+
+		[TestCase(TestName = "A finished structure with items queued behind it names itself in blocked_by")]
+		public void FinishedStructureNamesItsQueuedBehind()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(SettleTicks);
+
+			// The second powr waits behind the first, so the first holds it until it is placed.
+			var notes = FinishedNotifications(hw, StructureNotification,
+				"{\"cmd\":\"build\",\"item\":\"powr\"}", "{\"cmd\":\"build\",\"item\":\"powr\"}");
+			var first = notes[0];
+
+			Assert.That(first.GetProperty("blocked_by").GetString(), Is.EqualTo("powr"), "The finished structure holds the item queued behind it.");
+			Assert.That(PlaceableOf(first), Is.EqualTo(new[] { "powr" }), "The held structure is still the one place accepts.");
+		}
+
+		[TestCase(TestName = "ConstructionComplete lists every finished queue head in placeable")]
+		public void PlaceableSpansQueues()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+
+			// A Defense item needs a barracks: TENT for the Allies, and BARR for the Soviets.
+			hw.CreateActor(hw.LocalPlayer.Faction.InternalName == "soviet" ? "barr" : "tent", hw.FindClearArea(new CPos(56, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(SettleTicks);
+
+			// The Building queue's powr and the Defense queue's pbox both finish and wait for placement. The second one to finish
+			// names both, so the last ConstructionComplete is the one to check.
+			var notes = FinishedNotifications(hw, StructureNotification,
+				"{\"cmd\":\"build\",\"item\":\"pbox\"}", "{\"cmd\":\"build\",\"item\":\"powr\"}");
+			var last = notes[^1];
+
+			Assert.That(PlaceableOf(last), Is.EqualTo(new[] { "powr", "pbox" }),
+				"Placeable should name the finished head of each queue, in the order the production reply lists the queues.");
+			Assert.That(last.TryGetProperty("blocked_by", out _), Is.False, "Each queue holds one item, so nothing waits behind either.");
 		}
 
 		[TestCase(TestName = "A finished unit's UnitReady names the item, its queue and the cell it was built on, with no placement_required")]
@@ -101,6 +140,8 @@ namespace OpenRA.Test
 			Assert.That(note.GetProperty("item").GetString(), Is.EqualTo("e1"), "The notification should name the unit's type.");
 			Assert.That(note.GetProperty("queue_type").GetString(), Is.EqualTo("Infantry"), "The notification should name the queue that built the unit.");
 			Assert.That(note.TryGetProperty("placement_required", out _), Is.False, "A finished unit is not placed, so it has no placement_required.");
+			Assert.That(note.TryGetProperty("placeable", out _), Is.False, "Placeable is for finished structures only.");
+			Assert.That(note.TryGetProperty("blocked_by", out _), Is.False, "Blocked_by is for finished structures only.");
 
 			var cell = note.GetProperty("cell").EnumerateArray().Select(c => c.GetInt32()).ToArray();
 			Assert.That(cell, Has.Length.EqualTo(2), "The cell is [x, y].");
@@ -112,17 +153,36 @@ namespace OpenRA.Test
 		/// <summary>Queues the build, serves the waits that follow it, and returns the first notification with the given name.</summary>
 		static JsonElement FinishedNotification(HeadlessWorld hw, string build, string name)
 		{
-			var lines = new StringBuilder(build).Append('\n');
+			return FinishedNotifications(hw, name, build)[0];
+		}
+
+		/// <summary>
+		/// Queues each build in order, serves the waits that follow them, and returns every notification with the given name, in the
+		/// order the socket sent them.
+		/// </summary>
+		static List<JsonElement> FinishedNotifications(HeadlessWorld hw, string name, params string[] builds)
+		{
+			var lines = new StringBuilder();
+			foreach (var build in builds)
+				lines.Append(build).Append('\n');
+
 			for (var i = 0; i < Waits; i++)
 				lines.Append(WaitLine);
 
 			var output = Serve(hw, lines.ToString());
-			var firstReply = Responses(output).First();
-			Assert.That(firstReply.GetProperty("results").GetProperty("ok").GetBoolean(), Is.True, "The build was refused.");
+			var replies = Responses(output);
+			for (var i = 0; i < builds.Length; i++)
+				Assert.That(replies[i].GetProperty("results").GetProperty("ok").GetBoolean(), Is.True, "The build was refused.");
 
 			var found = Notifications(output).Where(n => n.GetProperty("name").GetString() == name).ToList();
 			Assert.That(found, Is.Not.Empty, $"No {name} notification reached the socket.");
-			return found[0];
+			return found;
+		}
+
+		/// <summary>The placeable names of a notification, in the order the socket lists them.</summary>
+		static string[] PlaceableOf(JsonElement note)
+		{
+			return note.GetProperty("placeable").EnumerateArray().Select(p => p.GetString()).ToArray();
 		}
 
 		/// <summary>

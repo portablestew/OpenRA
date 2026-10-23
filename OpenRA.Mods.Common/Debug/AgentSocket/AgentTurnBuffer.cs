@@ -21,10 +21,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// The suppressed events of one type and name in one turn: how many, and the ticks they cover (P3.2). Event is the event type,
 	/// as the event key names it, and Name is the name those events share, such as a notification's or a power's, and is null
 	/// when they name none. The wire keys are event, aggregated, tick_from, tick_to, actors, and name. Actors names up to ten
-	/// distinct actors those events covered, in arrival order, and is null when the events name no actor.
+	/// distinct actors those events covered, in arrival order, and is empty when the events name no actor.
 	/// </summary>
-	public sealed record AggregatedV1(string Event, int Aggregated, int TickFrom, int TickTo,
-		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint[] Actors = null,
+	public sealed record AggregatedV1(string Event, int Aggregated, int TickFrom, int TickTo, uint[] Actors,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Name = null);
 
 	/// <summary>
@@ -169,8 +168,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				}
 
 				foreach (var slot in slots.Values)
-					batch[slot.Index] = new AggregatedV1(slot.Type, slot.Count, slot.From, slot.To,
-						slot.Actors.Count == 0 ? null : slot.Actors.ToArray(), slot.Name);
+					batch[slot.Index] = new AggregatedV1(slot.Type, slot.Count, slot.From, slot.To, slot.Actors.ToArray(), slot.Name);
 
 				return batch;
 			}

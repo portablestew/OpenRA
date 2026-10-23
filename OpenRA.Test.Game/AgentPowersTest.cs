@@ -402,6 +402,26 @@ namespace OpenRA.Test
 			Assert.That(Field(seen[0], "Name"), Is.EqualTo(EnemyNuke(hw).Name), "power_seen names the power as the powers command does.");
 		}
 
+		[TestCase(TestName = "A power_seen carries the remaining and total ticks of the engine's timer, as the powers command reports them")]
+		public void PowerSeenCarriesTimerTicks()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var events = WatchEvents();
+			hw.CreateActor("mslo", hw.FindClearArea(new CPos(50, 50), 2, 1), hw.EnemyPlayer);
+
+			var seen = new List<object>();
+			for (var i = 0; i < 5 && seen.Count == 0; i++)
+			{
+				hw.Tick(1);
+				seen = SeenEvents(events, NukePrefix, hw.EnemyPlayer);
+			}
+
+			Assert.That(seen, Has.Count.EqualTo(1), "The enemy nuke's timer is shown to enemies, so its first appearance raises one power_seen.");
+			var nuke = EnemyNuke(hw);
+			Assert.That(Field(seen[0], "TotalTicks"), Is.EqualTo(nuke.TotalTicks), "The event carries the timer's charge.");
+			Assert.That(Field(seen[0], "RemainingTicks"), Is.EqualTo(nuke.RemainingTicks), "The event carries the timer's remaining ticks at the moment it was seen.");
+		}
+
 		[TestCase(TestName = "A power_seen is raised once per power, and not again while the timer stays visible")]
 		public void PowerSeenFiresOncePerPower()
 		{
