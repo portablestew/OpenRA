@@ -226,10 +226,8 @@ namespace OpenRA.Test
 			hw.Tick(1);
 			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
 
-			// await false answers at once, so the move is still under way when the state is read.
-			var line = $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}],\"await\":false}}";
-			using (var response = RequestWithTicks(hw, line))
-				Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True, response.RootElement.ToString());
+			// The Move goes straight into the world, so the unit is still under way when the state is read. A socket Move would wait to settle.
+			hw.World.IssueOrder(new Order("Move", unit, Target.FromCell(hw.World, destination), false));
 			hw.Tick(3);
 
 			using var state = State();

@@ -430,12 +430,12 @@ namespace OpenRA.Test
 			Assert.That(unit.Location, Is.EqualTo(start));
 		}
 
-		[TestCase(TestName = "await:false is refused for a group, since a job holds one actor's await")]
+		[TestCase(TestName = "await:false is refused for a group, as it is for a single actor")]
 		public void GroupAwaitFalseIsRejected()
 		{
 			using var response = AgentStateDumpTest.Request("{\"cmd\":\"order\",\"type\":\"e1\",\"order\":\"Move\",\"cell\":[1,1],\"await\":false}");
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.False);
-			Assert.That(response.RootElement.GetProperty("error").GetString(), Is.EqualTo("await:false applies only to a single actor"));
+			Assert.That(response.RootElement.GetProperty("error").GetString(), Does.StartWith("await:false is not supported"));
 		}
 
 		/// <summary>The awaits on world that are registered and not yet resolved. Test use, read through AgentOrderAwait.PendingCount.</summary>

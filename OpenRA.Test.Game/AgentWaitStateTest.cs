@@ -9,6 +9,7 @@
  */
 #endregion
 
+using System;
 using System.Linq;
 using System.Text.Json;
 using NUnit.Framework;
@@ -22,6 +23,9 @@ namespace OpenRA.Test
 	[TestFixture]
 	sealed class AgentWaitStateTest
 	{
+		/// <summary>The header key only an opponent's shown power timer adds; it is absent otherwise.</summary>
+		const string PowersKey = "powers";
+
 		static readonly string[] SummaryKeys = ["tick", "game_over", "winner", "local_player", "funds", "capacity", "power",
 			"known_counts", "threats", "unit_counts"];
 		static readonly string[] FullOnlyKeys = ["units", "map", "players", "selection", "net_frame", "ms_per_tick", "paused"];
@@ -98,6 +102,77 @@ namespace OpenRA.Test
 				"unit_counts is the number of the local player's units the full digest lists.");
 			Assert.That(header.GetProperty("known_counts").GetProperty(hw.LocalPlayer.PlayerName).GetRawText(),
 				Is.EqualTo(local.GetProperty("known_counts").GetRawText()), "known_counts is the full digest's known counts, per player.");
+		}
+
+		[TestCase(TestName = "A wait header lists an opponent's shown power timer, as the powers command reports it, and the summary has it too")]
+		public void WaitHeaderListsAnOpponentsShownTimer()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("mslo", hw.FindClearArea(new CPos(50, 50), 2, 1), hw.EnemyPlayer);
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(40, 50), 2, 2), hw.EnemyPlayer);
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(40, 53), 2, 2), hw.EnemyPlayer);
+			hw.Tick(5);
+
+			using var waited = AgentStateDumpTest.RawRequest("{\"cmd\":\"wait\",\"timeout_ticks\":0}");
+			var header = waited.RootElement.GetProperty("state");
+			Assert.That(Keys(header), Is.EquivalentTo(SummaryKeys.Append(PowersKey)), "An opponent's shown timer adds exactly the powers key.");
+
+			var timer = header.GetProperty(PowersKey).EnumerateArray().Single();
+			Assert.That(Keys(timer), Is.EqualTo(new[] { "order", "owner", "remaining_ticks", "ready" }));
+
+			// The powers command is the reference: the header's timer is the same power, read at the same tick.
+			var nuke = EnemyNuke(hw);
+			Assert.That(timer.GetProperty("order").GetString(), Is.EqualTo(nuke.GetProperty("order").GetString()));
+			Assert.That(timer.GetProperty("owner").GetString(), Is.EqualTo(hw.EnemyPlayer.PlayerName));
+			Assert.That(timer.GetProperty("remaining_ticks").GetInt32(), Is.EqualTo(nuke.GetProperty("remaining_ticks").GetInt32()));
+			Assert.That(timer.GetProperty("ready").GetBoolean(), Is.False, "The silo's charge has barely started, so the power is not ready.");
+
+			using var summary = AgentStateDumpTest.RawRequest("{\"cmd\":\"state\",\"detail\":\"summary\"}");
+			Assert.That(summary.RootElement.GetProperty("state").GetRawText(), Is.EqualTo(header.GetRawText()));
+		}
+
+		[TestCase(TestName = "A wait header has no powers key when the local player's own power is the only one, or no power is built")]
+		public void WaitHeaderOmitsPowersWithNoOpponentTimer()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.Tick(1);
+			using var empty = AgentStateDumpTest.RawRequest("{\"cmd\":\"wait\",\"timeout_ticks\":0}");
+			Assert.That(Keys(empty.RootElement.GetProperty("state")), Is.EquivalentTo(SummaryKeys), "With no power built there is no powers key.");
+
+			// The local player's own silo is listed by the powers command, but the header leaves own powers out.
+			hw.CreateActor("mslo", hw.FindClearArea(new CPos(50, 50), 2, 1), hw.LocalPlayer);
+			hw.Tick(5);
+			Assert.That(PowersOf().Any(p => p.GetProperty("owner").GetString() == hw.LocalPlayer.PlayerName), Is.True,
+				"The own silo is listed, so the absence below is the header's rule and not a missing power.");
+			using var own = AgentStateDumpTest.RawRequest("{\"cmd\":\"wait\",\"timeout_ticks\":0}");
+			Assert.That(Keys(own.RootElement.GetProperty("state")), Is.EquivalentTo(SummaryKeys), "Own powers are left out of the header.");
+		}
+
+		[TestCase(TestName = "A wait header leaves out an opponent's power whose timer the local player is not shown")]
+		public void WaitHeaderOmitsAHiddenOpponentTimer()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("powerproxy.parabombs", hw.FindClearArea(new CPos(50, 60), 1, 1), hw.EnemyPlayer);
+			hw.Tick(5);
+
+			Assert.That(PowersOf().Any(p => p.GetProperty("owner").GetString() == hw.EnemyPlayer.PlayerName), Is.False,
+				"The enemy airstrike's timer is shown only to its owner, so the powers command does not list it either.");
+			using var waited = AgentStateDumpTest.RawRequest("{\"cmd\":\"wait\",\"timeout_ticks\":0}");
+			Assert.That(Keys(waited.RootElement.GetProperty("state")), Is.EquivalentTo(SummaryKeys), "A hidden timer adds no powers key.");
+		}
+
+		/// <summary>The powers command's entries, as JsonElements, for the local player's view at this tick.</summary>
+		static JsonElement[] PowersOf()
+		{
+			using var response = AgentStateDumpTest.Request("{\"cmd\":\"powers\"}");
+			return response.RootElement.GetProperty("powers").EnumerateArray().Select(p => p.Clone()).ToArray();
+		}
+
+		/// <summary>The enemy's nuke as the powers command reports it.</summary>
+		static JsonElement EnemyNuke(HeadlessWorld hw)
+		{
+			return PowersOf().Single(p => p.GetProperty("owner").GetString() == hw.EnemyPlayer.PlayerName
+				&& p.GetProperty("order").GetString().StartsWith("NukePowerInfo", StringComparison.Ordinal));
 		}
 
 		[TestCase(TestName = "state with no detail is the full digest, byte for byte the same as detail full")]

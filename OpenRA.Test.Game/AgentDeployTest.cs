@@ -20,8 +20,8 @@ namespace OpenRA.Test
 {
 	/// <summary>
 	/// The deploy command (P1.13). An mcv on a valid footprint deploys with no Move. One whose footprint is blocked moves to the
-	/// nearest valid cell and deploys in one reply. A radius with no valid cell is refused with candidate reasons. await:false
-	/// returns a job id, and wait collects the same outcome. Blockers sit on a lattice spaced like the fact's 3x4 footprint, so
+	/// nearest valid cell and deploys in one reply. A radius with no valid cell is refused with candidate reasons. Blockers sit on
+	/// a lattice spaced like the fact's 3x4 footprint, so
 	/// every footprint whose top-left is inside the square covers one.
 	/// </summary>
 	[TestFixture]
@@ -255,57 +255,6 @@ namespace OpenRA.Test
 					&& e.GetType().GetProperty("State").GetValue(e) as string == "started")
 				.ToArray();
 			Assert.That(started, Is.Empty, "A transform started, so a deploy was queued after the Move fell short.");
-		}
-
-		[TestCase(TestName = "A deploy that needs a Move, with await:false, returns a job id, and wait on that job returns the completed outcome")]
-		public void MovedDeployJobWaitCollectsCompleted()
-		{
-			using var hw = HeadlessWorld.Create(0xDEB1D);
-			hw.Tick(SettleTicks);
-			var mcv = CreateMcv(hw);
-			var start = Footprint(mcv);
-			BlockSquare(hw, start, 4);
-			hw.Tick(1);
-
-			using var issued = AgentStateDumpTest.RequestWithTicks(hw, DeployLine(mcv, ",\"await\":false"));
-			var root = issued.RootElement;
-
-			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
-			var job = root.GetProperty("job").GetInt32();
-			Assert.That(job, Is.GreaterThan(0), "await:false should return a job id.");
-
-			using var waited = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"wait\",\"job\":{job}}}");
-			var outcome = waited.RootElement;
-
-			Assert.That(outcome.GetProperty("ok").GetBoolean(), Is.True, outcome.ToString());
-			Assert.That(outcome.GetProperty("cmd").GetString(), Is.EqualTo("wait"));
-			Assert.That(outcome.GetProperty("outcome").GetString(), Is.EqualTo("completed"));
-			Assert.That(outcome.GetProperty("moved").GetBoolean(), Is.True);
-			Assert.That(mcv.IsDead, Is.True, "The mcv should have been replaced.");
-		}
-
-		[TestCase(TestName = "await:false returns a job id, and wait on that job returns the deploy outcome")]
-		public void AwaitFalseReturnsJobThatWaitCollects()
-		{
-			using var hw = HeadlessWorld.Create(0xDEB1D);
-			hw.Tick(SettleTicks);
-			var mcv = CreateMcv(hw);
-
-			using var issued = AgentStateDumpTest.RequestWithTicks(hw, DeployLine(mcv, ",\"await\":false"));
-			var root = issued.RootElement;
-
-			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
-			Assert.That(root.GetProperty("cmd").GetString(), Is.EqualTo("deploy"));
-			var job = root.GetProperty("job").GetInt32();
-			Assert.That(job, Is.GreaterThan(0), "await:false should return a job id.");
-
-			using var waited = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"wait\",\"job\":{job}}}");
-			var outcome = waited.RootElement;
-
-			Assert.That(outcome.GetProperty("ok").GetBoolean(), Is.True, outcome.ToString());
-			Assert.That(outcome.GetProperty("cmd").GetString(), Is.EqualTo("wait"));
-			Assert.That(outcome.GetProperty("outcome").GetString(), Is.EqualTo("completed"));
-			Assert.That(mcv.IsDead, Is.True, "The mcv should have been replaced.");
 		}
 
 		/// <summary>The events of the named types, in the order they were raised. The connection carries every event; a test looks at its own.</summary>

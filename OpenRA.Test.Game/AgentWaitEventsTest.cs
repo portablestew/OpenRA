@@ -22,7 +22,7 @@ using OpenRA.Traits;
 namespace OpenRA.Test
 {
 	/// <summary>
-	/// wait with no job is a long poll on the connection's turn buffer. The budget is game ticks: the test thread ticks the
+	/// wait is a long poll on the connection's turn buffer. The budget is game ticks: the test thread ticks the
 	/// world while the request is parked, so a timeout happens on game ticks and not on real time. An event raised while the wait
 	/// is parked releases it, and the event is in the wait's own envelope.
 	/// </summary>

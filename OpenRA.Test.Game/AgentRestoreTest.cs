@@ -20,7 +20,7 @@ using NUnit.Framework;
 namespace OpenRA.Test
 {
 	/// <summary>
-	/// The restore rules (P1.19). An undo swaps the world, so every pending order and job fails with the restored error, and its
+	/// The restore rules (P1.19). An undo swaps the world, so every pending order fails with the restored error, and its
 	/// socket thread is released rather than left to time out. An undo inside an array is refused unless it is the only or the last
 	/// item, and the other items still run. Every envelope carries the tick, which moves backwards after a rewind.
 	/// </summary>
@@ -85,9 +85,9 @@ namespace OpenRA.Test
 			return $"{{\"cmd\":\"undo\",\"offset\":{offset}}}";
 		}
 
-		static string MoveLine(Actor unit, CPos cell, string extra = "")
+		static string MoveLine(Actor unit, CPos cell)
 		{
-			return $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{cell.X},{cell.Y}]{extra}}}";
+			return $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{cell.X},{cell.Y}]}}";
 		}
 
 		/// <summary>The number of unresolved awaits on the world. Test use.</summary>
@@ -126,28 +126,6 @@ namespace OpenRA.Test
 
 			// The reply is the restored error, not a timeout: a timeout would read "did not settle".
 			var root = response.RootElement;
-			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False, root.ToString());
-			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo("restored"));
-		}
-
-		[TestCase(TestName = "A job started with await:false and collected by wait after an undo reports error restored")]
-		public void JobCollectedAfterUndoReportsRestored()
-		{
-			using var hw = SeedWindow();
-			var unit = CreateUnit(hw);
-			hw.Tick(1);
-			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
-
-			using var issued = AgentStateDumpTest.RequestWithTicks(hw, MoveLine(unit, destination, ",\"await\":false"));
-			var job = issued.RootElement.GetProperty("job").GetInt32();
-			Assert.That(job, Is.GreaterThan(0), issued.RootElement.ToString());
-			Assert.That(PendingAwaits(hw), Is.GreaterThan(0), "The job's Move had already settled, so the undo would not fail it.");
-
-			using (var undo = AgentStateDumpTest.Request(UndoLine(-GapTicks(hw))))
-				Assert.That(undo.RootElement.GetProperty("ok").GetBoolean(), Is.True, undo.RootElement.ToString());
-
-			using var waited = AgentStateDumpTest.RequestWithTicks(hw, $"{{\"cmd\":\"wait\",\"job\":{job}}}");
-			var root = waited.RootElement;
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False, root.ToString());
 			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo("restored"));
 		}

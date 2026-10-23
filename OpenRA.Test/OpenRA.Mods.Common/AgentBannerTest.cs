@@ -177,6 +177,38 @@ namespace OpenRA.Test
 			Assert.That(banner, Does.Contain("healed is any heal other than a repair"));
 		}
 
+		[TestCase(TestName = "The banner documents the group skip, the unknown target refusal, husks in threats, and the wait header's powers")]
+		public void BannerDocumentsTheOrderAndThreatChanges()
+		{
+			var banner = AgentSocketServer.Banner;
+
+			Assert.That(banner, Does.Contain("skipped (omitted when none) lists each one with error"));
+			Assert.That(banner, Does.Contain("refused as an unknown target: ok:false, error \"Unknown target_actor <id>\", for a single order and a group alike."));
+			Assert.That(banner, Does.Contain("husks are never listed"));
+			Assert.That(banner, Does.Contain("and powers when one is shown: each other player's power whose timer you can see"));
+		}
+
+		[TestCase(TestName = "The banner documents the spotted and power_seen notifications, and the actors array on aggregates")]
+		public void BannerDocumentsTheNotificationChanges()
+		{
+			var banner = AgentSocketServer.Banner;
+
+			Assert.That(banner, Does.Contain("Scenery and husks are never spotted."));
+			Assert.That(banner, Does.Contain("power_seen is sent once per power, the first time its timer is shown to you"));
+			Assert.That(banner, Does.Contain("actors is always present:"));
+			Assert.That(banner, Does.Contain("up to 10 of the distinct actors they covered, and [] when they name none."));
+		}
+
+		[TestCase(TestName = "The banner documents placeable and blocked_by on a structure's ConstructionComplete, and NewOptions' options")]
+		public void BannerDocumentsTheConstructionFields()
+		{
+			var banner = AgentSocketServer.Banner;
+
+			Assert.That(banner, Does.Contain("A structure of yours also has placeable, every finished structure place accepts now,"
+				+ " and blocked_by when items wait behind it."));
+			Assert.That(banner, Does.Contain("NewOptions names in options the options that became buildable since the last one (empty when none)."));
+		}
+
 		[TestCase(TestName = "The banner lists Sell and the toggle names in orders, and says where the player actor's id is")]
 		public void BannerDocumentsTheOrdersAndPlayerActor()
 		{

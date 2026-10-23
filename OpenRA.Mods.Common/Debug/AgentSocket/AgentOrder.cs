@@ -43,7 +43,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// On is the on key, the desired state of a toggle order; null when absent.
 	/// </summary>
 	public sealed record OrderRequest(string Order, uint Actor, CPos? Cell, WPos? Pos, uint? TargetActor, bool Queued,
-		string Item, uint? ExtraData, CPos? ExtraLocation, int? SettleTicks, bool Await, uint[] Actors = null, string Type = null,
+		string Item, uint? ExtraData, CPos? ExtraLocation, int? SettleTicks, uint[] Actors = null, string Type = null,
 		Regex TypePattern = null, bool? On = null)
 	{
 		/// <summary>True for a group order (P1.14): the request names its actors by list or by type.</summary>
@@ -188,6 +188,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// </summary>
 	public static class AgentOrder
 	{
+		/// <summary>The refusal for await:false, on an order or a deploy. Both always wait for their outcome, so there is nothing to defer.</summary>
+		public const string AwaitFalseRefused = "await:false is not supported: an order waits for its outcome, so omit await or send true";
+
 		/// <summary>The reason a Move reply gives when the validators refused the order (P1.5).</summary>
 		public const string ValidatorRejected = "rejected by order validator";
 		const string NoPathReason = "no path to the cell";
@@ -323,22 +326,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 				settleTicks = (int)settle;
 			}
 
-			// await:false returns a job id at once instead of waiting for the Move to settle (P1.4).
-			var awaits = true;
+			// An order always waits for its outcome, so await:false has no meaning and is refused. await:true is the default.
 			if (IsPresent(root, "await"))
 			{
 				var awaitElement = root.GetProperty("await");
 				if (awaitElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
 					return "await must be a boolean";
 
-				if (orderElement.GetString() is not ("Move" or "AttackMove") && awaitElement.ValueKind == JsonValueKind.False)
-					return "await:false applies only to Move and AttackMove";
-
-				// A group has one await per actor, and a job holds one, so a group always waits (P1.14).
-				if ((actors != null || typePattern != null) && awaitElement.ValueKind == JsonValueKind.False)
-					return "await:false applies only to a single actor";
-
-				awaits = awaitElement.ValueKind == JsonValueKind.True;
+				if (awaitElement.ValueKind == JsonValueKind.False)
+					return AwaitFalseRefused;
 			}
 
 			// on is the desired state of a toggle order. Whether the order is a toggle depends on the actor, so Accept checks it at issue.
@@ -357,7 +353,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return "on applies to a single actor, not a group";
 
 			request = new OrderRequest(orderElement.GetString(), actor, cell, pos, targetActor, queued, item, extraData, extraLocation,
-				settleTicks, awaits, actors, type, typePattern, on);
+				settleTicks, actors, type, typePattern, on);
 			return null;
 		}
 

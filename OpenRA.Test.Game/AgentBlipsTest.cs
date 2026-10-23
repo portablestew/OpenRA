@@ -239,8 +239,9 @@ namespace OpenRA.Test
 			hw.World.Selection.Add(unit);
 
 			var destination = new CPos(start.X + 6, start.Y);
+
 			using (var order = AgentStateDumpTest.RequestWithTicks(hw,
-				$"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}],\"await\":false}}"))
+				$"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}"))
 				Assert.That(order.RootElement.GetProperty("ok").GetBoolean(), Is.True, order.RootElement.ToString());
 
 			hw.Tick(1);

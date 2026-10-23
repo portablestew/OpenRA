@@ -90,10 +90,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// clock. GameOver is the world's IsGameOver, and Winner is the player with WinState.Won, named only once the game is over. Funds,
 	/// Capacity and Power are the local player's economy and power, null without a local player. KnownCounts is each player's count
 	/// of known units by type, as in the full digest. Threats is the threat list. UnitCounts is the number of units the full digest
-	/// would list, per owner. The units list, the map and the static player data are left out.
+	/// would list, per owner. Powers is each other player's support power whose timer the local player is shown, and is omitted
+	/// when there is none. The units list, the map and the static player data are left out.
 	/// </summary>
 	public sealed record StateSummaryV1(int Tick, bool GameOver, string Winner, string LocalPlayer, int? Funds, int? Capacity,
-		PowerV1 Power, Dictionary<string, Dictionary<string, int>> KnownCounts, ThreatV1[] Threats, Dictionary<string, int> UnitCounts);
+		PowerV1 Power, Dictionary<string, Dictionary<string, int>> KnownCounts, ThreatV1[] Threats, Dictionary<string, int> UnitCounts,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PowerTimerV1[] Powers);
 
 	/// <summary>Builds the schema v1 snapshot. Must run on the game thread: it reads live world state.</summary>
 	public static class AgentStateDump
@@ -131,7 +133,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				observer == null ? null : resources?.ResourceCapacity ?? 0,
 				observer == null ? null : Power(power),
 				observer == null ? null : world.Players.ToDictionary(p => p.PlayerName, p => KnownCounts(p, observer)),
-				AgentThreats.Build(world, observer), UnitCounts(world, observer));
+				AgentThreats.Build(world, observer), UnitCounts(world, observer), AgentPowers.Timers(world, observer));
 		}
 
 		/// <summary>The player whose WinState is Won, or null when none won.</summary>

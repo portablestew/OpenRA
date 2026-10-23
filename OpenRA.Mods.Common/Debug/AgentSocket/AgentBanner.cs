@@ -35,7 +35,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					+ "                -> tick, ok, cmd: a refresh ack, so this result carries no digest\n"
 				+ "                -> with detail summary, the envelope's state is the header a wait reply carries: tick, game_over, winner (once the"
 					+ " game is over), local_player, funds, capacity and power (yours), known_counts (by player, the types you know of each),"
-					+ " threats (as below) and unit_counts (units per owner). It has no units, map or player data.\n"
+					+ " threats (as below), unit_counts (units per owner) and powers (see wait). It has no units, map or player data.\n"
 					+ "                -> the full digest is the envelope's state: ok, cmd, tick, net_frame, map, ms_per_tick, paused,"
 				+ " game_over, local_player,"
 				+ " players, units, threats, selection\n"
@@ -52,7 +52,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " funds is the spendable total, cash_funds + resource_funds: the in-game counter and the number costs compare against."
 				+ " cash_funds is only the uncapped pool, and resource_funds only the harvested pool capped by resource_funds_capacity."
 				+ " threats: the top 15 known enemy units by standoff (the engine's Enemy relationship: neutral civilians and allies"
-				+ " are not listed; at most 3 per type; a recent attacker first), each with id, type, cell,"
+				+ " are not listed; husks are never listed; at most 3 per type; a recent attacker first), each with id, type, cell,"
 				+ " hp, attack_target (the friendly it hit recently, or null: only a recent attacker has one), heading (its facing, not a bearing),"
 				+ " bearing (from its closest friendly),"
 				+ " friendly_id and distance (world units, 1024 per cell) of that friendly.",
@@ -70,7 +70,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " each owned actor, so \"e1\" is e1 only and \"e.\" is every e-type); order (string); at most one of cell [x,y],"
 				+ " pos [x,y,z], target_actor (uint); optional queued (bool), item (string), extra_data (uint), extra_location [x,y],"
 				+ " on (bool; required by a toggle order such as PowerDown or RepairBuilding, and refused for any other name),"
-				+ " settle_ticks (Move and AttackMove), await (bool, default true; false is Move and AttackMove only, and single actor only)\n"
+				+ " settle_ticks (Move and AttackMove), await (bool, default true; false is refused, since an order always waits for its outcome)\n"
 					+ "                -> tick, min_effect_tick, settled, plus the order's resolution. Every order name reports the"
 					+ " resolution, and nothing waits for travel or completion, which are events. Every name except an Attack and a"
 					+ " DeployTransform reports valid, effect_tick and settled_ticks, and holds the settle window so trailing events"
@@ -86,7 +86,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " RepairBuilding is a toggle on the player actor, with target_actor the building: its state is on while you are"
 				+ " among the building's repairers, so a building at its repairer cap stays off."
 				+ " Sell on a sellable structure replaces valid, effect_tick and settled_ticks with outcome (sold; null when unsettled), and a sold event follows."
-				+ " await:false returns job (the id for wait) with tick, min_effect_tick, and does not wait."
 				+ " A group returns ordered (the actor ids), matched, and results (one per ordered actor: actor, valid, effect_tick, settled,"
 				+ " settled_ticks, outcome, reason, orders, error; an Attack or a DeployTransform actor carries only actor,"
 				+ " settled, outcome and reason). A group is partial:"
@@ -94,17 +93,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 					+ " skipped (omitted when none) lists each one with error, and orders when it refused the name."
 					+ " The group is refused only when no matched actor can take it."
 				+ " A name the actor does not accept is refused: ok:false, error, available (the names it accepts)."
+				+ " An unknown target_actor is refused as an unknown target: ok:false, error \"Unknown target_actor <id>\", for a single order and a group alike."
 				+ " Call orders to list every name an actor accepts before guessing."
 				+ " The exception is Attack, which is never refused here: an attack that cannot start replies no_valid_target."
 				+ " Zero or several selectors, a bad regex, or a type with no match are errors",
 				"{\"cmd\":\"order\",\"actor\":12,\"order\":\"AttackMove\",\"cell\":[40,50]}"),
-			("wait", "job (int), or no job; timeout_ticks (int), min_ticks (int, no job only)\n"
-				+ "                -> with job: the job reply with result:\"job\", start_tick, requested_ticks, waited_ticks;"
-				+ " status:\"pending\"|\"paused\" keeps the job open\n"
-				+ "                -> no job: result:\"events\"|\"timeout\"|\"paused\"|\"world_changed\";"
+			("wait", "timeout_ticks (int), min_ticks (int)\n"
+				+ "                -> result:\"events\"|\"timeout\"|\"paused\"|\"world_changed\";"
 				+ " events are your ordered movement, combat, production and notifications"
 					+ " -> the envelope's state is the summary header (tick, game_over, winner, local_player, funds, capacity, power,"
-					+ " known_counts, threats, unit_counts), with no units and no map. Call state for the rest: the units list (the ids of"
+					+ " known_counts, threats, unit_counts, and powers when one is shown: each other player's power whose timer you can see, as"
+					+ " order, owner, remaining_ticks and ready; omitted when none), with no units and no map. Call state for the rest: the units list (the ids of"
 					+ " your units to order, and each unit's facing, activity and idle), an enemy beyond the 15 threats for its id, and the"
 					+ " map and players' faction, colour, bot and handicap. A threat row already has its id, cell, hp and bearing",
 				"{\"cmd\":\"wait\",\"timeout_ticks\":250}"),
@@ -147,7 +146,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " cells, so the blockers show). A successful place has no look. A refusal has one, empty with no candidates.",
 				"{\"cmd\":\"place\",\"item\":\"powr\",\"cell\":[40,50]}"),
 			("deploy", "actor (uint, an mcv); optional at [x,y] (the top-left cell, anywhere on the map, no search); optional await (default"
-				+ " true; false returns a job id, and wait {job} returns the outcome)\n"
+				+ " true; false is refused, since a deploy always waits for its outcome)\n"
 				+ "                -> ok, cmd, actor, requested_cell, cell, moved (true when a Move took the actor there first),"
 				+ " settled, outcome (completed or canceled; null when unsettled), reason (null unless canceled), tick, min_effect_tick."
 				+ " The cell is the actor's own when its footprint is valid there, else the nearest valid, reachable cell within 20. One reply covers"
@@ -163,7 +162,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"{\"cmd\":\"screenshot\",\"actor\":12,\"dir\":\"shots\"}"),
 			("undo", "offset (signed int ticks) or at_tick (int); exactly one\n"
 				+ "                -> tick, requested_tick, moved_ticks, held; nearest snapshot restored, window kept;"
-				+ " pending orders and jobs fail with restored; last item in an array only",
+				+ " pending orders fail with restored; last item in an array only",
 				"{\"cmd\":\"undo\",\"offset\":-250}"),
 			("map_state", "-> ok, cmd, path (map-state.png in the workspace, or null), render (ok or unavailable), reason (only when"
 				+ " unavailable), map_px_per_cell (4), origin [x, y] (the top-left map cell), size [w, h] (pixels), tick. Terrain: unexplored"
@@ -307,9 +306,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    A request with no order leaves the selection alone.\n");
 			text.Append("  A failing item does not stop the rest. A slow awaited item delays the response until it settles or its tick budget runs out.\n");
 			text.Append("  order min_effect_tick is a lower bound (tick + 1). The order applies on or after it; network frame delay can make it later.\n");
-			text.Append("  Example: {\"cmd\":\"order\",\"actor\":12,\"order\":\"Move\",\"cell\":[40,50],\"await\":false}\n")
-				.Append("    -> {\"ok\":true,\"cmd\":\"order\",\"job\":1,...}\n");
-			text.Append("  then {\"cmd\":\"wait\",\"job\":1,\"timeout_ticks\":250} -> the Move reply, or {\"status\":\"pending\"} when 250 ticks pass.\n");
+			text.Append("  An order or a deploy always waits for its outcome: await:false is refused, and wait takes no job.\n");
 			text.Append("  An overflow event is sent before the events that follow it. dropped counts the events a full queue discarded.\n");
 			text.Append("  healed is any heal other than a repair: a medic's, for one. A repair, by a depot or a structure's own"
 				+ " repair, raises neither damaged nor healed. A husk's damage and death are not sent.\n");

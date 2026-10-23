@@ -145,7 +145,7 @@ namespace OpenRA.Test
 			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
 			hw.Tick(1);
 
-			using var response = AgentStateDumpTest.Request(MoveRequest(hw, unit));
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, MoveRequest(hw, unit));
 			Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
 			Assert.That(hw.World.Selection.Actors, Is.EquivalentTo([unit]));
 		}
@@ -162,7 +162,7 @@ namespace OpenRA.Test
 			// c is selected before the request, so the array has to replace the selection rather than add to it.
 			hw.World.Selection.Combine(hw.World, [c], false, false);
 
-			using var response = AgentStateDumpTest.Request($"[{MoveRequest(hw, a)},{MoveRequest(hw, b)}]");
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, $"[{MoveRequest(hw, a)},{MoveRequest(hw, b)}]");
 			Assert.That(response.RootElement.GetArrayLength(), Is.EqualTo(2));
 			Assert.That(hw.World.Selection.Actors, Is.EquivalentTo([a, b]));
 
@@ -187,16 +187,16 @@ namespace OpenRA.Test
 			Assert.That(refused.RootElement.GetProperty("results")[0].GetProperty("ok").GetBoolean(), Is.False);
 			Assert.That(hw.World.Selection.Actors, Is.EquivalentTo([a]), "A refused order changed the selection.");
 
-			using var mixed = AgentStateDumpTest.Request($"[{MoveRequest(hw, dead)},{MoveRequest(hw, b)}]");
+			using var mixed = AgentStateDumpTest.RequestWithTicks(hw, $"[{MoveRequest(hw, dead)},{MoveRequest(hw, b)}]");
 			Assert.That(mixed.RootElement[1].GetProperty("ok").GetBoolean(), Is.True);
 			Assert.That(hw.World.Selection.Actors, Is.EquivalentTo([b]), "The selection was not replaced by the accepted order alone.");
 		}
 
-		/// <summary>An await:false Move for the unit to a clear cell, so the request returns at once with a job.</summary>
+		/// <summary>A Move for the unit to a clear cell. The request waits for the Move to settle, so the world must tick.</summary>
 		static string MoveRequest(HeadlessWorld hw, Actor unit)
 		{
 			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
-			return $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}],\"await\":false}}";
+			return $"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}]}}";
 		}
 
 		static Type ModType(string name)

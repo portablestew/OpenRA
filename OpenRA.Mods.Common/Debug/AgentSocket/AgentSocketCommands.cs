@@ -10,7 +10,6 @@
 #endregion
 
 using System;
-using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -31,6 +30,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>Every error envelope and refusal carries this hint, so an agent that gets an error finds the command list on its own (P1.18).</summary>
 		public const string Hint = "see {\"cmd\":\"help\"}";
+
+		/// <summary>The refusal for a wait that names a job. Orders and deploys wait for their outcome, so there is no job to collect.</summary>
+		const string JobRefused = "wait takes no job: an order or a deploy waits for its outcome, and wait reads events";
 
 		/// <summary>
 		/// The result of a snapshot step. Tick is the game clock of the world left active, RequestedTick the game
@@ -253,10 +255,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 					return Serialize(AgentOrder.SettleGroup(grouped));
 				}
 
-				// await:false takes a job instead: the game thread issues the Move and records it, and the reply is the job id.
-				if (!request.Await)
-					return Serialize(AgentMarshal.ExecuteOnGameThread(() => AgentOrderJobs.Issue(AgentWorldBridge.RequireWorld(), request, selection)));
-
 				// The game thread issues the order. Every order name registers an await (9.2), so the socket thread then parks
 				// until that await resolves plus its settle window, and the game keeps ticking.
 				var issued = AgentMarshal.ExecuteOnGameThread(() => AgentOrder.Issue(AgentWorldBridge.RequireWorld(), request, selection));
@@ -348,8 +346,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>
 		/// Parses the actor and optional cell on the socket thread, then issues the Move and the queued DeployTransform on the game
-		/// thread. The reply waits for the deploy's outcome here, so the game keeps ticking. await:false takes a job instead, and wait
-		/// collects its outcome (P1.13). No valid cell within the search radius is refused with the candidate reasons.
+		/// thread. The reply waits for the deploy's outcome here, so the game keeps ticking (P1.13). No valid cell within the search
+		/// radius is refused with the candidate reasons.
 		/// </summary>
 		static string StartDeploy(string cmd, JsonElement root, AgentSelection selection)
 		{
@@ -359,10 +357,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			try
 			{
-				if (!request.Await)
-					return Serialize(AgentMarshal.ExecuteOnGameThread(() => AgentOrderJobs.Start(AgentWorldBridge.RequireWorld(), cmd,
-						() => AgentDeploy.ToJob(AgentDeploy.Start(AgentWorldBridge.RequireWorld(), request, selection)))));
-
 				var issued = AgentMarshal.ExecuteOnGameThread(() => AgentDeploy.Start(AgentWorldBridge.RequireWorld(), request, selection));
 				return Serialize(AgentDeploy.Settle(issued));
 			}
@@ -408,10 +402,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// Reads the job id and optional timeout on the socket thread, then waits for the job there, so the game keeps ticking.
-		/// A timeout is a pending reply, not an error: the job stays open for another wait.
-		/// </summary>
-		/// <summary>
 		/// Parses the at or points selector and the optional k on the socket thread, then looks on the game thread (P2.8). An empty or
 		/// invalid selector is an error with the help hint, as every error is.
 		/// </summary>
@@ -425,15 +415,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// wait with a job is the job's reply (P1.4), with result:"job" and the ticks it waited at its front. wait with no job
-		/// long-polls the connection's turn buffer: result is events when an event arrived, which is in this response's
+		/// wait long-polls the connection's turn buffer: result is events when an event arrived, which is in this response's
 		/// events, and timeout, paused, or world_changed otherwise. Every budget is game ticks: timeout_ticks is capped at
-		/// AgentGameClock.MaxWaitTicks, and min_ticks holds an event wait before it reports events. A connection-less request (no
-		/// connection) has nothing to wait for, so it times out at once. The events wait does not hold a lock the game thread needs;
-		/// it runs on the connection's thread.
+		/// AgentGameClock.MaxWaitTicks, and min_ticks holds the wait before it reports events. A job is refused, since an order
+		/// and a deploy wait for their outcome. A connection-less request (no connection) has nothing to wait for, so it times
+		/// out at once. The wait does not hold a lock the game thread needs; it runs on the connection's thread.
 		/// </summary>
 		static string Wait(string cmd, JsonElement root, AgentConnection connection)
 		{
+			if (root.TryGetProperty("job", out _))
+				return Error(cmd, JobRefused);
+
 			var timeoutTicks = AgentGameClock.MaxWaitTicks;
 			if (root.TryGetProperty("timeout_ticks", out var timeoutElement) && timeoutElement.ValueKind != JsonValueKind.Null &&
 				(timeoutElement.ValueKind != JsonValueKind.Number || !timeoutElement.TryGetInt32(out timeoutTicks) ||
@@ -446,38 +438,21 @@ namespace OpenRA.Mods.Common.AgentSocket
 				minTicks < 0 || minTicks > AgentGameClock.MaxWaitTicks))
 				return Error(cmd, $"min_ticks must be an integer from 0 to {AgentGameClock.MaxWaitTicks}");
 
-			var hasJob = root.TryGetProperty("job", out var jobElement);
-			if (minTicks > 0 && hasJob)
-				return Error(cmd, "min_ticks applies only to a wait with no job");
-
 			if (minTicks > timeoutTicks)
 				return Error(cmd, "min_ticks must not exceed timeout_ticks");
 
 			try
 			{
-				if (!hasJob)
-				{
-					var start = AgentGameClock.Read();
-					if (start.World == null)
-						return Error(cmd, "no game world is loaded");
+				var start = AgentGameClock.Read();
+				if (start.World == null)
+					return Error(cmd, "no game world is loaded");
 
-					if (connection == null)
-						return Serialize(new WaitResultV1(true, cmd, "timeout", start.Tick, start.Tick, timeoutTicks, 0));
+				if (connection == null)
+					return Serialize(new WaitResultV1(true, cmd, "timeout", start.Tick, start.Tick, timeoutTicks, 0));
 
-					var result = connection.Turn.WaitForEvents(start, timeoutTicks, minTicks, AgentGameClock.Read);
-					var end = AgentGameClock.Read();
-					return Serialize(new WaitResultV1(true, cmd, result, start.Tick, end.Tick, timeoutTicks, end.Tick - start.Tick));
-				}
-
-				if (jobElement.ValueKind != JsonValueKind.Number || !jobElement.TryGetInt32(out var job))
-					return Error(cmd, "job must be an integer");
-
-				var reply = Serialize(AgentOrderJobs.Wait(job, timeoutTicks, out var startTick, out var tick));
-
-				// The job reply has its own tick, so the wait stats use start_tick and waited_ticks only.
-				var prefix = string.Create(CultureInfo.InvariantCulture,
-					$"{{\"result\":\"job\",\"start_tick\":{startTick},\"requested_ticks\":{timeoutTicks},\"waited_ticks\":{tick - startTick},");
-				return string.Concat(prefix, reply.AsSpan(1));
+				var result = connection.Turn.WaitForEvents(start, timeoutTicks, minTicks, AgentGameClock.Read);
+				var end = AgentGameClock.Read();
+				return Serialize(new WaitResultV1(true, cmd, result, start.Tick, end.Tick, timeoutTicks, end.Tick - start.Tick));
 			}
 			catch (Exception e)
 			{

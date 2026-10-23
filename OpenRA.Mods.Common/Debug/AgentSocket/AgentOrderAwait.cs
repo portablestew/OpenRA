@@ -247,7 +247,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>
 		/// Parks the calling thread until the await settles, the game pauses, or budgetTicks of game time pass, whichever comes
-		/// first. The await is left registered on a pause or budget, so a job can wait again. Must not run on the game thread.
+		/// first. The await is left registered on a pause or budget, so a later wait can resume it. Must not run on the game thread.
 		/// </summary>
 		public AwaitWaitResult WaitFor(int budgetTicks = AgentGameClock.MaxWaitTicks)
 		{

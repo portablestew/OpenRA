@@ -20,9 +20,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	/// <summary>
 	/// A parsed deploy request. At is the top-left cell the request gave, anywhere on the map, or null to search near the actor.
-	/// Await is false for a job: the reply is then the job id, and wait collects the deploy's outcome.
 	/// </summary>
-	public sealed record DeployRequest(uint Actor, CPos? At, bool Await);
+	public sealed record DeployRequest(uint Actor, CPos? At);
 
 	/// <summary>
 	/// The deploy command's reply (P1.13). RequestedCell is the at the request gave, or null when it was omitted. Cell is the
@@ -80,17 +79,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 				at = new CPos(c[0], c[1]);
 			}
 
-			var awaits = true;
 			if (AgentOrder.IsPresent(root, "await"))
 			{
 				var awaitElement = root.GetProperty("await");
 				if (awaitElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
 					return "await must be a boolean";
 
-				awaits = awaitElement.ValueKind == JsonValueKind.True;
+				if (awaitElement.ValueKind == JsonValueKind.False)
+					return AgentOrder.AwaitFalseRefused;
 			}
 
-			request = new DeployRequest(actor, at, awaits);
+			request = new DeployRequest(actor, at);
 			return null;
 		}
 
@@ -177,12 +176,6 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var cell = new[] { at.X, at.Y };
 			return new DeployedV1(outcome != AgentOrderAwait.Canceled, cmd, issued.Actor, issued.RequestedCell, cell, issued.Moved,
 				settled, outcome, reason, issued.Ack.Tick, issued.Ack.MinEffectTick);
-		}
-
-		/// <summary>The job a deploy with await:false records (P1.4): its ack, its await, and the reply wait builds.</summary>
-		public static JobIssue ToJob(DeployIssued issued)
-		{
-			return new JobIssue(issued.Ack, issued.Await, cmd => Reply(cmd, issued));
 		}
 
 		/// <summary>

@@ -34,6 +34,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 	public sealed record SupportPowerV1(string Order, string Owner, string Name, string Description, bool Ready, int RemainingTicks,
 		int TotalTicks, bool Active, bool Disabled, bool OneShot);
 
+	/// <summary>
+	/// One opponent's support power in the wait header: its key, owner, and the timer as the powers command reports it (ready and
+	/// remaining_ticks). The rest of the power is on the powers command.
+	/// </summary>
+	public sealed record PowerTimerV1(string Order, string Owner, int RemainingTicks, bool Ready);
+
 	/// <summary>Builds the powers reply, and holds the visibility rule that power_ready and power_seen share. Must run on the game thread.</summary>
 	public static class AgentPowers
 	{
@@ -41,7 +47,29 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static PowersV1 List(World world)
 		{
 			var viewer = world.LocalPlayer ?? throw new InvalidOperationException("There is no local player");
-			var found = new List<SupportPowerV1>();
+			var found = Visible(world, viewer).Select(v => new SupportPowerV1(v.Key, v.Owner.PlayerName, v.Power.Name, v.Power.Description,
+				v.Power.Ready, v.Power.RemainingTicks, v.Power.TotalTicks, v.Power.Active, v.Power.Disabled, v.Power.Info.OneShot));
+
+			return new PowersV1(true, "powers", world.WorldTick, found.ToArray());
+		}
+
+		/// <summary>
+		/// The wait header's powers (step 6): each other player's power whose timer the viewer is shown. Own powers are left out,
+		/// since power_ready reports them. Null when there is none, so the key is omitted. Must run on the game thread.
+		/// </summary>
+		public static PowerTimerV1[] Timers(World world, Player viewer)
+		{
+			if (viewer == null)
+				return null;
+
+			var timers = Visible(world, viewer).Where(v => v.Owner != viewer)
+				.Select(v => new PowerTimerV1(v.Key, v.Owner.PlayerName, v.Power.RemainingTicks, v.Power.Ready)).ToArray();
+			return timers.Length == 0 ? null : timers;
+		}
+
+		/// <summary>Every power the viewer can see, in player order and then key order: the rule List and Timers share.</summary>
+		static IEnumerable<(Player Owner, string Key, SupportPowerInstance Power)> Visible(World world, Player viewer)
+		{
 			foreach (var player in world.Players)
 			{
 				var manager = player.PlayerActor.TraitOrDefault<SupportPowerManager>();
@@ -49,16 +77,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 					continue;
 
 				foreach (var (key, power) in manager.Powers.OrderBy(p => p.Key, StringComparer.Ordinal))
-				{
-					if (power.Instances.Count == 0 || !Shown(player, power.Info, viewer))
-						continue;
-
-					found.Add(new SupportPowerV1(key, player.PlayerName, power.Name, power.Description, power.Ready, power.RemainingTicks,
-						power.TotalTicks, power.Active, power.Disabled, power.Info.OneShot));
-				}
+					if (power.Instances.Count != 0 && Shown(player, power.Info, viewer))
+						yield return (player, key, power);
 			}
-
-			return new PowersV1(true, "powers", world.WorldTick, found.ToArray());
 		}
 
 		/// <summary>
