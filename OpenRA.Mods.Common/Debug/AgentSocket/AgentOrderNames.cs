@@ -26,6 +26,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The order the player actor takes to repair a building. It is a toggle: on is the desired repair state.</summary>
 		public const string RepairOrder = "RepairBuilding";
 
+		/// <summary>The order that makes a PrimaryBuilding the primary producer for its queue type. It is a toggle: on is the desired primary state.</summary>
+		public const string PrimaryOrder = "PrimaryProducer";
+
 		/// <summary>The accepted names for an actor, in a stable order with no duplicates.</summary>
 		public static string[] For(Actor actor)
 		{
@@ -86,11 +89,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return names.Distinct().Where(actor.AcceptsOrder).ToArray();
 		}
 
-		/// <summary>True when the order name is the OrderName of a ToggleConditionOnOrder on the actor, or RepairBuilding on an actor with AllyRepair. Such an order takes the on key.</summary>
+		/// <summary>True when the order name is the OrderName of a ToggleConditionOnOrder on the actor, RepairBuilding on an actor with AllyRepair, or PrimaryProducer on an actor with PrimaryBuilding. Such an order takes the on key.</summary>
 		public static bool IsToggle(Actor actor, string order)
 		{
 			if (order == RepairOrder)
 				return actor.Info.HasTraitInfo<AllyRepairInfo>();
+
+			if (order == PrimaryOrder)
+				return actor.Info.HasTraitInfo<PrimaryBuildingInfo>();
 
 			return actor.Info.TraitInfos<ToggleConditionOnOrderInfo>().Any(t => t.OrderName == order);
 		}

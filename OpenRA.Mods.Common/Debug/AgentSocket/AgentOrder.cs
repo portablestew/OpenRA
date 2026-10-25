@@ -435,12 +435,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 		/// <summary>
 		/// The state of the toggle the order names: true when on. Accept has checked the name, and CheckToggleTarget the target. A
-		/// RepairBuilding is on while the player is among the building's repairers. Must run on the game thread.
+		/// RepairBuilding is on while the player is among the building's repairers, and a PrimaryProducer while the building is the
+		/// primary. Must run on the game thread.
 		/// </summary>
 		static bool ToggleOn(Order order)
 		{
 			if (order.OrderString == AgentOrderNames.RepairOrder)
 				return ToggledActor(order).TraitOrDefault<RepairableBuilding>().Repairers.Contains(order.Subject.Owner);
+
+			if (order.OrderString == AgentOrderNames.PrimaryOrder)
+				return order.Subject.TraitOrDefault<PrimaryBuilding>().IsPrimary;
 
 			return order.Subject.TraitsImplementing<ToggleConditionOnOrder>().First(t => t.Info.OrderName == order.OrderString).Enabled;
 		}

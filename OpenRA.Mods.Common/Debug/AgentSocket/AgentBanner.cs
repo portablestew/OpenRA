@@ -71,7 +71,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("order", "exactly one of actor (uint), actors ([uint]), or type (string: a regex matched against the whole type name of"
 				+ " each owned actor, so \"e1\" is e1 only and \"e.\" is every e-type); order (string); at most one of cell [x,y],"
 				+ " pos [x,y,z], target_actor (uint); optional queued (bool), item (string), extra_data (uint), extra_location [x,y],"
-				+ " on (bool; required by a toggle order such as PowerDown or RepairBuilding, and refused for any other name),"
+				+ " on (bool; required by a toggle order such as PowerDown, RepairBuilding or PrimaryProducer, and refused for any other name),"
 				+ " settle_ticks (Move and AttackMove), await (bool, default true; false is refused, since an order always waits for its outcome)\n"
 					+ "                -> tick, min_effect_tick, settled, plus the order's resolution. Every order name reports the"
 					+ " resolution, and nothing waits for travel or completion, which are events. Every name except an Attack and a"
@@ -110,7 +110,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					+ " players' faction, colour, bot and handicap. A threat row already has its id, cell, hp and bearing",
 				"{\"cmd\":\"wait\",\"timeout_ticks\":250}"),
 			("orders", "actor (uint) -> type, orders (every order name the actor accepts; use it to discover orders: Sell on a sellable"
-				+ " structure, a toggle's name such as PowerDown on a toggle building, RepairBuilding on the player actor, and each"
+				+ " structure, a toggle's name such as PowerDown on a toggle building, RepairBuilding on the player actor, PrimaryProducer on a production building, and each"
 				+ " support power's key on the player actor)", "{\"cmd\":\"orders\",\"actor\":12}"),
 			("production", "-> player, funds, cash_funds, resource_funds, power, queues (the local player's queues; see Production"
 				+ " keys). funds is cash_funds + resource_funds, the total can_afford compares against. A queue's options are listed"

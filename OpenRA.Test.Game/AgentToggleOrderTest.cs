@@ -29,6 +29,7 @@ namespace OpenRA.Test
 		// The toggle lives in OpenRA.Mods.Common, which this project reaches only by reflection.
 		static readonly Lazy<Type> ToggleType = new(() => HeadlessMod.ModData.ObjectCreator.FindType("Traits.ToggleConditionOnOrder"));
 		static readonly Lazy<Type> RepairableType = new(() => HeadlessMod.ModData.ObjectCreator.FindType("Traits.RepairableBuilding"));
+		static readonly Lazy<Type> PrimaryType = new(() => HeadlessMod.ModData.ObjectCreator.FindType("Traits.PrimaryBuilding"));
 
 		bool savedAgentSocket;
 
@@ -262,6 +263,91 @@ namespace OpenRA.Test
 			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False);
 			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo("on applies to a single actor, not a group"));
 			Assert.That(Enabled(dome), Is.False);
+		}
+
+		/// <summary>The PrimaryProducer line: the building is the subject, and on is the desired primary state. The on key is optional so the refusal can be tested.</summary>
+		static string PrimaryLine(Actor building, bool? on)
+		{
+			var onKey = on is { } value ? $",\"on\":{(value ? "true" : "false")}" : "";
+			return $"{{\"cmd\":\"order\",\"actor\":{building.ActorID},\"order\":\"PrimaryProducer\"{onKey}}}";
+		}
+
+		/// <summary>Whether the building is the primary producer, read by reflection like Enabled (the test project cannot reference the mod).</summary>
+		static bool IsPrimary(Actor building)
+		{
+			var primary = building.TraitsImplementing<IResolveOrder>().Single(t => t.GetType() == PrimaryType.Value);
+			return (bool)PrimaryType.Value.GetProperty("IsPrimary").GetValue(primary);
+		}
+
+		[TestCase(TestName = "PrimaryProducer on: true makes the building primary: state on, unchanged false, and settled")]
+		public void PrimaryOnMakesTheBuildingPrimary()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var barr = hw.CreateActor("barr", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+			Assert.That(IsPrimary(barr), Is.False);
+
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, PrimaryLine(barr, true));
+			var root = response.RootElement;
+			Assert.That(root.TryGetProperty("error", out _), Is.False, root.ToString());
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True);
+			Assert.That(root.GetProperty("state").GetString(), Is.EqualTo("on"));
+			Assert.That(root.GetProperty("unchanged").GetBoolean(), Is.False);
+			Assert.That(root.GetProperty("settled").GetBoolean(), Is.True);
+			Assert.That(IsPrimary(barr), Is.True);
+		}
+
+		[TestCase(TestName = "PrimaryProducer on: true again is unchanged, issues no second toggle, and leaves the building primary")]
+		public void PrimaryOnWhenAlreadyPrimaryIsUnchanged()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var barr = hw.CreateActor("barr", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using (AgentStateDumpTest.RequestWithTicks(hw, PrimaryLine(barr, true)))
+				Assert.That(IsPrimary(barr), Is.True);
+
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, PrimaryLine(barr, true));
+			var root = response.RootElement;
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True);
+			Assert.That(root.GetProperty("state").GetString(), Is.EqualTo("on"));
+			Assert.That(root.GetProperty("unchanged").GetBoolean(), Is.True);
+
+			// A second engine toggle would clear the primary. Running more ticks shows it stays set.
+			hw.Tick(10);
+			Assert.That(IsPrimary(barr), Is.True);
+		}
+
+		[TestCase(TestName = "PrimaryProducer on: false clears the primary: state off, unchanged false")]
+		public void PrimaryOffClearsThePrimary()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var barr = hw.CreateActor("barr", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using (AgentStateDumpTest.RequestWithTicks(hw, PrimaryLine(barr, true)))
+				Assert.That(IsPrimary(barr), Is.True);
+
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, PrimaryLine(barr, false));
+			var root = response.RootElement;
+			Assert.That(root.TryGetProperty("error", out _), Is.False, root.ToString());
+			Assert.That(root.GetProperty("state").GetString(), Is.EqualTo("off"));
+			Assert.That(root.GetProperty("unchanged").GetBoolean(), Is.False);
+			Assert.That(IsPrimary(barr), Is.False);
+		}
+
+		[TestCase(TestName = "PrimaryProducer without on is refused with the toggle error, and the building is not made primary")]
+		public void PrimaryWithoutOnIsRefused()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var barr = hw.CreateActor("barr", hw.FindClearArea(new CPos(50, 50), 2, 2), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using var response = AgentStateDumpTest.Request(PrimaryLine(barr, null));
+			var root = response.RootElement;
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False);
+			Assert.That(root.GetProperty("error").GetString(), Is.EqualTo($"'PrimaryProducer' is a toggle for actor {barr.ActorID}, so it needs on: true or on: false"));
+			Assert.That(IsPrimary(barr), Is.False);
 		}
 	}
 }

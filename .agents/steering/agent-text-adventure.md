@@ -22,6 +22,7 @@ description: OpenRA text_adventure patterns.
 - Always AttackMove to advance; use Move only when you must not fire (retreat, reposition, scout past contact).
 - Discover orders: `{"cmd":"orders","actor":12}` -> `orders`, every name the actor takes. Use it to find `Repair` (vehicle at a fix depot), `Dock` (harvester at a refinery) and the player actor's `RepairBuilding`.
 - Repair: `{"cmd":"order","actor":<your player actor>,"order":"RepairBuilding","target_actor":<building id>,"on":true}`. One building per call. It drains `funds` as it heals, so check `funds` first. It stays on until you send `on:false`.
+- Primary producer: `{"cmd":"order","actor":<building>,"order":"PrimaryProducer","on":true}` makes the building the exit for its queue type, and `on:false` clears it. `on` is required.
 - A structure repair holds only while the building is damaged, so it ends at full health: read its `repairing` flag again before you count on it.
 - Vision comes only from your units; scout.
 - `path.eta_ticks` is a floor.

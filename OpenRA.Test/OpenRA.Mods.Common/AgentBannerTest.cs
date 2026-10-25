@@ -169,7 +169,7 @@ namespace OpenRA.Test
 		{
 			var banner = AgentSocketServer.Banner;
 
-			Assert.That(banner, Does.Contain("on (bool; required by a toggle order such as PowerDown or RepairBuilding, and refused for any other name)"));
+			Assert.That(banner, Does.Contain("on (bool; required by a toggle order such as PowerDown, RepairBuilding or PrimaryProducer, and refused for any other name)"));
 			Assert.That(banner, Does.Contain("state (on or off: the state it left once settled, or the state already held)"));
 			Assert.That(banner, Does.Contain("unchanged (true when that state already held, so nothing was issued)"));
 			Assert.That(banner, Does.Contain("RepairBuilding is a toggle on the player actor, with target_actor the building: its"
