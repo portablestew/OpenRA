@@ -25,7 +25,10 @@ description: OpenRA text_adventure patterns.
 - A structure repair holds only while the building is damaged, so it ends at full health: read its `repairing` flag again before you count on it.
 - Vision comes only from your units; scout.
 - `path.eta_ticks` is a floor.
-- Sell refunds `RefundPercent` of the cost (default 50), scaled by the building's health: repair before you sell.
+- Sell refunds `RefundPercent` of the cost (default 50), scaled by the building's health: repair before you sell. `{"cmd":"order","actor":<id>,"order":"Sell"}`.
+- Power: `power` is `{provided, drained, excess, state}`. `state` is `Normal` (provided ≥ drained), `Low` or `Critical`. Low power disables defenses such as TSLA, AGUN and SAM; PBOX, HBOX, GUN and FTUR keep firing.
+- Stats: `fs_grep` `^\^Artillery:|^\^TeslaWeapon:` in `mods/ra/weapons/`. `Range: 12c0` is 12 cells; `7c0` is 7.
+- Queue past your funds: `{"cmd":"order","actor":<queue actor>,"order":"StartProduction","item":"e1","extra_data":1}`. `build` refuses an item you cannot afford; `StartProduction` queues it, and it builds as funds arrive.
 - Costs compare against `funds`, the spendable total (`cash_funds + resource_funds`). `cash_funds` is only the uncapped pool; `resource_funds` is only the harvested pool, capped by `resource_funds_capacity`. A `SilosNeeded` notification means that cap is full and further harvest is wasted: build a silo or spend.
 - `powers` lists each support power you can see, with its charge. Your own are always listed. An opponent's silo countdown is listed when the engine shows you its timer. A charging power is not ready, and `remaining_ticks` says when it will be. An empty list does not mean no opponent power is charging.
 - Group orders are partial: a matched actor that is dead, not owned, or refuses the name is skipped with its `error`, and the rest are ordered. `skipped` lists them, and is absent when none were skipped. The group is refused only when no matched actor can take the order.
