@@ -15,6 +15,7 @@ description: OpenRA text_adventure patterns.
 - Fresh producer: `options:[]`, `enabled:false` on first read; read again.
 - Place: `{"cmd":"place","item":"powr","cell":[40,50]}`. `cell` is where it placed. `{"cmd":"place"}` with no args places the done queue-head item; with nothing done it errors.
 - Finished: a `ConstructionComplete` notification names a structure with `placement_required:true`, so place it. A `UnitReady` notification names a unit with its `cell`.
+- `LevelUp` names the unit that gained a level in `item`, its id in `actor`, and its new rank in `level` (1-based).
 - `NewOptions` names in `options` the options that became buildable since the last one (empty when none). An ally's has no `options`.
 - Wait events: `{"cmd":"wait","timeout_ticks":500,"min_ticks":500}`. `result`: `events`, `timeout`, `paused`, `world_changed`. Events are your ordered movement, combat, production and notifications.
 - A `wait` reply carries a header in `state`, not the full digest: `tick`, `game_over`, `winner`, `local_player`, `funds`, `capacity`, `power`, `known_counts`, `threats`, `unit_counts`, `units` (yours), `queues` (yours), and `powers` when an opponent's power timer is visible to you. It has no map. `state` with `detail:"summary"` returns the same header; `state` with no `detail` is the full digest.

@@ -32,6 +32,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// when one is known, and BlockedBy when items wait behind it. An InsufficientFunds names the Item it could not pay for, the
 	/// Reason (production or repair), the Cost (a production item's total, or a repair step's), the production's RemainingCost, the
 	/// Funds (cash and stored resources) and ShortBy. The engine throttles InsufficientFunds to one per 30 seconds of real time.
+	/// A LevelUp names the Item that gained a level, its Actor (the unit's id) and the Level it reached, the new rank, 1-based.
 	/// A key with no known value is left out.
 	/// </summary>
 	public sealed record NotificationV1(string Event, int Tick, string Name, string Owner,
@@ -47,7 +48,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? RemainingCost = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Funds = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ShortBy = null,
-		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? Producer = null);
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? Producer = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? Actor = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Level = null);
 
 	/// <summary>
 	/// What the engine knows about a notification it is about to play: the notification's name and owner, which Raise matches on,
@@ -55,7 +58,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// </summary>
 	public sealed record NotificationContext(string Name, Player Owner, string Item = null, string QueueType = null,
 		string Reason = null, int? Cost = null, int? RemainingCost = null, int? Funds = null, int? ShortBy = null,
-		uint? Producer = null, string BlockedBy = null);
+		uint? Producer = null, string BlockedBy = null,
+		uint? Actor = null, int? Level = null);
 
 	public static class AgentNotifications
 	{
@@ -164,6 +168,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 				Reason: "repair", Cost: cost, Funds: funds, ShortBy: cost - funds));
 		}
 
+		/// <summary>Explains the LevelUp a unit's experience plays when it gains a level: the unit's type, its actor id and the new rank.</summary>
+		public static void ExplainLevelUp(Actor self, string notification, int level)
+		{
+			if (!AgentEvents.Enabled)
+				return;
+
+			Explain(new NotificationContext(notification, self.Owner, self.Info.Name, Actor: self.ActorID, Level: level));
+		}
+
 		/// <summary>Marks the item a production queue has finished, and the queue it is in, for the ready notification it plays next. Pair with Finished.</summary>
 		public static void Finishing(Player owner, ActorInfo item, string queueType)
 		{
@@ -225,7 +238,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			{
 				AgentEvents.Raise(new NotificationV1("notification", tick, name, player?.PlayerName, explained.Item, null, null,
 					explained.QueueType, null, explained.BlockedBy, null, explained.Reason, explained.Cost, explained.RemainingCost,
-					explained.Funds, explained.ShortBy, explained.Producer));
+					explained.Funds, explained.ShortBy, explained.Producer, explained.Actor, explained.Level));
 				return;
 			}
 

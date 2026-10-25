@@ -42,6 +42,9 @@ namespace OpenRA.Test
 		const string NoBuildNotification = "NoBuild";
 		const string FundsNotification = "InsufficientFunds";
 
+		/// <summary>The notification a unit plays when it gains a level in ra (defaults.yaml: GainsExperience, LevelUpNotification).</summary>
+		const string LevelUpNotification = "LevelUp";
+
 		/// <summary>Ticks to let the map settle, and the refused order run.</summary>
 		const int SettleTicks = 5;
 
@@ -273,6 +276,48 @@ namespace OpenRA.Test
 			Assert.That(Field<int?>(note, "ShortBy"), Is.EqualTo(Field<int?>(note, "Cost")), "With no funds, the step is short its whole cost.");
 			Assert.That(Field<string>(note, "QueueType"), Is.Null, "A repair is in no queue.");
 			Assert.That(Field<int?>(note, "RemainingCost"), Is.Null, "A repair step has no remaining cost.");
+			Assert.That(Field<uint?>(note, "Actor"), Is.Null, "Only a LevelUp names an actor.");
+			Assert.That(Field<int?>(note, "Level"), Is.Null, "Only a LevelUp names a level.");
+		}
+
+		[TestCase(TestName = "A unit that gains the experience for one level raises one LevelUp naming its type, its actor id and the new rank")]
+		public void LevelUpNamesTheUnitAndTheNewRank()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			var e1 = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), local);
+			hw.Tick(1);
+			TakeNotifications();
+
+			var gains = ModTrait(e1, "Traits.GainsExperience");
+			gains.GetType().GetMethod("GiveLevels").Invoke(gains, [1, false]);
+			var notes = TakeNotifications().Where(n => Field<string>(n, "Name") == LevelUpNotification).ToList();
+
+			Assert.That(notes, Has.Count.EqualTo(1), "One level should raise exactly one LevelUp.");
+			Assert.That(Field<string>(notes[0], "Owner"), Is.EqualTo(local.PlayerName));
+			Assert.That(Field<string>(notes[0], "Item"), Is.EqualTo("e1"), "The notification should name the unit's type.");
+			Assert.That(Field<uint?>(notes[0], "Actor"), Is.EqualTo(e1.ActorID), "The notification should name the unit's actor id.");
+			Assert.That(Field<int?>(notes[0], "Level"), Is.EqualTo(1), "The level is the new rank, 1-based.");
+		}
+
+		[TestCase(TestName = "A silent level up raises no LevelUp notification")]
+		public void SilentLevelUpRaisesNoNotification()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			var e1 = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), local);
+			hw.Tick(1);
+			TakeNotifications();
+
+			var gains = ModTrait(e1, "Traits.GainsExperience");
+			gains.GetType().GetMethod("GiveLevels").Invoke(gains, [1, true]);
+
+			Assert.That(TakeNotifications().Where(n => Field<string>(n, "Name") == LevelUpNotification), Is.Empty,
+				"A silent level up should not raise a LevelUp.");
 		}
 
 		[TestCase(TestName = "A NoBuild with no context, or with another name's or owner's context, carries none of the context keys")]
@@ -285,7 +330,7 @@ namespace OpenRA.Test
 			var hub = ModType("AgentSocket.AgentNotifications");
 			var context = ModType("AgentSocket.NotificationContext");
 			object Context(string name, Player owner) =>
-				Activator.CreateInstance(context, [name, owner, "e1", "Infantry", "exit_blocked", 300, 120, 50, 70, 9u, "e1"]);
+				Activator.CreateInstance(context, [name, owner, "e1", "Infantry", "exit_blocked", 300, 120, 50, 70, 9u, "e1", null, null]);
 
 			// Each NoBuild is taken on its own: a flush sends the first two of a name in full and folds the rest into a marker.
 			List<object> PlayAndTake()

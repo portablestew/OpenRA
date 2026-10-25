@@ -104,7 +104,7 @@ namespace OpenRA.Test
 
 				// One sample sets every optional key, so the banner's keys are checked in full.
 				new NotificationV1("notification", 1, "ConstructionComplete", "P", "powr", [3, 4], true, "Building", ["proc"], "powr", ["powr"],
-					"exit_blocked", 300, 120, 50, 70, 9),
+					"exit_blocked", 300, 120, 50, 70, 9, 12u, 2),
 				new CrateV1("crate", 1, "collected", 2, "crate", "Neutral", [3, 4], 7, "e1", "GiveCashCrateAction"),
 				new HealedV1("healed", 1, 2, "e1", "P", 7, 30, 100, "Normal"),
 				new SoldV1("sold", 1, 2, "e1", "P", [3, 4]),
@@ -200,11 +200,17 @@ namespace OpenRA.Test
 			Assert.That(banner, Does.Contain("up to 10 of the distinct actors they covered, and [] when they name none."));
 		}
 
+		[TestCase(TestName = "The banner documents a LevelUp's item, actor and level, the level being the new rank")]
+		public void BannerDocumentsTheLevelUpFields()
+		{
+			Assert.That(AgentSocketServer.Banner, Does.Contain("LevelUp names item, actor (the unit's id) and level (the new rank, 1-based)."));
+		}
+
 		[TestCase(TestName = "The banner documents the payload a notification marker keeps: the latest suppressed one's keys, per name and item")]
 		public void BannerDocumentsTheNotificationMarkerPayload()
 		{
 			Assert.That(AgentSocketServer.Banner, Does.Contain("A notification's marker is per name and item, and carries the latest suppressed one's item, queue_type, reason, cost,"
-				+ " remaining_cost, funds, short_by, producer, blocked_by, cell, placement_required, options and placeable, each left out when unknown."));
+				+ " remaining_cost, funds, short_by, producer, blocked_by, cell, placement_required, options, placeable, actor and level, each left out when unknown."));
 		}
 
 		[TestCase(TestName = "The banner documents placeable and blocked_by on a structure's ConstructionComplete, and NewOptions' options")]

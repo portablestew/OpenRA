@@ -261,6 +261,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    no_producer), producer (exit_blocked, producer_reserved) and blocked_by when items wait behind it. InsufficientFunds names item,\n");
 			text.Append("    reason (production, repair), cost, funds, short_by, and for production queue_type and remaining_cost; the engine sends it at most\n");
 			text.Append("    once per 30 s real time, so one can stand for a long stall. Keys with no known value are omitted.\n");
+			text.Append("    LevelUp names item, actor (the unit's id) and level (the new rank, 1-based).\n");
 			text.Append("  Null and omitted: a null key is present with no value (an unknown value, or an optional request key left out).\n");
 			text.Append("    A key that does not apply is omitted:\n");
 			text.Append("    dist and pt in look actors without reference points, and look on a refusal with no local player.\n");
@@ -310,7 +311,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " for a heal, HP after its first heal), hp_to (HP after its last) and attackers (the known attackers or healers). A marker past"
 				+ " the first 10 victims has damage_total and attackers only. Each of these is left out when it has no value.\n"
 				+ "    A notification's marker is per name and item, and carries the latest suppressed one's item, queue_type, reason, cost,"
-				+ " remaining_cost, funds, short_by, producer, blocked_by, cell, placement_required, options and placeable, each left out when unknown.\n"
+				+ " remaining_cost, funds, short_by, producer, blocked_by, cell, placement_required, options, placeable, actor and level, each left out when unknown.\n"
 				+ "    A connection's first envelope has initial:true, its state in full, and no events from before its first request.\n"
 				+ "    The static data (state.map, state.ms_per_tick, and players' faction, color, bot and handicap) rides with the state until a world change (an undo,\n"
 				+ "    a load_skirmish, a new world) or a reconnect; in the envelopes between, those keys are null.\n"

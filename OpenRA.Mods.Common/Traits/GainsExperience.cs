@@ -12,6 +12,7 @@
 using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
+using OpenRA.Mods.Common.AgentSocket;
 using OpenRA.Mods.Common.Effects;
 using OpenRA.Primitives;
 using OpenRA.Traits;
@@ -129,7 +130,9 @@ namespace OpenRA.Mods.Common.Traits
 
 				if (!silent)
 				{
+					AgentNotifications.ExplainLevelUp(self, info.LevelUpNotification, Level);
 					Game.Sound.PlayNotification(self.World.Map.Rules, self.Owner, "Sounds", info.LevelUpNotification, self.Owner.Faction.InternalName);
+					AgentNotifications.Explained();
 					TextNotificationsManager.AddTransientLine(self.Owner, info.LevelUpTextNotification);
 
 					if (info.LevelUpImage != null && info.LevelUpSequence != null)

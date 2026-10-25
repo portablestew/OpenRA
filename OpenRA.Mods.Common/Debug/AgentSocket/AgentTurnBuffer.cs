@@ -48,7 +48,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int[] Cell = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? PlacementRequired = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Options = null,
-		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Placeable = null);
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Placeable = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? Actor = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Level = null);
 
 	/// <summary>
 	/// The events one connection has seen since its last flush (P3.2). Add records an event as it is raised. Flush returns the
@@ -310,7 +312,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			public AggregatedV1 Marker() => new(Type, Count, From, To, Actors.ToArray(), Name, damageTotal, hpFrom, hpTo,
 				Attackers.Count > 0 ? Attackers.ToArray() : null, latest?.Item, latest?.QueueType, latest?.Reason, latest?.Cost,
 				latest?.RemainingCost, latest?.Funds, latest?.ShortBy, latest?.Producer, latest?.BlockedBy, latest?.Cell,
-				latest?.PlacementRequired, latest?.Options, latest?.Placeable);
+				latest?.PlacementRequired, latest?.Options, latest?.Placeable, latest?.Actor, latest?.Level);
 
 			// HP is tracked only for one victim, since a residual run spans several victims' HP.
 			void TrackHp(int? from, int to)
