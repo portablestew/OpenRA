@@ -127,6 +127,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The path a Move planned, source cell first. Null until the Move's first path evaluation is captured.</summary>
 		public int[][] Path { get; private set; }
 
+		/// <summary>The path result a Move reply reports: found, or no_path. Null until the path is captured, and for other awaits.</summary>
+		public string PathResult => Path == null ? null : Path.Length == 0 ? "no_path" : "found";
+
 		/// <summary>The order names the subject accepted when the validators refused the order. Null unless Valid is false.</summary>
 		public string[] Orders { get; private set; }
 
@@ -435,7 +438,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				}
 
 				foreach (var p in Settling.Where(p => p.World == world).ToArray())
-					if (world.WorldTick - p.ResolvedTick >= p.SettleTicks)
+					if (SettleDue(p, world.WorldTick))
 						Complete(p);
 			}
 
@@ -443,6 +446,19 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (toIssue != null)
 				foreach (var order in toIssue)
 					world.IssueOrder(order);
+		}
+
+		/// <summary>
+		/// True when a resolved await has held its settle ticks and, for a valid Move or AttackMove, has its path (3d). The path
+		/// wait is bounded by the resolve budget, so a path that never comes settles the reply with a null path. A refused order
+		/// plans no path, so it does not wait for one. Must run on the game thread.
+		/// </summary>
+		static bool SettleDue(AgentOrderAwait p, int tick)
+		{
+			if (tick - p.ResolvedTick < p.SettleTicks)
+				return false;
+
+			return !p.IsMoveOrder || !p.Valid || p.Path != null || tick - p.ResolvedTick >= ResolveBudgetTicks;
 		}
 
 		/// <summary>

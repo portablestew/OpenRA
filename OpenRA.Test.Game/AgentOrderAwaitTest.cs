@@ -249,7 +249,7 @@ namespace OpenRA.Test
 				Assert.That(orders, Has.Count.EqualTo(1), "Expected exactly one order event.");
 				Assert.That(Field<int>(orders[0], "EffectTick"), Is.EqualTo(effectTick), "The reply's effect_tick is not the order event's.");
 
-				Assert.That(root.TryGetProperty("path", out _), Is.False, "The order reply carries no path; the path event does.");
+				Assert.That(root.GetProperty("path").GetString(), Is.EqualTo("found"), "The order reply should carry the path the Move planned.");
 			}
 			finally
 			{
@@ -257,7 +257,45 @@ namespace OpenRA.Test
 			}
 		}
 
-		[TestCase(TestName = "A Move while the game is paused returns at once, unsettled, and the tick does not move")]
+		[TestCase(TestName = "A Move that asks for no settle still waits for its path, so a reachable cell replies path found")]
+			public void MoveWithNoSettleWaitsForItsPath()
+			{
+				using var hw = HeadlessWorld.Create(1);
+				var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+				hw.Tick(1);
+				var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+
+				// settle_ticks 0 would settle on the resolve tick, so the reply holds until the path is captured.
+				using var response = AgentStateDumpTest.RequestWithTicks(hw,
+					$"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{destination.X},{destination.Y}],\"settle_ticks\":0}}");
+				var root = response.RootElement;
+
+				Assert.That(root.GetProperty("settled").GetBoolean(), Is.True, root.ToString());
+				Assert.That(root.GetProperty("path").GetString(), Is.EqualTo("found"), root.ToString());
+			}
+
+			[TestCase(TestName = "A Move to a cell the unit cannot reach replies valid, settled, with path no_path")]
+			public void UnreachableMoveReportsNoPath()
+			{
+				using var hw = HeadlessWorld.Create(1);
+				var trapped = AgentAttackMoveTest.Trapped(hw);
+				Assume.That(trapped, Is.Not.Null, "The test map should have a land cell with no land neighbour.");
+
+				// The unit stands on a cell with no land neighbour, so no path leads from it anywhere.
+				var unit = hw.CreateActor("e1", trapped.Value, hw.LocalPlayer);
+				hw.Tick(1);
+				var elsewhere = hw.FindClearArea(hw.LocalPlayer.HomeLocation, 1, 1, 40);
+
+				using var response = AgentStateDumpTest.RequestWithTicks(hw,
+					$"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"Move\",\"cell\":[{elsewhere.X},{elsewhere.Y}],\"settle_ticks\":0}}");
+				var root = response.RootElement;
+
+				Assert.That(root.GetProperty("valid").GetBoolean(), Is.True, root.ToString());
+				Assert.That(root.GetProperty("settled").GetBoolean(), Is.True, root.ToString());
+				Assert.That(root.GetProperty("path").GetString(), Is.EqualTo("no_path"), root.ToString());
+			}
+
+			[TestCase(TestName = "A Move while the game is paused returns at once, unsettled, and the tick does not move")]
 		public void PausedMoveReturnsAtOnce()
 		{
 			using var hw = HeadlessWorld.Create(1);

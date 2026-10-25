@@ -27,6 +27,7 @@ description: OpenRA text_adventure patterns.
 - A structure repair holds only while the building is damaged, so it ends at full health: read its `repairing` flag again before you count on it.
 - Vision comes only from your units; scout.
 - `path.eta_ticks` is a floor.
+- A Move reply's `path` is `found` or `no_path`: `no_path` means pick another cell. An AttackMove reply with no `outcome` planned no path in time (it may have engaged a target): read the state before you reissue it.
 - Sell refunds `RefundPercent` of the cost (default 50), scaled by the building's health: repair before you sell. `{"cmd":"order","actor":<id>,"order":"Sell"}`.
 - Power: `power` is `{provided, drained, excess, state}`. `state` is `Normal` (provided ≥ drained), `Low` or `Critical`. Low power disables defenses such as TSLA, AGUN and SAM; PBOX, HBOX, GUN and FTUR keep firing.
 - Stats: `fs_grep` `^\^Artillery:|^\^TeslaWeapon:` in `mods/ra/weapons/`. `Range: 12c0` is 12 cells; `7c0` is 7.

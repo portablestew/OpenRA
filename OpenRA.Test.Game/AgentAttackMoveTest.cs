@@ -17,7 +17,7 @@ namespace OpenRA.Test
 {
 	/// <summary>
 	/// An AttackMove order is awaited on its resolution, as a Move is (P3.0a). It replies valid, effect_tick, settled and
-	/// settled_ticks, with no path, and it does not wait for the unit to travel. An unreachable cell is valid false with no_path.
+	/// settled_ticks and path, and it does not wait for the unit to travel. An unreachable cell is valid false with no_path.
 	/// A group reports each actor's own result.
 	/// </summary>
 	[TestFixture]
@@ -58,7 +58,7 @@ namespace OpenRA.Test
 		/// A land cell with no land neighbour: a unit placed there has no path anywhere, so an AttackMove from it finds none. Null when
 		/// the map has no such cell.
 		/// </summary>
-		static CPos? Trapped(HeadlessWorld hw)
+		internal static CPos? Trapped(HeadlessWorld hw)
 		{
 			var map = hw.World.Map;
 			bool Land(CPos c) => map.Contains(c) && map.GetTerrainInfo(c).Type != "Water";
@@ -66,7 +66,7 @@ namespace OpenRA.Test
 			return map.AllCells.Where(c => Land(c) && steps.All(step => !Land(c + step))).Cast<CPos?>().FirstOrDefault();
 		}
 
-		[TestCase(TestName = "A valid AttackMove replies valid with an effect_tick and settled, and carries no path")]
+		[TestCase(TestName = "A valid AttackMove replies valid with an effect_tick and settled, and its path is found")]
 		public void ValidAttackMoveSettles()
 		{
 			using var hw = HeadlessWorld.Create(Seed);
@@ -87,7 +87,7 @@ namespace OpenRA.Test
 				"A valid AttackMove should reply with its effect_tick.");
 			Assert.That(Kind(root, "settled"), Is.EqualTo(JsonValueKind.True), "A valid AttackMove should reply settled:true.");
 			Assert.That(root.GetProperty("settled_ticks").GetInt32(), Is.GreaterThan(0));
-			Assert.That(root.TryGetProperty("path", out _), Is.False, "An AttackMove reply should carry no path: its travel is not awaited.");
+			Assert.That(root.GetProperty("path").GetString(), Is.EqualTo("found"), "A valid AttackMove should report the path it planned: its travel is not awaited.");
 		}
 
 		[TestCase(TestName = "An AttackMove from a unit with no path replies valid false, with outcome no_path and a reason")]
@@ -115,6 +115,26 @@ namespace OpenRA.Test
 				"An AttackMove with no path should report the no_path outcome.");
 			Assert.That(root.GetProperty("reason").GetString(), Is.EqualTo("no path to the cell"),
 				"An AttackMove with no path should say why.");
+		}
+
+		[TestCase(TestName = "An AttackMove that engages an enemy before its Move plans a path replies no outcome, not started")]
+		public void EngagedAttackMoveWithNoPathReportsNoOutcome()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			var unit = hw.CreateActor(Infantry, hw.FindClearArea(local.HomeLocation, 3, 3), local);
+			hw.Tick(SettleTicks);
+			var enemy = hw.CreateActor(Infantry, hw.FindClearArea(unit.Location + new CVec(2, 0), 1, 1, 2), hw.EnemyPlayer);
+			hw.Tick(1);
+			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+
+			// The enemy in range is engaged first, so the unit's Move never plans a path. settle_ticks 0 settles before one exists.
+			using var results = AgentStateDumpTest.RequestWithTicks(hw,
+				$"{{\"cmd\":\"order\",\"actor\":{unit.ActorID},\"order\":\"AttackMove\",\"cell\":[{destination.X},{destination.Y}],\"settle_ticks\":0}}");
+			var root = results.RootElement;
+
+			Assert.That(root.GetProperty("settled").GetBoolean(), Is.True, root.ToString());
+			Assert.That(root.TryGetProperty("outcome", out _), Is.False, "An AttackMove with no path should report no outcome, not started. " + root);
 		}
 
 		[TestCase(TestName = "A group AttackMove reports each actor's own result")]

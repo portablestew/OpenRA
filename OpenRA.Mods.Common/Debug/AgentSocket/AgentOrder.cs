@@ -95,10 +95,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	/// <summary>
 	/// The Move reply (P1.3). Valid and EffectTick are null, and Settled is false, when the game was paused and the reply did not
-	/// wait. Reason and Orders (P1.5) are set only when the validators refused the order, and are omitted from every other reply.
+	/// wait. Path (3d) is found or no_path, and null when no path was planned within the resolve budget. Reason and Orders (P1.5) are set only when the validators refused the order, and are omitted from every other reply.
 	/// </summary>
 	public sealed record MoveV1(bool Ok, string Cmd, int Tick, int MinEffectTick, bool? Valid, int? EffectTick, bool Settled,
-		int SettledTicks,
+		int SettledTicks, string Path,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Orders = null);
 
@@ -118,12 +118,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null);
 
 	/// <summary>
-	/// The AttackMove reply (P3.0a). Valid, EffectTick and Settled follow the Move reply, but there is no path: the unit's travel is not
-	/// awaited. Outcome is started, or no_path when the unit planned no way to the cell (valid is then false). Reason is set for a
+	/// The AttackMove reply (P3.0a). Valid, EffectTick and Settled follow the Move reply, and Path is the Move's path result (3d), null when none was planned in time. The unit's travel is not
+	/// awaited. Outcome is started, or no_path when the unit planned no way to the cell (valid is then false), or null when no path was planned in time. Reason is set for a
 	/// no_path and for a refusal, and Orders only for a refusal. A paused game gives nulls, as a Move does.
 	/// </summary>
 	public sealed record AttackMoveV1(bool Ok, string Cmd, int Tick, int MinEffectTick, bool? Valid, int? EffectTick, bool Settled,
-		int SettledTicks,
+		int SettledTicks, string Path,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Outcome = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Orders = null);
@@ -194,6 +194,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The reason a Move reply gives when the validators refused the order (P1.5).</summary>
 		public const string ValidatorRejected = "rejected by order validator";
 		const string NoPathReason = "no path to the cell";
+		static readonly string NoPathPlannedReason = $"no path was planned within {AgentOrderAwait.ResolveBudgetTicks} ticks: the unit may have engaged a target or been reordered";
 
 		/// <summary>Parses the request on the socket thread. Returns an error message, or null when the request is valid.</summary>
 		public static string Parse(JsonElement root, out OrderRequest request)
@@ -498,7 +499,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		public static MoveV1 Reply(string cmd, OrderV1 ack, AgentOrderAwait await)
 		{
 			var refused = !await.Valid;
-			return new MoveV1(true, cmd, ack.Tick, ack.MinEffectTick, await.Valid, await.ResolvedTick, true, await.SettleTicks,
+			return new MoveV1(true, cmd, ack.Tick, ack.MinEffectTick, await.Valid, await.ResolvedTick, true, await.SettleTicks, await.PathResult,
 				refused ? ValidatorRejected : null, refused ? await.Orders : null);
 		}
 
@@ -539,7 +540,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (await.IsAttackMove)
 			{
 				var (valid, outcome, reason, orders) = AttackMoveOutcome(await);
-				return new AttackMoveV1(true, "order", ack.Tick, ack.MinEffectTick, valid, await.ResolvedTick, true, await.SettleTicks, outcome, reason, orders);
+				return new AttackMoveV1(true, "order", ack.Tick, ack.MinEffectTick, valid, await.ResolvedTick, true, await.SettleTicks, await.PathResult, outcome, reason, orders);
 			}
 
 			if (await.IsDeploy)
@@ -564,10 +565,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return new DeployV1(true, "order", ack.Tick, ack.MinEffectTick, false, null);
 
 			if (await is { IsAttackMove: true })
-				return new AttackMoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0);
+				return new AttackMoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, null);
 
 			if (await is { IsMoveOrder: true })
-				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0);
+				return new MoveV1(true, "order", ack.Tick, ack.MinEffectTick, null, null, false, 0, null);
 
 			return Outcome("order", ack, null);
 		}
@@ -675,7 +676,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>
 		/// The AttackMove outcome of a settled await (P3.0a): whether the order is valid, the outcome and reason to report, and the
 		/// orders the subject accepts on a refusal. A refusal is valid false with its reason. A path of no cells, from a unit not
-		/// already on the cell, is valid false with no_path.
+		/// already on the cell, is valid false with no_path. A path never captured in time is valid with a null outcome and its reason.
 		/// </summary>
 		static (bool Valid, string Outcome, string Reason, string[] Orders) AttackMoveOutcome(AgentOrderAwait await)
 		{
@@ -684,6 +685,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			if (await.NoPath)
 				return (false, AgentOrderAwait.NoPathOutcome, NoPathReason, null);
+
+			if (await.Path == null)
+				return (true, null, NoPathPlannedReason, null);
 
 			return (true, AgentOrderAwait.Started, null, null);
 		}
