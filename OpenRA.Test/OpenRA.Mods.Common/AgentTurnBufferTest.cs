@@ -247,38 +247,133 @@ namespace OpenRA.Test
 			Assert.That(wire.RootElement.TryGetProperty("actors", out var actors), Is.True, "The marker should always carry an actors key.");
 			Assert.That(actors.ValueKind, Is.EqualTo(JsonValueKind.Array), "The actors key should hold an array.");
 			Assert.That(actors.GetArrayLength(), Is.Zero, "Events without an actor field should name no actors.");
-			}
+		}
 
-			[TestCase(TestName = "Notifications aggregate per name, so a finished structure is never hidden behind other notifications")]
-			public void NotificationsAggregatePerName()
+		[TestCase(TestName = "Notifications aggregate per name, so a finished structure is never hidden behind other notifications")]
+		public void NotificationsAggregatePerName()
+		{
+			var buffer = new AgentTurnBuffer();
+			var silos = Enumerable.Range(1, 3).Select(i => new NotificationV1("notification", i, "SilosNeeded", "P", null, null, null, null)).ToList();
+			var lowPower = Enumerable.Range(4, 3).Select(i => new NotificationV1("notification", i, "LowPower", "P", null, null, null, null)).ToList();
+			var built = new NotificationV1("notification", 7, "ConstructionComplete", "P", "powr", [3, 4], true, "Building");
+			foreach (var e in silos.Concat(lowPower).Append(built))
+				buffer.Add(e);
+
+			var batch = buffer.Flush();
+
+			Assert.That(batch, Does.Contain(built), "ConstructionComplete should flush in full, not behind the SilosNeeded and LowPower markers.");
+			Assert.That(batch.OfType<AggregatedV1>().Select(Wire), Is.EqualTo(new[]
 			{
-				var buffer = new AgentTurnBuffer();
-				var silos = Enumerable.Range(1, 3).Select(i => new NotificationV1("notification", i, "SilosNeeded", "P", null, null, null, null)).ToList();
-				var lowPower = Enumerable.Range(4, 3).Select(i => new NotificationV1("notification", i, "LowPower", "P", null, null, null, null)).ToList();
-				var built = new NotificationV1("notification", 7, "ConstructionComplete", "P", "powr", [3, 4], true, "Building");
-				foreach (var e in silos.Concat(lowPower).Append(built))
-					buffer.Add(e);
+				Wire(new AggregatedV1("notification", 1, 3, 3, [], "SilosNeeded")),
+				Wire(new AggregatedV1("notification", 1, 6, 6, [], "LowPower")),
+			}), "Each suppressed name should get its own marker, and the marker should name it.");
+		}
 
-				var batch = buffer.Flush();
+		[TestCase(TestName = "An event with no name field aggregates by its type alone, and its marker has no name key")]
+		public void MarkerWithoutANameHasNoNameKey()
+		{
+			var buffer = new AgentTurnBuffer();
+			foreach (var e in Enumerable.Range(1, 3).Select(i => Damaged(9 + i, i)))
+				buffer.Add(e);
 
-				Assert.That(batch, Does.Contain(built), "ConstructionComplete should flush in full, not behind the SilosNeeded and LowPower markers.");
-				Assert.That(batch.OfType<AggregatedV1>().Select(Wire), Is.EqualTo(new[]
-				{
-					Wire(new AggregatedV1("notification", 1, 3, 3, [], "SilosNeeded")),
-					Wire(new AggregatedV1("notification", 1, 6, 6, [], "LowPower")),
-				}), "Each suppressed name should get its own marker, and the marker should name it.");
-			}
+			var json = JsonSerializer.Serialize(buffer.Flush()[2], Json);
 
-			[TestCase(TestName = "An event with no name field aggregates by its type alone, and its marker has no name key")]
-			public void MarkerWithoutANameHasNoNameKey()
+			Assert.That(json, Does.Not.Contain("name"), "A marker for events that name nothing should not add a name key.");
+		}
+
+		static DamagedV1 Strike(int tick, uint victim, uint? attacker, int damage, int hp) =>
+			new("damaged", tick, victim, "e1", "P", attacker, null, null, damage, hp, 100, "Normal", null, attacker is null);
+
+		static HealedV1 Heal(int tick, uint victim, uint? healer, int hp) =>
+			new("healed", tick, victim, "e1", "P", healer, hp, 100, "Normal");
+
+		[TestCase(TestName = "Damaged events past the first two aggregate per victim, with their damage, HP and attackers")]
+		public void DamagedAggregatesPerVictim()
+		{
+			var buffer = new AgentTurnBuffer();
+			var strikes = new[]
 			{
-				var buffer = new AgentTurnBuffer();
-				foreach (var e in Enumerable.Range(1, 3).Select(i => Damaged(9 + i, i)))
-					buffer.Add(e);
+				Strike(10, 1, 50, 10, 90),
+				Strike(11, 2, 51, 5, 45),
+				Strike(12, 1, 51, 20, 70),
+				Strike(13, 2, 51, 15, 30),
+				Strike(14, 1, 52, 30, 40),
+				Strike(15, 2, null, 8, 22),
+			};
+			foreach (var e in strikes)
+				buffer.Add(e);
 
-				var json = JsonSerializer.Serialize(buffer.Flush()[2], Json);
+			var batch = buffer.Flush();
 
-				Assert.That(json, Does.Not.Contain("name"), "A marker for events that name nothing should not add a name key.");
+			Assert.That(batch, Has.Count.EqualTo(4), "Two in full, then one marker for each of the two victims.");
+			Assert.That(batch.Take(2), Is.EqualTo(strikes.Take(2)), "The first two damaged events should flush in full, in arrival order.");
+			Assert.That(Wire(batch[2]), Is.EqualTo(Wire(new AggregatedV1("damaged", 2, 12, 14, [1], null, 50, 90, 40, [51, 52]))),
+				"Victim A's marker should sum its 50 damage, run from the HP before its first suppressed hit (90) to its last (40), and name both attackers.");
+			Assert.That(Wire(batch[3]), Is.EqualTo(Wire(new AggregatedV1("damaged", 2, 13, 15, [2], null, 23, 45, 22, [51]))),
+				"Victim B's marker should sum its 23 damage and name only the attacker that was known.");
+		}
+
+		[TestCase(TestName = "Healed events past the first two aggregate per victim, and name the healers that are known")]
+		public void HealedAggregatesPerVictim()
+		{
+			var buffer = new AgentTurnBuffer();
+			var heals = new[]
+			{
+				Heal(10, 1, 60, 50),
+				Heal(11, 2, 61, 30),
+				Heal(12, 1, 62, 60),
+				Heal(13, 1, 62, 70),
+				Heal(14, 2, null, 40),
+			};
+			foreach (var e in heals)
+				buffer.Add(e);
+
+			var batch = buffer.Flush();
+
+			Assert.That(batch, Has.Count.EqualTo(4), "Two in full, then one marker for each of the two victims.");
+			Assert.That(Wire(batch[2]), Is.EqualTo(Wire(new AggregatedV1("healed", 2, 12, 13, [1], null, null, 60, 70, [62]))),
+				"Victim A's marker should run from the HP after its first suppressed heal (60) to its last (70), and name healer 62 once, though it healed twice.");
+			Assert.That(Wire(batch[3]), Is.EqualTo(Wire(new AggregatedV1("healed", 1, 14, 14, [2], null, null, 40, 40, null))),
+				"Victim B's healer is not known, so the marker should have no attackers key.");
+		}
+
+		[TestCase(TestName = "A marker with no per-victim values has none of the damage, HP and attacker keys on the wire")]
+		public void MarkerWithoutVictimDataHasNoVictimKeys()
+		{
+			var buffer = new AgentTurnBuffer();
+			foreach (var e in Enumerable.Range(1, 3).Select(i => Damaged(9 + i, i)))
+				buffer.Add(e);
+
+			var json = Wire(buffer.Flush()[2]);
+
+			Assert.That(json, Does.Not.Contain("damage_total").And.Not.Contain("hp_from").And.Not.Contain("hp_to").And.Not.Contain("attackers"),
+				"A marker for events that carry no damage or attacker should not add the per-victim keys.");
+		}
+
+		[TestCase(TestName = "Victims past MaxVictimMarkers fold into one residual marker with a total but no HP range")]
+		public void VictimsPastTheCapShareAResidualMarker()
+		{
+			var buffer = new AgentTurnBuffer();
+			buffer.Add(Strike(1, 100, 9, 5, 95));
+			buffer.Add(Strike(2, 101, 9, 5, 95));
+			foreach (var i in Enumerable.Range(1, AgentTurnBuffer.MaxVictimMarkers + 2))
+				buffer.Add(Strike(10 + i, (uint)i, 9, 3, 17));
+
+			var markers = buffer.Flush().OfType<AggregatedV1>().ToList();
+
+			Assert.That(markers, Has.Count.EqualTo(AgentTurnBuffer.MaxVictimMarkers + 1),
+				"The first ten victims get a marker each, and the last two share one residual marker.");
+			Assert.That(markers.Take(AgentTurnBuffer.MaxVictimMarkers).Select(m => m.Actors[0]),
+				Is.EqualTo(Enumerable.Range(1, AgentTurnBuffer.MaxVictimMarkers).Select(i => (uint)i)),
+				"Each per-victim marker should name its own victim.");
+
+			var residual = markers[^1];
+			Assert.That(residual.Actors, Is.EqualTo(new uint[] { 11, 12 }), "The residual marker should name the two victims past the cap.");
+			Assert.That(residual.Aggregated, Is.EqualTo(2), "The residual marker should count the two suppressed hits.");
+			Assert.That(residual.DamageTotal, Is.EqualTo(6), "The residual marker should sum the damage of its victims.");
+			Assert.That(residual.Attackers, Is.EqualTo(new uint[] { 9 }), "The residual marker should name the attacker both victims share.");
+			Assert.That(Wire(residual), Does.Not.Contain("hp_from").And.Not.Contain("hp_to"),
+				"A residual marker spans several victims, so it should have no HP range on the wire.");
 		}
 	}
 }
