@@ -200,6 +200,36 @@ namespace OpenRA.Test
 			Assert.That(Keys(row), Does.Not.Contain("activity"));
 		}
 
+		[TestCase(TestName = "A husk is left out of units, unit_counts and the summary's header, and a live unit of its type is still counted")]
+		public void HusksAreNotInUnitsOrUnitCounts()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var local = hw.LocalPlayer;
+			hw.Tick(1);
+
+			var live = hw.CreateActor("3tnk", hw.FindClearArea(local.HomeLocation, 3, 3), local);
+			var husk = hw.CreateActor("3TNK.Husk", hw.FindClearArea(local.HomeLocation, 3, 3), local);
+			hw.Tick(1);
+
+			Assert.That(husk.OccupiesSpace, Is.Not.Null, "Precondition: a husk occupies space, so only the husk filter keeps it out.");
+
+			using var state = State();
+			var ids = state.RootElement.GetProperty("units").EnumerateArray().Select(u => u.GetProperty("id").GetUInt32()).ToArray();
+			Assert.That(ids, Does.Contain(live.ActorID), "A live unit should be listed in units.");
+			Assert.That(ids, Does.Not.Contain(husk.ActorID), "A husk should not be listed in units.");
+
+			// unit_counts is in the summary header only, which is where a wait reply reads it.
+			using var summary = RawRequest("{\"cmd\":\"state\",\"detail\":\"summary\"}");
+			var header = summary.RootElement.GetProperty("state");
+			var headerIds = header.GetProperty("units").EnumerateArray().Select(u => u.GetProperty("id").GetUInt32()).ToArray();
+			Assert.That(headerIds, Does.Not.Contain(husk.ActorID), "The summary header's units should not list a husk.");
+
+			var owned = state.RootElement.GetProperty("units").EnumerateArray()
+				.Count(u => u.GetProperty("owner").GetString() == local.PlayerName);
+			Assert.That(header.GetProperty("unit_counts").GetProperty(local.PlayerName).GetInt32(), Is.EqualTo(owned),
+				"unit_counts should count the local player's units listed, without the husk.");
+		}
+
 		[TestCase(TestName = "A damaged unit's row carries damage, the damage state's name, and no pos")]
 		public void DamagedUnitRowCarriesDamageState()
 		{

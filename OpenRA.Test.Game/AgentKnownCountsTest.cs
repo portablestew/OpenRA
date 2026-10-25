@@ -12,6 +12,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using NUnit.Framework;
 
@@ -68,6 +69,13 @@ namespace OpenRA.Test
 			return (bool)ModType("AgentSocket.AgentFog").GetMethod("Known").Invoke(null, [actor, observer]);
 		}
 
+		/// <summary>The husk test the digest uses (AgentStateDump.IsHusk), read through the mod's type.</summary>
+		static bool IsHusk(Actor actor)
+		{
+			return (bool)ModType("AgentSocket.AgentStateDump").GetMethod("IsHusk", BindingFlags.NonPublic | BindingFlags.Static)
+				.Invoke(null, [actor]);
+		}
+
 		/// <summary>The player's GpsWatcher trait, read through the mod's type.</summary>
 		static object Watcher(Player player)
 		{
@@ -87,13 +95,13 @@ namespace OpenRA.Test
 
 		/// <summary>
 		/// The expected counts for a player, computed from the world with AgentFog: the observer's own units all count, and another
-		/// player's count only when known. The same filters as the digest: occupying and not scenery.
+		/// player's count only when known. The same filters as the digest: occupying, not scenery and not a husk.
 		/// </summary>
 		static Dictionary<string, int> Expected(HeadlessWorld hw, Player owner, Player observer)
 		{
 			return hw.World.Actors
 				.Where(a => a.Owner == owner && a.OccupiesSpace != null && !a.IsDead && a.Owner.PlayerReference?.OwnsWorld != true
-					&& a.Info.Name != "mpspawn" && (owner == observer || Known(a, observer)))
+					&& a.Info.Name != "mpspawn" && !IsHusk(a) && (owner == observer || Known(a, observer)))
 				.GroupBy(a => a.Info.Name)
 				.ToDictionary(g => g.Key, g => g.Count());
 		}
@@ -165,6 +173,33 @@ namespace OpenRA.Test
 				"After the launch, the enemy's known counts should equal the enemy actors now known, by type.");
 			Assert.That(afterEnemy.GetValueOrDefault(Infantry), Is.GreaterThan(beforeE1),
 				"After the launch, the far enemy should be counted in the enemy's infantry.");
+		}
+
+		[TestCase(TestName = "A visible enemy husk is left out of known_counts, and a visible enemy unit of the same owner is still counted")]
+		public void EnemyHuskIsNotKnownCounted()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			var enemy = hw.EnemyPlayer;
+			hw.Tick(SettleTicks);
+
+			var unit = hw.CreateActor(Infantry, hw.FindClearArea(local.HomeLocation, 3, 3), local);
+			hw.CreateActor(Infantry, unit.Location + new CVec(2, 0), enemy);
+			var husk = hw.CreateActor("3TNK.Husk", hw.FindClearArea(unit.Location + new CVec(2, 0), 3, 3), enemy);
+			hw.Tick(SettleTicks);
+
+			Assert.That(local.Shroud.IsVisible(husk.CenterPosition), Is.True, "Precondition: the enemy husk should be visible.");
+			Assert.That(Known(husk, local), Is.True, "Precondition: the enemy husk should be known.");
+			Assert.That(IsHusk(husk), Is.True, "Precondition: the actor should be a husk.");
+
+			using var state = AgentStateDumpTest.State();
+			var counts = KnownCountsOf(state.RootElement, enemy.PlayerName);
+			Assert.That(counts.Keys.Where(k => k.EndsWith(".husk", StringComparison.OrdinalIgnoreCase)), Is.Empty,
+				"A husk should not be counted in known_counts.");
+			Assert.That(counts, Is.EqualTo(Expected(hw, enemy, local)),
+				"The enemy's known counts should equal the enemy actors the local player knows, without husks.");
+			Assert.That(counts.GetValueOrDefault(Infantry), Is.GreaterThanOrEqualTo(1),
+				"The visible enemy infantry should still be counted.");
 		}
 
 		[TestCase(TestName = "A player not allied with the local player has no funds, cash_funds, resource_funds, "

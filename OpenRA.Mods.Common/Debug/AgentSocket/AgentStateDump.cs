@@ -253,10 +253,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			return IsOwnStructure(a, observer) ? (object)StructureState(a, observer) : UnitState(a);
 		}
 
-		/// <summary>The actors the state's units list holds, in no particular order: the occupying, non-scenery actors the observer knows.</summary>
+		/// <summary>The actors the state's units list holds, in no particular order: the occupying, non-scenery, non-husk actors the observer knows.</summary>
 		static IEnumerable<Actor> StateActors(World world, Player observer)
 		{
-			return world.Actors.Where(a => a.OccupiesSpace != null && !a.IsDead && !IsScenery(a) && IsInState(a, observer));
+			return world.Actors.Where(a => a.OccupiesSpace != null && !a.IsDead && !IsScenery(a) && !IsHusk(a) && IsInState(a, observer));
 		}
 
 		/// <summary>
@@ -313,7 +313,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>
 		/// The number of each type the observer knows of a player's units (P2.5), by type. The observer's own units all count. Another
 		/// player's count only when AgentFog says the observer knows the unit: visible, a valid last-known snapshot, or a GPS dot.
-		/// Scenery is left out, as in the units list. Null without an observer.
+		/// Scenery and husks are left out, as in the units list. Null without an observer.
 		/// </summary>
 		static Dictionary<string, int> KnownCounts(Player player, Player observer)
 		{
@@ -321,7 +321,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return null;
 
 			return player.World.Actors
-				.Where(a => a.Owner == player && a.OccupiesSpace != null && !a.IsDead && !IsScenery(a)
+				.Where(a => a.Owner == player && a.OccupiesSpace != null && !a.IsDead && !IsScenery(a) && !IsHusk(a)
 					&& (player == observer || AgentFog.Known(a, observer)))
 				.GroupBy(a => a.Info.Name)
 				.OrderBy(g => g.Key, StringComparer.Ordinal)

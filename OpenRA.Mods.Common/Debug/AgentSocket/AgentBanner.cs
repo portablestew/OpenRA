@@ -47,6 +47,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 					+ " full health, and activity (the current activity's class name) only while it has one. No unit row has a pos."
 					+ " selection is the sorted ids of the actors your orders selected, empty when none."
 				+ " players[].known_counts is the count by type of the actors you know: all of your own, and another player's only where known."
+				+ " Husks (wrecks) are not in units, unit_counts or known_counts."
 				+ " players[].bot is the AI type of a bot-owned player (null for a human), players[].handicap its handicap percent,"
 				+ " and players[].color its #RRGGBB colour."
 				+ " A player not allied with you has null funds, cash_funds, resource_funds, resource_funds_capacity and power."
