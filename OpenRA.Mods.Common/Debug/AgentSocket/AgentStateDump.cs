@@ -91,10 +91,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// Capacity and Power are the local player's economy and power, null without a local player. KnownCounts is each player's count
 	/// of known units by type, as in the full digest. Threats is the threat list. UnitCounts is the number of units the full digest
 	/// would list, per owner. Powers is each other player's support power whose timer the local player is shown, and is omitted
-	/// when there is none. The units list, the map and the static player data are left out.
+	/// when there is none. Units is the local player's own units and structures, in the rows the full digest gives them, and
+	/// Queues is the local player's production queues (step 4); both are null without a local player. The map and the static
+	/// player data are left out.
 	/// </summary>
 	public sealed record StateSummaryV1(int Tick, bool GameOver, string Winner, string LocalPlayer, int? Funds, int? Capacity,
 		PowerV1 Power, Dictionary<string, Dictionary<string, int>> KnownCounts, ThreatV1[] Threats, Dictionary<string, int> UnitCounts,
+		object[] Units, SummaryQueueV1[] Queues,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PowerTimerV1[] Powers);
 
 	/// <summary>Builds the schema v1 snapshot. Must run on the game thread: it reads live world state.</summary>
@@ -133,7 +136,21 @@ namespace OpenRA.Mods.Common.AgentSocket
 				observer == null ? null : resources?.ResourceCapacity ?? 0,
 				observer == null ? null : Power(power),
 				observer == null ? null : world.Players.ToDictionary(p => p.PlayerName, p => KnownCounts(p, observer)),
-				AgentThreats.Build(world, observer), UnitCounts(world, observer), AgentPowers.Timers(world, observer));
+				AgentThreats.Build(world, observer), UnitCounts(world, observer),
+				observer == null ? null : OwnUnits(world, observer),
+				observer == null ? null : AgentProduction.SummaryQueues(world, observer),
+				AgentPowers.Timers(world, observer));
+		}
+
+		/// <summary>
+		/// The local player's own units and structures, in ActorID order, in the rows the full digest gives them (step 4). Null without an observer.
+		/// </summary>
+		static object[] OwnUnits(World world, Player observer)
+		{
+			return StateActors(world, observer).Where(a => a.Owner == observer)
+				.OrderBy(a => a.ActorID)
+				.Select(a => UnitRow(a, observer))
+				.ToArray();
 		}
 
 		/// <summary>The player whose WinState is Won, or null when none won.</summary>
@@ -226,8 +243,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var observer = world.LocalPlayer;
 			return StateActors(world, observer)
 				.OrderBy(a => a.ActorID)
-				.Select(a => IsOwnStructure(a, observer) ? (object)StructureState(a, observer) : UnitState(a))
+				.Select(a => UnitRow(a, observer))
 				.ToArray();
+		}
+
+		/// <summary>The row the units lists give an actor: the observer's own structure is slim (StructureV1), every other unit is UnitV1.</summary>
+		static object UnitRow(Actor a, Player observer)
+		{
+			return IsOwnStructure(a, observer) ? (object)StructureState(a, observer) : UnitState(a);
 		}
 
 		/// <summary>The actors the state's units list holds, in no particular order: the occupying, non-scenery actors the observer knows.</summary>

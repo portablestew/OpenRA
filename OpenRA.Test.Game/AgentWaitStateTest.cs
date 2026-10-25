@@ -18,7 +18,8 @@ namespace OpenRA.Test
 {
 	/// <summary>
 	/// The wait header and the state detail (step 8), checked on the serialized replies. A wait's envelope carries the summary
-	/// header and no units list; state with no detail, or detail "full", is the digest it was before; detail "summary" is the header.
+	/// header, which lists your own units and queues but no map; state with no detail, or detail "full", is the digest it was before;
+	/// detail "summary" is the header.
 	/// </summary>
 	[TestFixture]
 	sealed class AgentWaitStateTest
@@ -27,8 +28,8 @@ namespace OpenRA.Test
 		const string PowersKey = "powers";
 
 		static readonly string[] SummaryKeys = ["tick", "game_over", "winner", "local_player", "funds", "capacity", "power",
-			"known_counts", "threats", "unit_counts"];
-		static readonly string[] FullOnlyKeys = ["units", "map", "players", "selection", "net_frame", "ms_per_tick", "paused"];
+			"known_counts", "threats", "unit_counts", "units", "queues"];
+		static readonly string[] FullOnlyKeys = ["map", "players", "selection", "net_frame", "ms_per_tick", "paused"];
 		static readonly string[] MapEnvelopeKeys = ["map_state_png", "map_state_tick", "map_state_render", "map_px_per_cell", "map_origin", "map_size"];
 
 		bool savedAgentSocket;
@@ -57,7 +58,7 @@ namespace OpenRA.Test
 			return element.EnumerateObject().Select(p => p.Name).ToArray();
 		}
 
-		[TestCase(TestName = "A wait reply's envelope carries the summary header, and no units, map or player data")]
+		[TestCase(TestName = "A wait reply's envelope carries the summary header, and no map or player data")]
 		public void WaitCarriesTheHeaderNotTheUnits()
 		{
 			using var hw = HeadlessWorld.Create(1);
@@ -71,7 +72,7 @@ namespace OpenRA.Test
 
 			var header = root.GetProperty("state");
 			Assert.That(Keys(header), Is.EquivalentTo(SummaryKeys), "The header has exactly the summary keys.");
-			Assert.That(Keys(header).Intersect(FullOnlyKeys), Is.Empty, "The full units list and the static data are absent from a wait.");
+			Assert.That(Keys(header).Intersect(FullOnlyKeys), Is.Empty, "The full digest's map and static data are absent from a wait.");
 		}
 
 		[TestCase(TestName = "The wait header reads the local player's economy, the unit counts, and the game-over state")]
@@ -232,7 +233,7 @@ namespace OpenRA.Test
 				Assert.That(Keys(waits.RootElement.GetProperty("state")), Is.EquivalentTo(SummaryKeys));
 
 			using (var mixed = AgentStateDumpTest.RawRequest("[{\"cmd\":\"wait\",\"timeout_ticks\":0},{\"cmd\":\"ping\"}]"))
-				Assert.That(Keys(mixed.RootElement.GetProperty("state")), Does.Contain("units"));
+				Assert.That(Keys(mixed.RootElement.GetProperty("state")), Does.Contain("map"), "A full item in the array keeps the full digest, which carries the map.");
 		}
 
 		[TestCase(TestName = "The wait reply is smaller than the full digest it replaces, and the bytes are reported")]
@@ -251,6 +252,49 @@ namespace OpenRA.Test
 			TestContext.Out.WriteLine($"wait bytes before (full digest, ping): {beforeBytes}");
 			TestContext.Out.WriteLine($"wait bytes after (header, wait): {afterBytes}");
 			Assert.That(afterBytes, Is.LessThan(beforeBytes), "The header is smaller than the full digest it replaces.");
+		}
+
+		[TestCase(TestName = "The summary's units are the local player's own, in the rows the full digest gives them")]
+		public void SummaryUnitsAreTheFullDigestsOwnRows()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var own = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			var enemy = hw.CreateActor("e1", hw.FindClearArea(new CPos(60, 60), 1, 1), hw.EnemyPlayer);
+			using var summary = AgentStateDumpTest.RawRequest("{\"cmd\":\"state\",\"detail\":\"summary\"}");
+			using var full = AgentStateDumpTest.State();
+
+			var units = summary.RootElement.GetProperty("state").GetProperty("units").EnumerateArray().ToArray();
+			var ids = units.Select(u => u.GetProperty("id").GetUInt32()).ToArray();
+			Assert.That(ids, Does.Contain(own.ActorID), "The local player's unit is in the summary.");
+			Assert.That(ids, Does.Not.Contain(enemy.ActorID), "An enemy unit is not in the summary's units.");
+
+			var fullRows = full.RootElement.GetProperty("units").EnumerateArray()
+				.ToDictionary(u => u.GetProperty("id").GetUInt32(), u => u.GetRawText());
+			foreach (var unit in units)
+				Assert.That(unit.GetRawText(), Is.EqualTo(fullRows[unit.GetProperty("id").GetUInt32()]),
+					"A summary unit's row is the full digest's row for the same actor.");
+		}
+
+		[TestCase(TestName = "A queued build shows in the summary's queues, with the item the production reply gives it")]
+		public void SummaryQueuesHoldTheLiveItems()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+			hw.IssueOrder(Order.StartProduction(hw.LocalPlayer.PlayerActor, "powr", 1));
+			hw.Tick(10);
+
+			using var summary = AgentStateDumpTest.RawRequest("{\"cmd\":\"state\",\"detail\":\"summary\"}");
+			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
+			var queue = AgentProductionTest.QueueOf(summary.RootElement.GetProperty("state"), "Building");
+			var reported = AgentProductionTest.QueueOf(production.RootElement, "Building");
+
+			Assert.That(queue.GetProperty("actor").GetUInt32(), Is.EqualTo(reported.GetProperty("actor").GetUInt32()));
+			var item = queue.GetProperty("items")[0];
+			Assert.That(item.GetProperty("name").GetString(), Is.EqualTo("powr"));
+			Assert.That(item.GetRawText(), Is.EqualTo(reported.GetProperty("items")[0].GetRawText()),
+				"A summary queue item is the production item, byte for byte.");
+			Assert.That(queue.GetProperty("blocker").ValueKind, Is.EqualTo(JsonValueKind.Null));
 		}
 	}
 }

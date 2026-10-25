@@ -54,6 +54,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// </summary>
 	public sealed record ProductionItemV1(string Name, int Cost, int RemainingCost, int Progress, string State);
 
+	/// <summary>
+	/// One of the local player's queues in the state summary (step 4). Items are the live queue, head first, in the production
+	/// item shape. Blocker is the head item's name when it is finished and waits for placement, as in the production reply.
+	/// </summary>
+	public sealed record SummaryQueueV1(string QueueType, uint Actor, ProductionItemV1[] Items, string Blocker);
+
 	/// <summary>Builds the production response. Must run on the game thread: it reads live world state.</summary>
 	public static class AgentProduction
 	{
@@ -195,6 +201,22 @@ namespace OpenRA.Mods.Common.AgentSocket
 				.ThenBy(t => t.Trait.Info.Type, StringComparer.Ordinal)
 				.Select(t => (Queue: t.Trait, Head: FinishedHead(t.Trait)))
 				.Where(h => h.Head != null)
+				.ToArray();
+		}
+
+		/// <summary>
+		/// The local player's queues that have a producer, in the order the production reply lists them, for the state summary (step 4).
+		/// It reads only: the connection's seen options are left as they were. Must run on the game thread.
+		/// </summary>
+		internal static SummaryQueueV1[] SummaryQueues(World world, Player player)
+		{
+			return world.ActorsWithTrait<ProductionQueue>()
+				.Where(t => t.Actor.Owner == player && t.Actor.IsInWorld && !t.Actor.IsDead)
+				.OrderBy(t => t.Actor.ActorID)
+				.ThenBy(t => t.Trait.Info.Type, StringComparer.Ordinal)
+				.Where(t => ProducersOf(world, player, t.Trait).Length > 0)
+				.Select(t => new SummaryQueueV1(t.Trait.Info.Type, t.Actor.ActorID,
+					t.Trait.AllQueued().Select(i => ItemOf(t.Trait, i)).ToArray(), FinishedHead(t.Trait)?.Item))
 				.ToArray();
 		}
 

@@ -35,7 +35,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 					+ "                -> tick, ok, cmd: a refresh ack, so this result carries no digest\n"
 				+ "                -> with detail summary, the envelope's state is the header a wait reply carries: tick, game_over, winner (once the"
 					+ " game is over), local_player, funds, capacity and power (yours), known_counts (by player, the types you know of each),"
-					+ " threats (as below), unit_counts (units per owner) and powers (see wait). It has no units, map or player data.\n"
+					+ " threats (as below), unit_counts (units per owner), units (yours: the same rows as the full digest's own units), queues"
+					+ " (yours: queue_type, actor, items in the production item keys, and blocker) and powers (see wait). It has no map or player data.\n"
 					+ "                -> the full digest is the envelope's state: ok, cmd, tick, net_frame, map, ms_per_tick, paused,"
 				+ " game_over, local_player,"
 				+ " players, units, threats, selection\n"
@@ -102,10 +103,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ "                -> result:\"events\"|\"timeout\"|\"paused\"|\"world_changed\";"
 				+ " events are your ordered movement, combat, production and notifications"
 					+ " -> the envelope's state is the summary header (tick, game_over, winner, local_player, funds, capacity, power,"
-					+ " known_counts, threats, unit_counts, and powers when one is shown: each other player's power whose timer you can see, as"
-					+ " order, owner, remaining_ticks and ready; omitted when none), with no units and no map. Call state for the rest: the units list (the ids of"
-					+ " your units to order, and each unit's facing, activity and idle), an enemy beyond the 15 threats for its id, and the"
-					+ " map and players' faction, colour, bot and handicap. A threat row already has its id, cell, hp and bearing",
+					+ " known_counts, threats, unit_counts, units (yours), queues (yours), and powers when one is shown: each other player's power"
+					+ " whose timer you can see, as order, owner, remaining_ticks and ready; omitted when none), with no map. units and queues"
+					+ " are the same rows state gives for your own. Call state for an enemy beyond the 15 threats for its id, and for the map and"
+					+ " players' faction, colour, bot and handicap. A threat row already has its id, cell, hp and bearing",
 				"{\"cmd\":\"wait\",\"timeout_ticks\":250}"),
 			("orders", "actor (uint) -> type, orders (every order name the actor accepts; use it to discover orders: Sell on a sellable"
 				+ " structure, a toggle's name such as PowerDown on a toggle building, RepairBuilding on the player actor, and each"
