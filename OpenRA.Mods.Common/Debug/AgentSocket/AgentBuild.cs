@@ -149,26 +149,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 		static int? EtaOfNewCopy(World world, ProductionQueueV1 queue, string item)
 		{
 			var trait = QueueTrait(world, queue);
-			var items = trait.AllQueued().ToArray();
-			if (items.Any(i => i.Done))
-				return null;
-
 			var total = 0;
-			foreach (var ahead in items)
-				total += RemainingTicks(world, trait, ahead);
+			foreach (var ahead in trait.AllQueued())
+				total += AgentProduction.RemainingTicks(world, trait, ahead);
 
 			var info = world.Map.Rules.Actors[item];
-			return total + trait.GetBuildTime(info, info.TraitInfo<BuildableInfo>());
-		}
-
-		/// <summary>The ticks an item still needs. An unstarted item has no build time until it starts, so its time comes from the rules.</summary>
-		static int RemainingTicks(World world, ProductionQueue trait, ProductionItem item)
-		{
-			if (item.Started)
-				return item.RemainingTimeActual;
-
-			var info = world.Map.Rules.Actors[item.Item];
-			return trait.GetBuildTime(info, info.TraitInfo<BuildableInfo>());
+			return AgentProduction.HeldEta(trait, total + trait.GetBuildTime(info, info.TraitInfo<BuildableInfo>()));
 		}
 
 		/// <summary>The items the build command would accept now: buildable, affordable and under the queue's limits, in production order, without duplicates.</summary>

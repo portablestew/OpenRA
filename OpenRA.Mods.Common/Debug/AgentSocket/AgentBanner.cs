@@ -112,8 +112,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 			("orders", "actor (uint) -> type, orders (every order name the actor accepts; use it to discover orders: Sell on a sellable"
 				+ " structure, a toggle's name such as PowerDown on a toggle building, RepairBuilding on the player actor, PrimaryProducer on a production building, and each"
 				+ " support power's key on the player actor)", "{\"cmd\":\"orders\",\"actor\":12}"),
-			("production", "-> player, funds, cash_funds, resource_funds, power, queues (the local player's queues; see Production"
-				+ " keys). funds is cash_funds + resource_funds, the total can_afford compares against. A queue's options are listed"
+			("production", "-> player, funds, cash_funds, resource_funds, power, income_per_s, spend_per_s, queues (the local player's queues;"
+				+ " see Production keys). funds is cash_funds + resource_funds, the total can_afford compares against. income_per_s is the cash"
+				+ " earned over the last second of game time; spend_per_s is what the items now building spend per second at full power, so"
+				+ " compare the two before queuing more. An item's eta_ticks is the ticks until it is done, counting the items ahead of it; null"
+				+ " behind a finished item that waits for placement. A queue's options are listed"
 				+ " only when they changed since this connection last read them (changed says whether they were); the first read after"
 				+ " connect, and the first read after a world change, lists them all", "{\"cmd\":\"production\"}"),
 			("production_tree", "-> the same keys as production: the full catalog, with every option of every queue in full", "{\"cmd\":\"production_tree\"}"),

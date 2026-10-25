@@ -292,8 +292,13 @@ namespace OpenRA.Test
 			Assert.That(queue.GetProperty("actor").GetUInt32(), Is.EqualTo(reported.GetProperty("actor").GetUInt32()));
 			var item = queue.GetProperty("items")[0];
 			Assert.That(item.GetProperty("name").GetString(), Is.EqualTo("powr"));
-			Assert.That(item.GetRawText(), Is.EqualTo(reported.GetProperty("items")[0].GetRawText()),
-				"A summary queue item is the production item, byte for byte.");
+			// The summary leaves eta_ticks out, so every other field of its item is the production item's, byte for byte.
+			var reportedItem = reported.GetProperty("items")[0];
+			Assert.That(AgentProductionTest.Keys(item), Is.EquivalentTo(AgentProductionTest.Keys(reportedItem).Where(k => k != "eta_ticks")),
+				"A summary queue item has the production item's keys, without eta_ticks.");
+			foreach (var property in item.EnumerateObject())
+				Assert.That(property.Value.GetRawText(), Is.EqualTo(reportedItem.GetProperty(property.Name).GetRawText()),
+					$"A summary queue item's {property.Name} is the production item's.");
 			Assert.That(queue.GetProperty("blocker").ValueKind, Is.EqualTo(JsonValueKind.Null));
 		}
 	}

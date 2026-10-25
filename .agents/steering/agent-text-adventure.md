@@ -11,7 +11,7 @@ description: OpenRA text_adventure patterns.
 - Size `timeout_ms` past `timeout_ticks` × `ms_per_tick`: `timeout_ticks` is game time, `timeout_ms` caps only the call's wall clock and never the game.
 - Start: `{"cmd":"load_skirmish"}` with tool `timeout_ms=90000, settle_ms=1000`.
 - Build: `{"cmd":"build","item":"e1","count":2}`. `eta_ticks` is cumulative; array builds resolve a tick later, so their etas are lower bounds.
-- Production: `{"cmd":"production"}` lists options only when changed; full catalog `{"cmd":"production_tree"}`.
+- Production: `{"cmd":"production"}` lists options only when changed; full catalog `{"cmd":"production_tree"}`. Compare `spend_per_s` with `income_per_s` (credits per second) before queuing more; each item's `eta_ticks` is cumulative.
 - Fresh producer: `options:[]`, `enabled:false` on first read; read again.
 - Place: `{"cmd":"place","item":"powr","cell":[40,50]}`. `cell` is where it placed. `{"cmd":"place"}` with no args places the done queue-head item; with nothing done it errors.
 - Finished: a `ConstructionComplete` notification names a structure with `placement_required:true`, so place it. A `UnitReady` notification names a unit with its `cell`.

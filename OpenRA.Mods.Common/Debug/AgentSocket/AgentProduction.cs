@@ -24,9 +24,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// spendable total, CashFunds + ResourceFunds; CashFunds and ResourceFunds are the two pools it sums, as in the state digest.
 	/// A queue's options
 	/// come only when they changed for this connection (ProductionQueueV1.Changed). production_tree lists them all.
+	/// IncomePerS is the cash earned over the last second of game time (PlayerStatistics.Income). SpendPerS is what the items
+	/// now building spend per second at full power: each one's cost over its build time. Compare them before queuing more.
 	/// </summary>
 	public sealed record ProductionV1(bool Ok, string Cmd, string Player, int Funds, int CashFunds, int ResourceFunds,
-		PowerV1 Power, ProductionQueueV1[] Queues);
+		PowerV1 Power, int IncomePerS, int SpendPerS, ProductionQueueV1[] Queues);
 
 	/// <summary>
 	/// One ProductionQueue the local player owns and can build with. Actor is the actor that holds the queue: the player
@@ -50,9 +52,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 	/// <summary>
 	/// Progress is the built share of the build time, 0 to 100. State is "building" for the head of the queue, "paused",
-	/// "done" when it waits for placement, and "waiting" otherwise.
+	/// "done" when it waits for placement, and "waiting" otherwise. EtaTicks is the ticks until this item is done, counting the
+	/// items ahead of it at the current power. It is null behind a finished item, which holds the queue until it is placed, and
+	/// in the state summary, where it is left out.
 	/// </summary>
-	public sealed record ProductionItemV1(string Name, int Cost, int RemainingCost, int Progress, string State);
+	public sealed record ProductionItemV1(string Name, int Cost, int RemainingCost, int Progress, string State,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? EtaTicks);
 
 	/// <summary>
 	/// One of the local player's queues in the state summary (step 4). Items are the live queue, head first, in the production
@@ -145,9 +150,15 @@ namespace OpenRA.Mods.Common.AgentSocket
 					seen[key] = signature;
 			}
 
+			// The spend is the rate of the items the queues mark building, so it counts the same items as the wire's state.
+			var spend = world.ActorsWithTrait<ProductionQueue>()
+				.Where(t => t.Actor.Owner == player && t.Actor.IsInWorld && !t.Actor.IsDead && ProducersOf(world, player, t.Trait).Length > 0)
+				.Sum(t => SpendPerS(world, t.Trait));
+
 			return new ProductionV1(true, cmd, player.PlayerName, funds,
 				resources?.Cash ?? 0, resources?.Resources ?? 0,
-				AgentStateDump.Power(player.PlayerActor.TraitOrDefault<PowerManager>()), queues);
+				AgentStateDump.Power(player.PlayerActor.TraitOrDefault<PowerManager>()),
+				player.PlayerActor.TraitOrDefault<PlayerStatistics>()?.Income ?? 0, spend, queues);
 		}
 
 		// Null when the queue has no producer. Such a queue is not reported, so it is not recorded as seen either.
@@ -177,7 +188,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			var blocker = FinishedHead(queue)?.Item;
 
 			return new ProductionQueueV1(actor.ActorID, producers, queue.Info.Type, queue.Enabled, options, changed,
-				queue.AllQueued().Select(i => ItemOf(queue, i)).ToArray(), blocker);
+				ItemsOf(world, queue, true), blocker);
 		}
 
 		/// <summary>
@@ -216,7 +227,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				.ThenBy(t => t.Trait.Info.Type, StringComparer.Ordinal)
 				.Where(t => ProducersOf(world, player, t.Trait).Length > 0)
 				.Select(t => new SummaryQueueV1(t.Trait.Info.Type, t.Actor.ActorID,
-					t.Trait.AllQueued().Select(i => ItemOf(t.Trait, i)).ToArray(), FinishedHead(t.Trait)?.Item))
+					ItemsOf(world, t.Trait, false), FinishedHead(t.Trait)?.Item))
 				.ToArray();
 		}
 
@@ -227,13 +238,69 @@ namespace OpenRA.Mods.Common.AgentSocket
 				info.TraitInfo<BuildableInfo>().Prerequisites.ToArray(), buildable.Contains(info.Name), cash >= cost);
 		}
 
-		static ProductionItemV1 ItemOf(ProductionQueue queue, ProductionItem item)
+		/// <summary>
+		/// The live items of a queue, head first. With withEta, each item's EtaTicks is the ticks the items up to and including it still
+		/// need, since a queue builds one item at a time, so every item ahead counts in full. Without it, EtaTicks is left null.
+		/// </summary>
+		static ProductionItemV1[] ItemsOf(World world, ProductionQueue queue, bool withEta)
+		{
+			var items = new List<ProductionItemV1>();
+			var ticks = 0;
+			foreach (var item in queue.AllQueued())
+			{
+				ticks += RemainingTicks(world, queue, item);
+				items.Add(ItemOf(queue, item, withEta ? HeldEta(queue, ticks) : null));
+			}
+
+			return items.ToArray();
+		}
+
+		static ProductionItemV1 ItemOf(ProductionQueue queue, ProductionItem item, int? etaTicks)
 		{
 			var state = item.Done ? "done" : item.Paused ? "paused" : queue.IsProducing(item) ? "building" : "waiting";
 
 			// TotalTime starts at 1 and is only replaced by a positive build time, so the division is safe.
 			var progress = (item.TotalTime - item.RemainingTime) * 100 / item.TotalTime;
-			return new ProductionItemV1(item.Item, item.TotalCost, item.RemainingCost, progress, state);
+			return new ProductionItemV1(item.Item, item.TotalCost, item.RemainingCost, progress, state, etaTicks);
+		}
+
+		/// <summary>
+		/// The ETA a queue reports for ticks of work: null while a finished item is in the queue, since it holds the queue until it
+		/// is placed and nothing can say when that is. Shared with the build reply, so both answer the same way.
+		/// </summary>
+		internal static int? HeldEta(ProductionQueue queue, int ticks)
+		{
+			return queue.AllQueued().Any(i => i.Done) ? null : ticks;
+		}
+
+		/// <summary>The ticks an item still needs. An unstarted item has no build time until it starts, so its time comes from the rules.</summary>
+		internal static int RemainingTicks(World world, ProductionQueue queue, ProductionItem item)
+		{
+			if (item.Started)
+				return item.RemainingTimeActual;
+
+			return BuildTimeOf(world, queue, item);
+		}
+
+		/// <summary>
+		/// The credits per second of game time that a queue's building items spend at full power: each one's cost over its build time.
+		/// Each building item pays its share every tick, so the rate is its cost times the ticks per second, over its build time in ticks.
+		/// </summary>
+		static int SpendPerS(World world, ProductionQueue queue)
+		{
+			return queue.AllQueued()
+				.Where(i => !i.Done && !i.Paused && queue.IsProducing(i))
+				.Sum(i => i.TotalCost * 1000 / (Math.Max(1, BuildTimeOf(world, queue, i)) * world.Timestep));
+		}
+
+		/// <summary>The build time of an item. TotalTime is only set once the item starts, so an unstarted item's time comes from the rules.</summary>
+		static int BuildTimeOf(World world, ProductionQueue queue, ProductionItem item)
+		{
+			if (item.Started)
+				return item.TotalTime;
+
+			var info = world.Map.Rules.Actors[item.Item];
+			return queue.GetBuildTime(info, info.TraitInfo<BuildableInfo>());
 		}
 	}
 }

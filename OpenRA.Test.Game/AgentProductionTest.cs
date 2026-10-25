@@ -10,6 +10,7 @@
 #endregion
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -28,10 +29,10 @@ namespace OpenRA.Test
 	[TestFixture]
 	sealed class AgentProductionTest
 	{
-		static readonly string[] ProductionKeys = ["ok", "cmd", "player", "funds", "cash_funds", "resource_funds", "power", "queues"];
+		static readonly string[] ProductionKeys = ["ok", "cmd", "player", "funds", "cash_funds", "resource_funds", "power", "income_per_s", "spend_per_s", "queues"];
 		static readonly string[] QueueKeys = ["actor", "producers", "queue_type", "enabled", "options", "changed", "items", "blocker"];
 		static readonly string[] OptionKeys = ["name", "cost", "power_amount", "prerequisites", "buildable", "can_afford"];
-		static readonly string[] ItemKeys = ["name", "cost", "remaining_cost", "progress", "state"];
+		static readonly string[] ItemKeys = ["name", "cost", "remaining_cost", "progress", "state", "eta_ticks"];
 		static readonly string[] PowerKeys = ["provided", "drained", "excess", "state"];
 
 		readonly List<object> connections = [];
@@ -319,6 +320,87 @@ namespace OpenRA.Test
 
 			using var second = ConnectionRequest(connection, "{\"cmd\":\"production\"}");
 			Assert.That(QueueOf(second.RootElement, "Building").GetProperty("changed").GetBoolean(), Is.False);
+		}
+
+		[TestCase(TestName = "spend_per_s is the building item's cost over its build time, per second of game time, and 0 with an empty queue")]
+		public void SpendPerSIsTheBuildingItemsRate()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			using (var empty = AgentStateDumpTest.Request("{\"cmd\":\"production\"}"))
+				Assert.That(empty.RootElement.GetProperty("spend_per_s").GetInt32(), Is.EqualTo(0));
+
+			hw.IssueOrder(Order.StartProduction(hw.LocalPlayer.PlayerActor, "powr", 1));
+			hw.Tick(3);
+			var head = LocalQueue(hw, "Building").Items[0];
+			var cost = (int)Member(head, "TotalCost");
+			var time = (int)Member(head, "TotalTime");
+
+			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
+			Assert.That(production.RootElement.GetProperty("spend_per_s").GetInt32(), Is.EqualTo(cost * 1000 / (time * hw.World.Timestep)));
+		}
+
+		[TestCase(TestName = "income_per_s is the local player's PlayerStatistics.Income")]
+		public void IncomePerSIsTheStatisticsIncome()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			// Income is set once a second of game time, so it is set here rather than waited for: the reply must carry the statistic as it stands.
+			var stats = CallGeneric(hw.LocalPlayer.PlayerActor, "TraitOrDefault", "Traits.PlayerStatistics");
+			Assert.That(stats, Is.Not.Null, "The ra player actor has PlayerStatistics.");
+			stats.GetType().GetField("Income").SetValue(stats, 123);
+
+			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
+			Assert.That(production.RootElement.GetProperty("income_per_s").GetInt32(), Is.EqualTo(123));
+		}
+
+		[TestCase(TestName = "Each queued item's eta_ticks is the time until it is done, counting the items ahead of it")]
+		public void ItemEtaCountsTheItemsAhead()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+			hw.IssueOrder(Order.StartProduction(hw.LocalPlayer.PlayerActor, "powr", 2));
+			hw.Tick(10);
+
+			var (queue, live) = LocalQueue(hw, "Building");
+			var head = (int)Member(live[0], "RemainingTimeActual");
+			var powrTime = (int)queue.GetType().GetMethod("GetBuildTime")
+				.Invoke(queue, [hw.World.Map.Rules.Actors["powr"], CallGeneric(hw.World.Map.Rules.Actors["powr"], "TraitInfo", "Traits.BuildableInfo")]);
+
+			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
+			var items = QueueOf(production.RootElement, "Building").GetProperty("items").EnumerateArray().ToArray();
+			Assert.That(items.Length, Is.EqualTo(2));
+			Assert.That(items[0].GetProperty("eta_ticks").GetInt32(), Is.EqualTo(head));
+			Assert.That(items[1].GetProperty("eta_ticks").GetInt32(), Is.EqualTo(head + powrTime));
+		}
+
+		/// <summary>The local player's queue of one type, with its live items head first. Read by reflection, as the test project cannot reference the mod.</summary>
+		static (object Queue, object[] Items) LocalQueue(HeadlessWorld hw, string queueType)
+		{
+			var queues = ((IEnumerable)CallGeneric(hw.LocalPlayer.PlayerActor, "TraitsImplementing", "Traits.ProductionQueue")).Cast<object>();
+			var queue = queues.Single(q => (string)Member(Member(q, "Info"), "Type") == queueType);
+			var items = ((IEnumerable)queue.GetType().GetMethod("AllQueued").Invoke(queue, null)).Cast<object>().ToArray();
+			return (queue, items);
+		}
+
+		/// <summary>Calls the zero-argument generic method of the target, instantiated with the named mod type.</summary>
+		static object CallGeneric(object target, string method, string typeName)
+		{
+			var type = ModType(typeName);
+			return target.GetType().GetMethods().Single(m => m.Name == method && m.IsGenericMethodDefinition && m.GetParameters().Length == 0)
+				.MakeGenericMethod(type).Invoke(target, null);
+		}
+
+		/// <summary>A field or a property of the target, whichever the mod declares.</summary>
+		static object Member(object target, string name)
+		{
+			var field = target.GetType().GetField(name);
+			return field != null ? field.GetValue(target) : target.GetType().GetProperty(name).GetValue(target);
 		}
 
 		/// <summary>A connection as the socket makes one. Every connection a test makes is closed in TearDown.</summary>
