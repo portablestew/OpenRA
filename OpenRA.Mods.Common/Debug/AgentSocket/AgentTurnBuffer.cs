@@ -11,10 +11,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json.Serialization;
 using System.Threading;
-using System.Linq;
 
 namespace OpenRA.Mods.Common.AgentSocket
 {
@@ -25,7 +25,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// distinct actors those events covered, in arrival order, and is empty when the events name no actor.
 	/// A damaged or healed marker for one victim also has damage_total (the sum of its hits), hp_from, hp_to, and attackers (up to
 	/// ten distinct attackers, or healers, that were known). hp_from is the HP before the first suppressed hit, or for a heal the HP
-	/// after the first suppressed heal; hp_to is the HP after the last. A residual marker, for victims past MaxVictimMarkers, has
+	/// after the first suppressed heal, and is left out when the first hit was lethal; hp_to is the HP after the last. A residual marker, for victims past MaxVictimMarkers, has
 	/// damage_total and attackers but no hp_from or hp_to. Each of the four keys is left out when it has no value.
 	/// A notification's marker is per name and item, and carries the latest suppressed notification's payload: the keys a
 	/// NotificationV1 adds (item, queue_type, reason, cost, and the rest), each left out when it has no value.
@@ -268,6 +268,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			int? damageTotal;
 			int? hpFrom;
 			int? hpTo;
+			bool hpStarted;
 			NotificationV1 latest;
 
 			public Slot(string type, string name, uint? victim, int index, int tick)
@@ -292,7 +293,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				{
 					case DamagedV1 hit:
 						damageTotal = (damageTotal ?? 0) + hit.Damage;
-						TrackHp(hit.Hp + hit.Damage, hit.Hp);
+						// A lethal hit leaves Hp at 0, so the HP before it is only known to be no more than its damage: leave it out.
+						TrackHp(hit.Hp > 0 ? hit.Hp + hit.Damage : null, hit.Hp);
 						AddAttacker(hit.Attacker);
 						break;
 					case HealedV1 heal:
@@ -311,12 +313,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 				latest?.PlacementRequired, latest?.Options, latest?.Placeable);
 
 			// HP is tracked only for one victim, since a residual run spans several victims' HP.
-			void TrackHp(int from, int to)
+			void TrackHp(int? from, int to)
 			{
 				if (Victim is null)
 					return;
 
-				hpFrom ??= from;
+				if (!hpStarted)
+				{
+					hpFrom = from;
+					hpStarted = true;
+				}
+
 				hpTo = to;
 			}
 

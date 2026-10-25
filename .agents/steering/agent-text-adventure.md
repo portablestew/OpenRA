@@ -36,10 +36,10 @@ description: OpenRA text_adventure patterns.
 ## Play
 
 - Avoid `digest:false` unless you need more detail. It drops `state` and the map keys from the reply, header included, so the reply gets thinner, not richer. For more detail, call `state`.
-- Prefer long waits over polling: `timeout_ticks` is an integer 0-1000. Call `state` for enemy IDs beyond `threats`, or enemy `known_counts`. Use the wait header, `production` and `look` for routine monitoring.
+- Prefer long waits over polling: `timeout_ticks` is an integer 0-1000. Call `state` for enemy IDs beyond `threats`. Use the wait header, `production` and `look` for routine monitoring.
 - A `known_counts` of zero means you have not seen any, not that there are none.
 - Fog and shroud: a structure you have seen stays visible there, and units will attack it, but it gets no state updates. Units keep attacking after it is destroyed unless you scout it again.
 - Hidden artillery can hit your base from fog.
 - Attacked from the shroud: `attacker:null` with `attacker_shrouded:true` is a real but unseen attacker. `attacker_bearing` points from the victim at it (null when the firer died before the shot landed).
-- NoBuild with `reason:"exit_blocked"`: set `producer`'s rally point clear of the exit: `{"cmd":"order","actor":<producer>,"order":"SetRallyPoint","cell":[x,y]}`.
+- NoBuild `reason:"exit_blocked"` on a war factory: `SetRallyPoint` its `producer` to a cell clear of the exit: `{"cmd":"order","actor":<producer>,"order":"SetRallyPoint","cell":[x,y]}`.
 - Before a long wait, give an idle unit a cheap order: `{"cmd":"order","actor":<unit>,"order":"Move","cell":[x,y]}` (scouting past contact).

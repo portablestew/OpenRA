@@ -374,6 +374,26 @@ namespace OpenRA.Test
 				"Victim B's healer is not known, so the marker should have no attackers key.");
 		}
 
+		[TestCase(TestName = "A lethal first hit gives its marker no hp_from, since the HP before it is unknown")]
+		public void LethalFirstHitOmitsHpFrom()
+		{
+			var buffer = new AgentTurnBuffer();
+			var hits = new[]
+			{
+				Strike(10, 2, 50, 5, 95),
+				Strike(11, 2, 50, 5, 90),
+				Strike(12, 1, 50, 30, 0),
+			};
+			foreach (var e in hits)
+				buffer.Add(e);
+
+			var batch = buffer.Flush();
+
+			Assert.That(batch, Has.Count.EqualTo(3), "Two in full, then one marker for the victim's lethal hit.");
+			Assert.That(Wire(batch[2]), Is.EqualTo(Wire(new AggregatedV1("damaged", 1, 12, 12, [1], null, 30, null, 0, [50]))),
+				"The victim had less than its 30 damage in HP, and the wire HP is clamped to 0, so hp_from is unknown and should be omitted, not 30.");
+		}
+
 		[TestCase(TestName = "A marker with no per-victim values has none of the damage, HP and attacker keys on the wire")]
 		public void MarkerWithoutVictimDataHasNoVictimKeys()
 		{
