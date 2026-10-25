@@ -169,7 +169,8 @@ namespace OpenRA.Test
 		{
 			var banner = AgentSocketServer.Banner;
 
-			Assert.That(banner, Does.Contain("on (bool; required by a toggle order such as PowerDown, RepairBuilding or PrimaryProducer, and refused for any other name)"));
+			Assert.That(banner, Does.Contain("on (bool; required by a toggle order such as PowerDown, RepairBuilding or PrimaryProducer, "
+				+ "and refused for any other name)"));
 			Assert.That(banner, Does.Contain("state (on or off: the state it left once settled, or the state already held)"));
 			Assert.That(banner, Does.Contain("unchanged (true when that state already held, so nothing was issued)"));
 			Assert.That(banner, Does.Contain("RepairBuilding is a toggle on the player actor, with target_actor the building: its"
@@ -209,7 +210,8 @@ namespace OpenRA.Test
 		[TestCase(TestName = "The banner documents the payload a notification marker keeps: the latest suppressed one's keys, per name and item")]
 		public void BannerDocumentsTheNotificationMarkerPayload()
 		{
-			Assert.That(AgentSocketServer.Banner, Does.Contain("A notification's marker is per name and item, and carries the latest suppressed one's item, queue_type, reason, cost,"
+			Assert.That(AgentSocketServer.Banner, Does.Contain("A notification's marker is per name and item, and carries the latest suppressed one's item, "
+				+ "queue_type, reason, cost,"
 				+ " remaining_cost, funds, short_by, producer, blocked_by, cell, placement_required, options, placeable, actor and level, each left out when unknown."));
 		}
 

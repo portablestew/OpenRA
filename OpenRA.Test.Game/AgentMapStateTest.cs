@@ -339,7 +339,7 @@ namespace OpenRA.Test
 			var (x, y) = TextCell(hw, cell);
 			var upper = legend.Single(e => e.Value == terrain).Key;
 			var glyph = Rows(response.RootElement)[y][x].ToString();
-			Assert.That(glyph == "$" || glyph == upper.ToLowerInvariant(), Is.True,
+			Assert.That(glyph == "$" || glyph.Equals(upper, StringComparison.InvariantCultureIgnoreCase), Is.True,
 				"A fogged cell should be its terrain's glyph in lower case, or $ when it has a resource.");
 		}
 

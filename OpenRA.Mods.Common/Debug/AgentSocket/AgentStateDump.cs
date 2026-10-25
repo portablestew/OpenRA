@@ -250,7 +250,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The row the units lists give an actor: the observer's own structure is slim (StructureV1), every other unit is UnitV1.</summary>
 		static object UnitRow(Actor a, Player observer)
 		{
-			return IsOwnStructure(a, observer) ? (object)StructureState(a, observer) : UnitState(a);
+			return IsOwnStructure(a, observer) ? StructureState(a, observer) : UnitState(a);
 		}
 
 		/// <summary>The actors the state's units list holds, in no particular order: the occupying, non-scenery, non-husk actors the observer knows.</summary>

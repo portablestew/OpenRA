@@ -276,8 +276,10 @@ namespace OpenRA.Test
 			var first = new NotificationV1("notification", 1, "NoBuild", "P", Item: "e1", QueueType: "Vehicle", Reason: "exit_blocked", Producer: 7);
 			var second = new NotificationV1("notification", 2, "NoBuild", "P", Item: "e2", QueueType: "Vehicle", Reason: "producer_paused");
 			var e1Paused = new NotificationV1("notification", 3, "NoBuild", "P", Item: "e1", QueueType: "Vehicle", Reason: "producer_paused", Producer: 8);
-			var e1Reserved = new NotificationV1("notification", 4, "NoBuild", "P", Item: "e1", QueueType: "Vehicle", Reason: "producer_reserved", Producer: 9, BlockedBy: "e1");
-			var e2Funds = new NotificationV1("notification", 5, "NoBuild", "P", Item: "e2", QueueType: "Vehicle", Reason: "no_producer", Cost: 300, RemainingCost: 120, Funds: 50, ShortBy: 70);
+			var e1Reserved = new NotificationV1("notification", 4, "NoBuild", "P", Item: "e1", QueueType: "Vehicle",
+				BlockedBy: "e1", Reason: "producer_reserved", Producer: 9);
+			var e2Funds = new NotificationV1("notification", 5, "NoBuild", "P", Item: "e2", QueueType: "Vehicle",
+				Reason: "no_producer", Cost: 300, RemainingCost: 120, Funds: 50, ShortBy: 70);
 			foreach (var e in new[] { first, second, e1Paused, e1Reserved, e2Funds })
 				buffer.Add(e);
 

@@ -292,6 +292,7 @@ namespace OpenRA.Test
 			Assert.That(queue.GetProperty("actor").GetUInt32(), Is.EqualTo(reported.GetProperty("actor").GetUInt32()));
 			var item = queue.GetProperty("items")[0];
 			Assert.That(item.GetProperty("name").GetString(), Is.EqualTo("powr"));
+
 			// The summary leaves eta_ticks out, so every other field of its item is the production item's, byte for byte.
 			var reportedItem = reported.GetProperty("items")[0];
 			Assert.That(AgentProductionTest.Keys(item), Is.EquivalentTo(AgentProductionTest.Keys(reportedItem).Where(k => k != "eta_ticks")),

@@ -194,7 +194,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The reason a Move reply gives when the validators refused the order (P1.5).</summary>
 		public const string ValidatorRejected = "rejected by order validator";
 		const string NoPathReason = "no path to the cell";
-		static readonly string NoPathPlannedReason = $"no path was planned within {AgentOrderAwait.ResolveBudgetTicks} ticks: the unit may have engaged a target or been reordered";
+		static readonly string NoPathPlannedReason =
+				$"no path was planned within {AgentOrderAwait.ResolveBudgetTicks} ticks: the unit may have engaged a target or been reordered";
 
 		/// <summary>Parses the request on the socket thread. Returns an error message, or null when the request is valid.</summary>
 		public static string Parse(JsonElement root, out OrderRequest request)
@@ -540,7 +541,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (await.IsAttackMove)
 			{
 				var (valid, outcome, reason, orders) = AttackMoveOutcome(await);
-				return new AttackMoveV1(true, "order", ack.Tick, ack.MinEffectTick, valid, await.ResolvedTick, true, await.SettleTicks, await.PathResult, outcome, reason, orders);
+				return new AttackMoveV1(true, "order", ack.Tick, ack.MinEffectTick, valid, await.ResolvedTick, true,
+					await.SettleTicks, await.PathResult, outcome, reason, orders);
 			}
 
 			if (await.IsDeploy)

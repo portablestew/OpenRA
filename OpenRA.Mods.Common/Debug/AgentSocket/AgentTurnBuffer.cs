@@ -295,6 +295,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				{
 					case DamagedV1 hit:
 						damageTotal = (damageTotal ?? 0) + hit.Damage;
+
 						// A lethal hit leaves Hp at 0, so the HP before it is only known to be no more than its damage: leave it out.
 						TrackHp(hit.Hp > 0 ? hit.Hp + hit.Damage : null, hit.Hp);
 						AddAttacker(hit.Attacker);

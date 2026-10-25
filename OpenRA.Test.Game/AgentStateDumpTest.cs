@@ -524,7 +524,7 @@ namespace OpenRA.Test
 			hw.Tick(1);
 
 			// The Info is shared by every dome, so the renamed order is put back after the test.
-			var info = dome.Info.TraitInfos<OpenRA.Traits.ITraitInfoInterface>().Single(i => i.GetType() == ToggleInfoType.Value);
+			var info = dome.Info.TraitInfos<ITraitInfoInterface>().Single(i => i.GetType() == ToggleInfoType.Value);
 			var orderName = ToggleInfoType.Value.GetField("OrderName");
 			var original = (string)orderName.GetValue(info);
 			orderName.SetValue(info, "Hibernate");

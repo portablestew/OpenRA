@@ -110,7 +110,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 					+ " players' faction, colour, bot and handicap. A threat row already has its id, cell, hp and bearing",
 				"{\"cmd\":\"wait\",\"timeout_ticks\":250}"),
 			("orders", "actor (uint) -> type, orders (every order name the actor accepts; use it to discover orders: Sell on a sellable"
-				+ " structure, a toggle's name such as PowerDown on a toggle building, RepairBuilding on the player actor, PrimaryProducer on a production building, and each"
+				+ " structure, a toggle's name such as PowerDown on a toggle building, RepairBuilding on the player actor, "
+					+ "PrimaryProducer on a production building, and each"
 				+ " support power's key on the player actor)", "{\"cmd\":\"orders\",\"actor\":12}"),
 			("production", "-> player, funds, cash_funds, resource_funds, power, income_per_s, spend_per_s, queues (the local player's queues;"
 				+ " see Production keys). funds is cash_funds + resource_funds, the total can_afford compares against. income_per_s is the cash"
