@@ -10,6 +10,7 @@
 #endregion
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -235,6 +236,177 @@ namespace OpenRA.Test
 			{
 				File.Delete(blocker);
 			}
+		}
+
+		/// <summary>The text map reply, from a fresh request. The caller disposes the document.</summary>
+		static JsonDocument Text()
+		{
+			return AgentStateDumpTest.Request("{\"cmd\":\"map_state\",\"format\":\"text\"}");
+		}
+
+		/// <summary>The text map's rows, top first.</summary>
+		static string[] Rows(JsonElement root)
+		{
+			return root.GetProperty("rows").EnumerateArray().Select(r => r.GetString()).ToArray();
+		}
+
+		/// <summary>The legend's glyph to meaning map.</summary>
+		static Dictionary<string, string> Legend(JsonElement root)
+		{
+			return root.GetProperty("legend").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString());
+		}
+
+		/// <summary>The row and column of a map cell in the text map: its offset from the map's top-left.</summary>
+		static (int X, int Y) TextCell(HeadlessWorld hw, CPos cell)
+		{
+			var bounds = hw.World.Map.Bounds;
+			return (cell.X - bounds.Left, cell.Y - bounds.Top);
+		}
+
+		[TestCase(TestName = "The text map has one row per map row and one character per cell, with the bounds' origin and size")]
+		public void TextMapMatchesTheBounds()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			hw.Tick(SettleTicks);
+			var bounds = hw.World.Map.Bounds;
+
+			using var response = Text();
+			var root = response.RootElement;
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+			Assert.That(root.GetProperty("format").GetString(), Is.EqualTo("text"));
+			Assert.That(root.GetProperty("origin").EnumerateArray().Select(v => v.GetInt32()), Is.EqualTo(new[] { bounds.Left, bounds.Top }));
+			Assert.That(root.GetProperty("size").EnumerateArray().Select(v => v.GetInt32()), Is.EqualTo(new[] { bounds.Width, bounds.Height }),
+				"The size should be the map's width and height in cells.");
+
+			var rows = Rows(root);
+			Assert.That(rows.Length, Is.EqualTo(bounds.Height), "There should be one row per map row.");
+			Assert.That(rows.All(r => r.Length == bounds.Width), Is.True, "Every row should have one character per map column.");
+		}
+
+		[TestCase(TestName = "An unexplored cell is a space in the text map")]
+		public void UnexploredCellIsASpace()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			var cell = hw.FindClearArea(hw.EnemyPlayer.HomeLocation, 3, 3);
+			Assert.That(local.Shroud.IsExplored(cell.ToMPos(hw.World.Map)), Is.False, "Precondition: the cell should start unexplored.");
+
+			using var response = Text();
+			var (x, y) = TextCell(hw, cell);
+			Assert.That(Rows(response.RootElement)[y][x], Is.EqualTo(' '));
+		}
+
+		[TestCase(TestName = "A visible cell is its terrain's letter in the legend, in upper case")]
+		public void VisibleCellIsItsTerrainLetter()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			// A unit beside the cell makes it visible, and leaves no unit on the cell itself.
+			var cell = hw.FindClearArea(local.HomeLocation, 3, 3);
+			hw.CreateActor(Infantry, new CPos(cell.X + 1, cell.Y), local);
+			hw.Tick(SettleTicks);
+			Assert.That(local.Shroud.IsVisible(cell.ToMPos(hw.World.Map)), Is.True, "Precondition: the cell should be visible.");
+
+			var terrain = hw.World.Map.GetTerrainInfo(cell).Type;
+			using var response = Text();
+			var (x, y) = TextCell(hw, cell);
+			var glyph = Rows(response.RootElement)[y][x].ToString();
+			Assert.That(glyph == "$" || Legend(response.RootElement)[glyph] == terrain, Is.True,
+				"A visible cell should be its terrain's glyph in upper case, or $ when it has a resource.");
+			Assert.That(glyph, Is.EqualTo(glyph.ToUpperInvariant()), "A visible cell's glyph should be upper case.");
+		}
+
+		[TestCase(TestName = "An explored cell out of sight is its terrain's letter in lower case")]
+		public void FoggedCellIsLowerCase()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			// The enemy's home, explored by the GPS launch but not in sight.
+			var cell = hw.FindClearArea(hw.EnemyPlayer.HomeLocation, 3, 3);
+			local.Shroud.ExploreAll();
+			hw.Tick(1);
+			Assert.That(local.Shroud.IsVisible(cell.ToMPos(hw.World.Map)), Is.False, "Precondition: the cell should be out of sight.");
+
+			var terrain = hw.World.Map.GetTerrainInfo(cell).Type;
+			using var response = Text();
+			var legend = Legend(response.RootElement);
+			var (x, y) = TextCell(hw, cell);
+			var upper = legend.Single(e => e.Value == terrain).Key;
+			var glyph = Rows(response.RootElement)[y][x].ToString();
+			Assert.That(glyph == "$" || glyph == upper.ToLowerInvariant(), Is.True,
+				"A fogged cell should be its terrain's glyph in lower case, or $ when it has a resource.");
+		}
+
+		[TestCase(TestName = "Your unit is U and an enemy unit you can see is X in the text map")]
+		public void UnitsAreUAndX()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			var cell = hw.FindClearArea(local.HomeLocation, 3, 3);
+			hw.CreateActor(Infantry, cell, local);
+			var enemyCell = new CPos(cell.X + 1, cell.Y);
+			hw.CreateActor(Infantry, enemyCell, hw.EnemyPlayer);
+			hw.Tick(SettleTicks);
+
+			using var response = Text();
+			var rows = Rows(response.RootElement);
+			var (x, y) = TextCell(hw, cell);
+			var (ex, ey) = TextCell(hw, enemyCell);
+			Assert.That(rows[y][x], Is.EqualTo('U'), "Your unit should be U.");
+			Assert.That(rows[ey][ex], Is.EqualTo('X'), "An enemy unit you can see should be X.");
+		}
+
+		[TestCase(TestName = "Your structure covers its footprint with B in the text map")]
+		public void StructureIsB()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			var cell = hw.FindClearArea(local.HomeLocation, 3, 3);
+			hw.CreateActor("fact", cell, local);
+			hw.Tick(SettleTicks);
+
+			using var response = Text();
+			var (x, y) = TextCell(hw, cell);
+			Assert.That(Rows(response.RootElement)[y][x], Is.EqualTo('B'), "Your structure should be B.");
+		}
+
+		[TestCase(TestName = "An explicit png format answers as the default does, and the text map answers ok")]
+		public void PngFormatIsTheDefault()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			hw.Tick(SettleTicks);
+
+			using (var text = Text())
+				Assert.That(text.RootElement.GetProperty("ok").GetBoolean(), Is.True, text.RootElement.ToString());
+
+			using var byDefault = MapState();
+			using var explicitPng = AgentStateDumpTest.Request("{\"cmd\":\"map_state\",\"format\":\"png\"}");
+			Assert.That(explicitPng.RootElement.EnumerateObject().Select(p => p.Name).ToArray(),
+				Is.EqualTo(byDefault.RootElement.EnumerateObject().Select(p => p.Name).ToArray()),
+				"format png should answer with the same keys as the default.");
+			Assert.That(explicitPng.RootElement.GetProperty("render").GetString(), Is.EqualTo("ok"));
+		}
+
+		[TestCase(TestName = "An unknown map_state format is refused, and the reply names the formats")]
+		public void UnknownFormatIsRefused()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			hw.Tick(SettleTicks);
+
+			using var response = AgentStateDumpTest.Request("{\"cmd\":\"map_state\",\"format\":\"svg\"}");
+			var root = response.RootElement;
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.False, root.ToString());
+			Assert.That(root.GetProperty("error").GetString(), Does.Contain("\"text\""));
 		}
 	}
 

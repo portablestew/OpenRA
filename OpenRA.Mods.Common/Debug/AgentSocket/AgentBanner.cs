@@ -165,12 +165,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ "                -> tick, requested_tick, moved_ticks, held; nearest snapshot restored, window kept;"
 				+ " pending orders fail with restored; last item in an array only",
 				"{\"cmd\":\"undo\",\"offset\":-250}"),
-			("map_state", "-> ok, cmd, path (map-state.png in the workspace, or null), render (ok or unavailable), reason (only when"
+			("map_state", "format png (default) or text\n"
+				+ "                -> png: ok, cmd, path (map-state.png in the workspace, or null), render (ok or unavailable), reason (only when"
 				+ " unavailable), map_px_per_cell (4), origin [x, y] (the top-left map cell), size [w, h] (pixels), tick. Terrain: unexplored"
 				+ " black, explored but unseen darkened. The image is the discovered map state and expands as your units reveal terrain."
 				+ " Overlays: blips in the owner's colour (players[].color; actors you know); selected units get a green crosshair, a yellow path ending in a red X,"
-				+ " and a red line to their attack target. Writes a file",
-				"{\"cmd\":\"map_state\"}"),
+				+ " and a red line to their attack target. Writes a file\n"
+				+ "                -> text: ok, cmd, format, origin [x, y], size [w, h] (cells), legend (glyph: meaning), rows (one string per map row, top"
+				+ " first; a space is unexplored, a lower-case terrain letter is under fog, $ a resource, B and U your structure and unit, A an ally,"
+				+ " E and X an enemy structure and unit, N neutral), tick",
+				"{\"cmd\":\"map_state\",\"format\":\"text\"}"),
 			("look", "at [x, y] or points [[x, y], ...] (at most 16), an optional k (0 to 100, default 20; 0 returns cells and"
 				+ " summary, no actors), and an optional radius (1 to 20\n"
 				+ "                cells, default 10) for the class summary\n"

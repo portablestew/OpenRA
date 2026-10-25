@@ -18,7 +18,7 @@ description: OpenRA text_adventure patterns.
 - `NewOptions` names in `options` the options that became buildable since the last one (empty when none). An ally's has no `options`.
 - Wait events: `{"cmd":"wait","timeout_ticks":500,"min_ticks":500}`. `result`: `events`, `timeout`, `paused`, `world_changed`. Events are your ordered movement, combat, production and notifications.
 - A `wait` reply carries a header in `state`, not the full digest: `tick`, `game_over`, `winner`, `local_player`, `funds`, `capacity`, `power`, `known_counts`, `threats`, `unit_counts`, `units` (yours), `queues` (yours), and `powers` when an opponent's power timer is visible to you. It has no map. `state` with `detail:"summary"` returns the same header; `state` with no `detail` is the full digest.
-- Map: `{"cmd":"map_state"}` writes `map-state.png`; screenshots go to `screenshots/`.
+- Map: `{"cmd":"map_state"}` writes `map-state.png`, readable with the file Read tool. `{"cmd":"map_state","format":"text"}` returns the grid inline (a space is unexplored); screenshots go to `screenshots/`.
 - Always AttackMove to advance; use Move only when you must not fire (retreat, reposition, scout past contact).
 - Discover orders: `{"cmd":"orders","actor":12}` -> `orders`, every name the actor takes. Use it to find `Repair` (vehicle at a fix depot), `Dock` (harvester at a refinery) and the player actor's `RepairBuilding`.
 - Repair: `{"cmd":"order","actor":<your player actor>,"order":"RepairBuilding","target_actor":<building id>,"on":true}`. One building per call. It drains `funds` as it heals, so check `funds` first. It stays on until you send `on:false`.

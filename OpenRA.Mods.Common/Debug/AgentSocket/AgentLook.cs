@@ -306,15 +306,28 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>One looked-at cell: its terrain and buildability, and its resource when it has one.</summary>
 		static object Cell(World world, CPos cell)
 		{
-			var terrain = world.Map.GetTerrainInfo(cell).Type;
+			var (terrain, resource, density) = CellClass(world, cell);
 			var buildable = Buildable(world, cell);
 			var position = new[] { cell.X, cell.Y };
 
-			var contents = world.WorldActor.TraitOrDefault<IResourceLayer>()?.GetResource(cell) ?? default;
-			if (string.IsNullOrEmpty(contents.Type))
+			if (resource == null)
 				return new LookCellV1(position, terrain, buildable);
 
-			return new LookResourceCellV1(position, terrain, buildable, contents.Type, contents.Density);
+			return new LookResourceCellV1(position, terrain, buildable, resource, density);
+		}
+
+		/// <summary>
+		/// A cell's terrain type and, when it has one, its resource and density, as the engine reports them. Resource is null for a cell
+		/// with none. Shared by the look's cells and the text map (P2.11), so both read the terrain the same way.
+		/// </summary>
+		public static (string Terrain, string Resource, int Density) CellClass(World world, CPos cell)
+		{
+			var terrain = world.Map.GetTerrainInfo(cell).Type;
+			var contents = world.WorldActor.TraitOrDefault<IResourceLayer>()?.GetResource(cell) ?? default;
+			if (string.IsNullOrEmpty(contents.Type))
+				return (terrain, null, 0);
+
+			return (terrain, contents.Type, contents.Density);
 		}
 
 		/// <summary>

@@ -33,11 +33,10 @@ namespace OpenRA.Test
 		{
 			["load_skirmish"] = "it replaces the running world with a new game, which a headless test cannot restore",
 			["screenshot"] = "it writes a frame file to disk",
-			["map_state"] = "it writes map-state.png into the workspace, which the test does not own",
 		};
 
 		/// <summary>Commands whose examples answer ok:true on a headless world with no selection, so their examples must succeed.</summary>
-		static readonly string[] ReadOnly = ["ping", "help", "state", "actors", "maps", "production", "production_tree", "look"];
+		static readonly string[] ReadOnly = ["ping", "help", "state", "actors", "maps", "production", "production_tree", "look", "map_state"];
 
 		bool savedAgentSocket;
 

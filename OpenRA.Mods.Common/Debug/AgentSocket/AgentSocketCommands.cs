@@ -190,7 +190,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"screenshot" => Screenshot(cmd, root),
 				"undo" => SnapshotStep(cmd, root),
 				"look" => Look(cmd, root),
-				"map_state" => Run(cmd, () => AgentMapState.Render(AgentWorldBridge.RequireWorld(), AgentWorldBridge.RequireWorld().LocalPlayer)),
+				"map_state" => MapState(cmd, root),
 				_ => Error(cmd, "unknown command"),
 			};
 		}
@@ -412,6 +412,29 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return Error(cmd, error);
 
 			return Run(cmd, () => AgentLook.Build(AgentWorldBridge.RequireWorld(), AgentWorldBridge.RequireWorld().LocalPlayer, request));
+		}
+
+		/// <summary>
+		/// The map state in the requested format (P2.11): png, the default, renders map-state.png; text returns the grid inline. The
+		/// turn envelope still refreshes map-state.png on a request that carries state. Any other format is an error, as every bad request is.
+		/// </summary>
+		static string MapState(string cmd, JsonElement root)
+		{
+			var format = "png";
+			if (root.TryGetProperty("format", out var formatElement) && formatElement.ValueKind != JsonValueKind.Null)
+			{
+				if (formatElement.ValueKind != JsonValueKind.String)
+					return Error(cmd, "format must be \"png\" or \"text\"");
+
+				format = formatElement.GetString();
+			}
+
+			return format switch
+			{
+				"png" => Run(cmd, () => AgentMapState.Render(AgentWorldBridge.RequireWorld(), AgentWorldBridge.RequireWorld().LocalPlayer)),
+				"text" => Run(cmd, () => AgentMapText.Build(AgentWorldBridge.RequireWorld(), AgentWorldBridge.RequireWorld().LocalPlayer)),
+				_ => Error(cmd, "format must be \"png\" or \"text\""),
+			};
 		}
 
 		/// <summary>
