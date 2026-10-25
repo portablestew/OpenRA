@@ -200,6 +200,13 @@ namespace OpenRA.Test
 			Assert.That(banner, Does.Contain("up to 10 of the distinct actors they covered, and [] when they name none."));
 		}
 
+		[TestCase(TestName = "The banner documents the payload a notification marker keeps: the latest suppressed one's keys, per name and item")]
+		public void BannerDocumentsTheNotificationMarkerPayload()
+		{
+			Assert.That(AgentSocketServer.Banner, Does.Contain("A notification's marker is per name and item, and carries the latest suppressed one's item, queue_type, reason, cost,"
+				+ " remaining_cost, funds, short_by, producer, blocked_by, cell, placement_required, options and placeable, each left out when unknown."));
+		}
+
 		[TestCase(TestName = "The banner documents placeable and blocked_by on a structure's ConstructionComplete, and NewOptions' options")]
 		public void BannerDocumentsTheConstructionFields()
 		{

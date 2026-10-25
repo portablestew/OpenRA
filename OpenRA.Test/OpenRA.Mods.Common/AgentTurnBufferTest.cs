@@ -269,6 +269,43 @@ namespace OpenRA.Test
 			}), "Each suppressed name should get its own marker, and the marker should name it.");
 		}
 
+		[TestCase(TestName = "Suppressed notifications group by name and item, and each marker keeps its latest payload")]
+		public void NotificationMarkersKeepTheLatestPayload()
+		{
+			var buffer = new AgentTurnBuffer();
+			var first = new NotificationV1("notification", 1, "NoBuild", "P", Item: "e1", QueueType: "Vehicle", Reason: "exit_blocked", Producer: 7);
+			var second = new NotificationV1("notification", 2, "NoBuild", "P", Item: "e2", QueueType: "Vehicle", Reason: "producer_paused");
+			var e1Paused = new NotificationV1("notification", 3, "NoBuild", "P", Item: "e1", QueueType: "Vehicle", Reason: "producer_paused", Producer: 8);
+			var e1Reserved = new NotificationV1("notification", 4, "NoBuild", "P", Item: "e1", QueueType: "Vehicle", Reason: "producer_reserved", Producer: 9, BlockedBy: "e1");
+			var e2Funds = new NotificationV1("notification", 5, "NoBuild", "P", Item: "e2", QueueType: "Vehicle", Reason: "no_producer", Cost: 300, RemainingCost: 120, Funds: 50, ShortBy: 70);
+			foreach (var e in new[] { first, second, e1Paused, e1Reserved, e2Funds })
+				buffer.Add(e);
+
+			var batch = buffer.Flush();
+
+			Assert.That(batch, Has.Count.EqualTo(4), "Two in full, then one marker for each item the suppressed notifications named.");
+			Assert.That(batch.Take(2), Is.EqualTo(new object[] { first, second }), "The first two NoBuild notifications should flush in full.");
+			Assert.That(Wire(batch[2]), Is.EqualTo(Wire(new AggregatedV1("notification", 2, 3, 4, [], Name: "NoBuild", Item: "e1",
+				QueueType: "Vehicle", Reason: "producer_reserved", Producer: 9, BlockedBy: "e1"))),
+				"The e1 marker should count its two suppressed notifications and keep the latest one's payload.");
+			Assert.That(Wire(batch[3]), Is.EqualTo(Wire(new AggregatedV1("notification", 1, 5, 5, [], Name: "NoBuild", Item: "e2",
+				QueueType: "Vehicle", Reason: "no_producer", Cost: 300, RemainingCost: 120, Funds: 50, ShortBy: 70))),
+				"The e2 marker should keep its own payload, not e1's.");
+		}
+
+		[TestCase(TestName = "A notification marker with no payload has none of the payload keys on the wire")]
+		public void NotificationMarkerWithoutPayloadOmitsIt()
+		{
+			var buffer = new AgentTurnBuffer();
+			foreach (var e in Enumerable.Range(1, 3).Select(i => new NotificationV1("notification", i, "SilosNeeded", "P", null, null, null, null)))
+				buffer.Add(e);
+
+			var json = Wire(buffer.Flush()[2]);
+
+			Assert.That(json, Does.Not.Contain("item").And.Not.Contain("queue_type").And.Not.Contain("reason").And.Not.Contain("cost").And.Not.Contain("cell"),
+				"A marker for notifications that carry no payload should not add the payload keys.");
+		}
+
 		[TestCase(TestName = "An event with no name field aggregates by its type alone, and its marker has no name key")]
 		public void MarkerWithoutANameHasNoNameKey()
 		{

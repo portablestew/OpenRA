@@ -308,6 +308,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ "    A damaged or healed marker for one victim also has damage_total (the hits summed), hp_from (HP before its first suppressed hit;"
 				+ " for a heal, HP after its first heal), hp_to (HP after its last) and attackers (the known attackers or healers). A marker past"
 				+ " the first 10 victims has damage_total and attackers only. Each of these is left out when it has no value.\n"
+				+ "    A notification's marker is per name and item, and carries the latest suppressed one's item, queue_type, reason, cost,"
+				+ " remaining_cost, funds, short_by, producer, blocked_by, cell, placement_required, options and placeable, each left out when unknown.\n"
 				+ "    A connection's first envelope has initial:true, its state in full, and no events from before its first request.\n"
 				+ "    The static data (state.map, state.ms_per_tick, and players' faction, color, bot and handicap) rides with the state until a world change (an undo,\n"
 				+ "    a load_skirmish, a new world) or a reconnect; in the envelopes between, those keys are null.\n"

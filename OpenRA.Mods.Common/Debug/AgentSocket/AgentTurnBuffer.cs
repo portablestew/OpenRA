@@ -27,20 +27,36 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// ten distinct attackers, or healers, that were known). hp_from is the HP before the first suppressed hit, or for a heal the HP
 	/// after the first suppressed heal; hp_to is the HP after the last. A residual marker, for victims past MaxVictimMarkers, has
 	/// damage_total and attackers but no hp_from or hp_to. Each of the four keys is left out when it has no value.
+	/// A notification's marker is per name and item, and carries the latest suppressed notification's payload: the keys a
+	/// NotificationV1 adds (item, queue_type, reason, cost, and the rest), each left out when it has no value.
 	/// </summary>
 	public sealed record AggregatedV1(string Event, int Aggregated, int TickFrom, int TickTo, uint[] Actors,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Name = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? DamageTotal = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? HpFrom = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? HpTo = null,
-		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint[] Attackers = null);
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint[] Attackers = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Item = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string QueueType = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Cost = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? RemainingCost = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Funds = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ShortBy = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? Producer = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string BlockedBy = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int[] Cell = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? PlacementRequired = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Options = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Placeable = null);
 
 	/// <summary>
 	/// The events one connection has seen since its last flush (P3.2). Add records an event as it is raised. Flush returns the
 	/// turn in arrival order: the first FullPerType events of each event type and name in full, then one AggregatedV1 per type
 	/// and name that had more, placed where its first suppressed event arrived. Damaged and healed events that are suppressed
-	/// get one marker per victim (up to MaxVictimMarkers). So a notification's name is never hidden in a
-	/// marker with another notification's events. killed, defeated, and game_over are never aggregated. A full buffer
+	/// get one marker per victim (up to MaxVictimMarkers). A suppressed notification gets one marker per name and item, so a
+	/// notification's name is never hidden in a marker with another notification's events. killed, defeated, and game_over
+	/// are never aggregated. A full buffer
 	/// drops its oldest event and counts it, and Flush puts one OverflowV1 first when any were dropped.
 	/// </summary>
 	public sealed class AgentTurnBuffer
@@ -158,7 +174,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 				}
 
 				var full = new Dictionary<(string, string), int>();
-				var slots = new Dictionary<(string Type, string Name, uint? Victim), Slot>();
+				var slots = new Dictionary<(string Type, string Name, uint? Victim, string Item), Slot>();
 				while (events.Count > 0)
 				{
 					var (type, name, tick, actor, dto) = events.Dequeue();
@@ -214,24 +230,29 @@ namespace OpenRA.Mods.Common.AgentSocket
 		}
 
 		/// <summary>
-		/// The marker a suppressed event joins. A damaged or healed event joins its victim's marker, until MaxVictimMarkers victims
+		/// The marker a suppressed event joins. A notification joins the one marker for its type, name, and item, so the marker's
+		/// payload is the latest of that item's. A damaged or healed event joins its victim's marker, until MaxVictimMarkers victims
 		/// have one; a later victim joins the residual marker for its type and name, which names no victim. Every other event
 		/// joins the one marker for its type and name.
 		/// </summary>
-		static (string Type, string Name, uint? Victim) MarkerKey(string type, string name, object dto, uint? actor,
-			Dictionary<(string Type, string Name, uint? Victim), Slot> slots)
+		static (string Type, string Name, uint? Victim, string Item) MarkerKey(string type, string name, object dto, uint? actor,
+			Dictionary<(string Type, string Name, uint? Victim, string Item), Slot> slots)
 		{
-			if (actor is not uint victim || dto is not (DamagedV1 or HealedV1))
-				return (type, name, null);
+			if (dto is NotificationV1 notification)
+				return (type, name, null, notification.Item);
 
-			var key = (type, name, (uint?)victim);
+			if (actor is not uint victim || dto is not (DamagedV1 or HealedV1))
+				return (type, name, null, null);
+
+			var key = (type, name, (uint?)victim, (string)null);
 			var victims = slots.Keys.Count(k => k.Type == type && k.Name == name && k.Victim != null);
-			return slots.ContainsKey(key) || victims < MaxVictimMarkers ? key : (type, name, null);
+			return slots.ContainsKey(key) || victims < MaxVictimMarkers ? key : (type, name, null, null);
 		}
 
 		/// <summary>
 		/// One aggregated run under construction: its position in the batch, the victim it is for (null for a residual or
-		/// non-victim run), the ticks it covers, the distinct actors and attackers it names, and the damage and HP it sums or tracks.
+		/// non-victim run), the ticks it covers, the distinct actors and attackers it names, the damage and HP it sums or tracks,
+		/// and the latest notification whose payload it keeps.
 		/// </summary>
 		sealed class Slot
 		{
@@ -247,6 +268,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 			int? damageTotal;
 			int? hpFrom;
 			int? hpTo;
+			NotificationV1 latest;
 
 			public Slot(string type, string name, uint? victim, int index, int tick)
 			{
@@ -277,11 +299,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 						TrackHp(heal.Hp, heal.Hp);
 						AddAttacker(heal.Healer);
 						break;
+					case NotificationV1 note:
+						latest = note;
+						break;
 				}
 			}
 
 			public AggregatedV1 Marker() => new(Type, Count, From, To, Actors.ToArray(), Name, damageTotal, hpFrom, hpTo,
-				Attackers.Count > 0 ? Attackers.ToArray() : null);
+				Attackers.Count > 0 ? Attackers.ToArray() : null, latest?.Item, latest?.QueueType, latest?.Reason, latest?.Cost,
+				latest?.RemainingCost, latest?.Funds, latest?.ShortBy, latest?.Producer, latest?.BlockedBy, latest?.Cell,
+				latest?.PlacementRequired, latest?.Options, latest?.Placeable);
 
 			// HP is tracked only for one victim, since a residual run spans several victims' HP.
 			void TrackHp(int from, int to)
