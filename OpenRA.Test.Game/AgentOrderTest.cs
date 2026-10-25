@@ -235,6 +235,51 @@ namespace OpenRA.Test
 			Assert.That(queue.GetProperty("items").EnumerateArray().Count(i => i.GetProperty("name").GetString() == "powr"), Is.EqualTo(2));
 		}
 
+		[TestCase(TestName = "A StartProduction order the funds cannot pay is queued, makes no progress while short, and builds once funds arrive")]
+		public void StartProductionQueuesAnUnaffordableItemUntilFundsArrive()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+			AgentProductionTest.SetLocalCash(hw, 0);
+
+			var line = $"{{\"cmd\":\"order\",\"actor\":{hw.LocalPlayer.PlayerActor.ActorID},\"order\":\"StartProduction\",\"item\":\"powr\",\"extra_data\":1}}";
+			using (var response = AgentStateDumpTest.RequestWithTicks(hw, line))
+				Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True, "The order is accepted into the queue without funds to pay for it.");
+
+			hw.Tick(300);
+
+			using (var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}"))
+			{
+				var items = AgentBuildTest.PowrItems(production.RootElement);
+				Assert.That(items.Length, Is.EqualTo(1), "The POWR is queued.");
+				Assert.That(items[0].GetProperty("state").GetString(), Is.Not.EqualTo("done"), "The POWR does not finish with no funds.");
+				Assert.That(items[0].GetProperty("progress").GetInt32(), Is.EqualTo(0), "The POWR makes no progress with no funds.");
+			}
+
+			AgentProductionTest.SetLocalCash(hw, 10000);
+
+			Assert.That(hw.TickUntil(AgentBuildTest.PowrFinished, 1000), Is.Not.Null, "The POWR never finished once funds arrived.");
+		}
+
+		[TestCase(TestName = "A StartProduction order the funds can pay is queued")]
+		public void StartProductionQueuesAnAffordableItem()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+			AgentProductionTest.SetLocalCash(hw, 10000);
+
+			var line = $"{{\"cmd\":\"order\",\"actor\":{hw.LocalPlayer.PlayerActor.ActorID},\"order\":\"StartProduction\",\"item\":\"powr\",\"extra_data\":1}}";
+			using (var response = AgentStateDumpTest.RequestWithTicks(hw, line))
+				Assert.That(response.RootElement.GetProperty("ok").GetBoolean(), Is.True);
+
+			hw.Tick(5);
+
+			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
+			Assert.That(AgentBuildTest.PowrItems(production.RootElement).Length, Is.EqualTo(1), "The affordable POWR is queued.");
+		}
+
 		[TestCase(StartLine + "\"item\":5}", "item must be a string", TestName = "A non-string item is rejected")]
 		[TestCase(StartLine + "\"extra_data\":-1}", "extra_data must be an unsigned integer", TestName = "A negative extra_data is rejected")]
 		[TestCase(StartLine + "\"extra_data\":1.5}", "extra_data must be an unsigned integer", TestName = "A fractional extra_data is rejected")]
