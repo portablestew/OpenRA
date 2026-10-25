@@ -25,8 +25,11 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>Ticks an interest lasts at most, in game ticks (25 per second), even while the actor stays busy.</summary>
 		public const int MaxTicks = 5000;
 
-		/// <summary>Ticks after issue during which an idle actor is kept: the order resolves and starts its activity then.</summary>
-		const int StartGraceTicks = 3;
+		/// <summary>
+		/// Ticks after issue during which an idle actor is kept. An order's activity starts when the order resolves, which can
+		/// take up to the await's resolve budget; past that the await fails, so the interest need not outlive it.
+		/// </summary>
+		const int StartGraceTicks = AgentOrderAwait.ResolveBudgetTicks;
 
 		static readonly Dictionary<(World World, uint Actor), int> Interests = [];
 
