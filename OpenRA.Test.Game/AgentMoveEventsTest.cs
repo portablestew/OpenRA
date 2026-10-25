@@ -400,6 +400,32 @@ namespace OpenRA.Test
 			Assert.That(Pending(), Is.EqualTo(0), "Interest should end with the order's move, so a later move reports nothing.");
 		}
 
+		[TestCase(TestName = "A socket Move that starts four ticks after its order is issued still reports its path")]
+		public void MoveStartedAfterIdleGraceReportsPath()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 50), 1, 1), hw.LocalPlayer);
+			hw.Tick(1);
+			Track(unit);
+
+			// A live order can take effect four ticks after it is issued. The idle grace is three ticks, so the interest lapses
+			// while the unit is still idle, and the Move that starts afterwards is no longer the socket's.
+			for (var i = 0; i < 4; i++)
+			{
+				hw.Tick(1);
+				ModType("AgentSocket.AgentOrderInterest").GetMethod("Tick").Invoke(null, [hw.World]);
+			}
+
+			var destination = hw.FindClearArea(unit.Location, 1, 1, 6);
+			hw.World.IssueOrder(new Order("Move", unit, Target.FromCell(hw.World, destination), false));
+			Assert.That(hw.TickUntil(() => unit.Location == destination, 500), Is.Not.Null, "The unit never reached the destination.");
+
+			var events = Drain("path", "activity");
+			var path = events.SingleOrDefault(e => KindOf(e) == "PathV1");
+			Assert.That(path, Is.Not.Null, "The move's path event was dropped.");
+			Assert.That(Field<string>(path, "Result"), Is.EqualTo("found"));
+		}
+
 		/// <summary>The events of the named types, in the order they were raised. The connection carries every event; a test looks at its own.</summary>
 		static IEnumerable<object> Only(IEnumerable<object> events, params string[] types)
 		{
