@@ -524,7 +524,9 @@ namespace OpenRA.Mods.Common.Traits
 								}
 								else if (!notified && time > 0)
 								{
+									AgentNotifications.ExplainBlocked(this, unit);
 									Game.Sound.PlayNotification(rules, self.Owner, "Speech", Info.BlockedAudio, self.Owner.Faction.InternalName);
+									AgentNotifications.Explained();
 									TextNotificationsManager.AddTransientLine(self.Owner, Info.BlockedTextNotification);
 									notified = true;
 								}
@@ -797,7 +799,10 @@ namespace OpenRA.Mods.Common.Traits
 					ResourcesPaid += pr.Resources;
 				else if (pr.Resources > costThisFrame)
 					ResourcesPaid += costThisFrame;
-				if (costThisFrame != 0 && !pr.TakeCash(costThisFrame, true))
+				AgentNotifications.ExplainProductionFunds(pr, this, costThisFrame);
+				var paid = costThisFrame == 0 || pr.TakeCash(costThisFrame, true);
+				AgentNotifications.Explained();
+				if (!paid)
 				{
 					ResourcesPaid -= pr.Resources;
 					return;

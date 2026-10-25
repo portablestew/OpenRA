@@ -15,6 +15,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using NUnit.Framework;
+using OpenRA.Traits;
 
 namespace OpenRA.Test
 {
@@ -36,6 +37,10 @@ namespace OpenRA.Test
 
 		/// <summary>The notification PlaceBuilding plays when a player's buildable options change, named by the event.</summary>
 		const string NewOptionsNotification = "NewOptions";
+
+		/// <summary>The notifications a blocked unit and a shortfall play in ra (player.yaml: BlockedAudio, InsufficientFundsNotification).</summary>
+		const string NoBuildNotification = "NoBuild";
+		const string FundsNotification = "InsufficientFunds";
 
 		/// <summary>Ticks to let the map settle, and the refused order run.</summary>
 		const int SettleTicks = 5;
@@ -237,6 +242,89 @@ namespace OpenRA.Test
 			Assert.That(notes.Where(n => Field<string>(n, "Name") == null), Is.Empty, "A nameless notification should not be sent.");
 			Assert.That(notes.Where(n => Field<string>(n, "Name") == RefusalNotification).ToList(), Has.Count.EqualTo(1),
 				"The named notification from the same player should still be sent.");
+		}
+
+		[TestCase(TestName = "A structure repair the player cannot pay for raises one InsufficientFunds with the item, repair, cost, funds and short_by")]
+		public void RepairShortfallNamesTheStructure()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			var dome = hw.CreateActor("dome", hw.FindClearArea(new CPos(50, 50), 3, 3), local);
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(60, 50), 2, 2), local);
+			hw.Tick(1);
+
+			var enemy = hw.CreateActor("e1", hw.FindClearArea(new CPos(50, 60), 1, 1), hw.EnemyPlayer);
+			dome.TraitOrDefault<IHealth>().InflictDamage(dome, enemy, new Damage(300), true);
+			AgentProductionTest.SetLocalCash(hw, 0);
+
+			var repairable = ModTrait(dome, "Traits.RepairableBuilding");
+			repairable.GetType().GetMethod("RepairBuilding").Invoke(repairable, [dome, local]);
+			hw.Tick(300);
+
+			// Every repair step falls short, but the engine plays InsufficientFunds once per 30 s of real time.
+			var notes = TakeNotifications().Where(n => Field<string>(n, "Name") == FundsNotification).ToList();
+			Assert.That(notes, Has.Count.EqualTo(1), "The engine's throttle lets one InsufficientFunds through.");
+			var note = notes[0];
+
+			Assert.That(Field<string>(note, "Item"), Is.EqualTo("dome"), "The notification should name the structure being repaired.");
+			Assert.That(Field<string>(note, "Reason"), Is.EqualTo("repair"));
+			Assert.That(Field<int?>(note, "Cost"), Is.GreaterThan(0), "Cost is the repair step's.");
+			Assert.That(Field<int?>(note, "Funds"), Is.Zero);
+			Assert.That(Field<int?>(note, "ShortBy"), Is.EqualTo(Field<int?>(note, "Cost")), "With no funds, the step is short its whole cost.");
+			Assert.That(Field<string>(note, "QueueType"), Is.Null, "A repair is in no queue.");
+			Assert.That(Field<int?>(note, "RemainingCost"), Is.Null, "A repair step has no remaining cost.");
+		}
+
+		[TestCase(TestName = "A NoBuild with no context, or with another name's or owner's context, carries none of the context keys")]
+		public void NoBuildWithoutItsContextHasNoContextKeys()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var local = hw.LocalPlayer;
+			hw.Tick(SettleTicks);
+
+			var hub = ModType("AgentSocket.AgentNotifications");
+			var context = ModType("AgentSocket.NotificationContext");
+			object Context(string name, Player owner) =>
+				Activator.CreateInstance(context, [name, owner, "e1", "Infantry", "exit_blocked", 300, 120, 50, 70, 9u, "e1"]);
+
+			// Each NoBuild is taken on its own: a flush sends the first two of a name in full and folds the rest into a marker.
+			List<object> PlayAndTake()
+			{
+				PlayNoBuild(hw, local);
+				hw.Tick(1);
+				return TakeNotifications().Where(n => Field<string>(n, "Name") == NoBuildNotification).ToList();
+			}
+
+			// The palette's NoBuild, and every other notification, plays with no context.
+			var notes = PlayAndTake();
+
+			// A context for another notification, or for another player, must not reach this one.
+			hub.GetMethod("Explain").Invoke(null, [Context(FundsNotification, local)]);
+			notes.AddRange(PlayAndTake());
+			hub.GetMethod("Explain").Invoke(null, [Context(NoBuildNotification, hw.EnemyPlayer)]);
+			notes.AddRange(PlayAndTake());
+			hub.GetMethod("Explained").Invoke(null, null);
+
+			Assert.That(notes, Has.Count.EqualTo(3));
+
+			var serialize = ModType("AgentSocket.AgentSocketCommands").GetMethod("Serialize");
+			foreach (var note in notes)
+			{
+				var expected = $"{{\"event\":\"notification\",\"tick\":{Field<int>(note, "Tick")},\"name\":\"NoBuild\",\"owner\":\"{local.PlayerName}\"}}";
+				Assert.That((string)serialize.Invoke(null, [note]), Is.EqualTo(expected), "A notification with no context of its own is unchanged.");
+			}
+		}
+
+		static void PlayNoBuild(HeadlessWorld hw, Player owner)
+		{
+			Game.Sound.PlayNotification(hw.World.Map.Rules, owner, "Speech", NoBuildNotification, owner.Faction.InternalName);
+		}
+
+		/// <summary>A trait of a mod type on the actor, read by reflection since the test project cannot reference the mod.</summary>
+		static object ModTrait(Actor actor, string name)
+		{
+			var method = typeof(Actor).GetMethods().Single(m => m.Name == "TraitOrDefault" && m.GetParameters().Length == 0);
+			return method.MakeGenericMethod(ModType(name)).Invoke(actor, null);
 		}
 
 		/// <summary>The events of the named types, in the order they were raised. The connection carries every event; a test looks at its own.</summary>

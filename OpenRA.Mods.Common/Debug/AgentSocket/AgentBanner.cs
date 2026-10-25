@@ -256,6 +256,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			text.Append("    and queue_type names the queue that built it. A structure has placement_required true: place it. A unit has cell, where it was built.\n");
 			text.Append("    A structure of yours also has placeable, every finished structure place accepts now, and blocked_by when items wait behind it.\n");
 			text.Append("    NewOptions names in options the options that became buildable since the last one (empty when none). An ally's has no options.\n");
+			text.Append("    NoBuild for a finished unit that cannot leave names item, queue_type, reason (exit_blocked, producer_paused, producer_reserved,\n");
+			text.Append("    no_producer), producer (exit_blocked, producer_reserved) and blocked_by when items wait behind it. InsufficientFunds names item,\n");
+			text.Append("    reason (production, repair), cost, funds, short_by, and for production queue_type and remaining_cost; the engine sends it at most\n");
+			text.Append("    once per 30 s real time, so one can stand for a long stall. Keys with no known value are omitted.\n");
 			text.Append("  Null and omitted: a null key is present with no value (an unknown value, or an optional request key left out).\n");
 			text.Append("    A key that does not apply is omitted:\n");
 			text.Append("    dist and pt in look actors without reference points, and look on a refusal with no local player.\n");

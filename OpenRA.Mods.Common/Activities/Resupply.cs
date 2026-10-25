@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using OpenRA.Activities;
+using OpenRA.Mods.Common.AgentSocket;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Traits;
 
@@ -311,7 +312,10 @@ namespace OpenRA.Mods.Common.Activities
 					TextNotificationsManager.AddTransientLine(self.Owner, repairsUnits.Info.StartRepairingTextNotification);
 				}
 
-				if (!playerResources.TakeCash(cost, true))
+				AgentNotifications.ExplainRepairFunds(self.Owner, self.Info.Name, cost);
+				var paid = playerResources.TakeCash(cost, true);
+				AgentNotifications.Explained();
+				if (!paid)
 				{
 					remainingTicks = 1;
 					return;

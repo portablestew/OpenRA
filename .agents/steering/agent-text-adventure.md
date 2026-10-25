@@ -41,5 +41,5 @@ description: OpenRA text_adventure patterns.
 - Fog and shroud: a structure you have seen stays visible there, and units will attack it, but it gets no state updates. Units keep attacking after it is destroyed unless you scout it again.
 - Hidden artillery can hit your base from fog.
 - Attacked from the shroud: `attacker:null` with `attacker_shrouded:true` is a real but unseen attacker. `attacker_bearing` points from the victim at it (null when the firer died before the shot landed).
-- NoBuild from a factory: set its rally point clear of the exit: `{"cmd":"order","actor":<factory>,"order":"SetRallyPoint","cell":[x,y]}`.
+- NoBuild with `reason:"exit_blocked"`: set `producer`'s rally point clear of the exit: `{"cmd":"order","actor":<producer>,"order":"SetRallyPoint","cell":[x,y]}`.
 - Before a long wait, give an idle unit a cheap order: `{"cmd":"order","actor":<unit>,"order":"Move","cell":[x,y]}` (scouting past contact).

@@ -9,6 +9,7 @@
  */
 #endregion
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
@@ -26,7 +27,12 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// left out of the JSON otherwise. A NewOptions notification of the local player names in Options the options that became buildable
 	/// since the last one (empty when none); an ally's has no Options. A finished structure of the local player also names in Placeable
 	/// every finished queue head the player can place now, this one included, and BlockedBy names it when items wait behind it. An
-	/// ally's ConstructionComplete has neither.
+	/// ally's ConstructionComplete has neither. A NoBuild a queue plays for a finished unit it cannot put out names the Item, its
+	/// QueueType, the Reason (exit_blocked, producer_paused, producer_reserved or no_producer), the Producer to set a rally point on
+	/// when one is known, and BlockedBy when items wait behind it. An InsufficientFunds names the Item it could not pay for, the
+	/// Reason (production or repair), the Cost (a production item's total, or a repair step's), the production's RemainingCost, the
+	/// Funds (cash and stored resources) and ShortBy. The engine throttles InsufficientFunds to one per 30 seconds of real time.
+	/// A key with no known value is left out.
 	/// </summary>
 	public sealed record NotificationV1(string Event, int Tick, string Name, string Owner,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Item = null,
@@ -35,7 +41,21 @@ namespace OpenRA.Mods.Common.AgentSocket
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string QueueType = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Options = null,
 		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string BlockedBy = null,
-		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Placeable = null);
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[] Placeable = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Reason = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Cost = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? RemainingCost = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Funds = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ShortBy = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? Producer = null);
+
+	/// <summary>
+	/// What the engine knows about a notification it is about to play: the notification's name and owner, which Raise matches on,
+	/// and the keys it adds. A null key is not known and is left out.
+	/// </summary>
+	public sealed record NotificationContext(string Name, Player Owner, string Item = null, string QueueType = null,
+		string Reason = null, int? Cost = null, int? RemainingCost = null, int? Funds = null, int? ShortBy = null,
+		uint? Producer = null, string BlockedBy = null);
 
 	public static class AgentNotifications
 	{
@@ -52,6 +72,97 @@ namespace OpenRA.Mods.Common.AgentSocket
 		// A unit's ready notification, held until the unit exists. The production creates a unit at frame end, after its ready
 		// sound plays, so the cell is known only then: Produced sends the notification with it.
 		static NotificationV1 heldUnit;
+
+		// The context of the notification the engine plays next, set only around that call. Kept apart from finishing, whose item
+		// Raise would hold as a unit's ready notification.
+		static NotificationContext context;
+
+		/// <summary>Sets the context for the notification played next. Pair with Explained. Does nothing when no connection is listening.</summary>
+		public static void Explain(NotificationContext explained)
+		{
+			if (AgentEvents.Enabled)
+				context = explained;
+		}
+
+		/// <summary>Ends the context Explain set, whether or not its notification played.</summary>
+		public static void Explained()
+		{
+			context = null;
+		}
+
+		/// <summary>
+		/// Explains the NoBuild a queue plays when it cannot put out a finished unit. The producers are found as the classic queue
+		/// finds them: the owner's enabled producers of the unit's production type, primary first, then the newest. With none the
+		/// item was cancelled; when all are paused or reserved nothing could take it; otherwise no exit was free.
+		/// </summary>
+		public static void ExplainBlocked(ProductionQueue queue, ActorInfo unit)
+		{
+			if (!AgentEvents.Enabled)
+				return;
+
+			var owner = queue.Actor.Owner;
+			var bi = unit.TraitInfo<BuildableInfo>();
+			var type = owner.PlayerActor.Trait<DeveloperMode>().AllTech ? queue.Info.Type : (bi.BuildAtProductionType ?? queue.Info.Type);
+			var playerQueue = queue.Actor == owner.PlayerActor;
+			var producers = owner.World.ActorsWithTrait<Production>()
+				.Where(p => p.Actor.Owner == owner && (playerQueue || p.Actor == queue.Actor)
+					&& !p.Trait.IsTraitDisabled && p.Trait.Info.Produces.Contains(type))
+				.OrderByDescending(p => p.Actor.IsPrimaryBuilding())
+				.ThenByDescending(p => p.Actor.ActorID)
+				.ToList();
+
+			var unpaused = producers.Where(p => !p.Trait.IsTraitPaused).ToList();
+			var free = unpaused.FirstOrDefault(p => !Reservable.IsReserved(p.Actor));
+			string reason;
+			Actor producer = null;
+			if (producers.Count == 0)
+				reason = "no_producer";
+			else if (unpaused.Count == 0)
+				reason = "producer_paused";
+			else if (free.Actor == null)
+				(reason, producer) = ("producer_reserved", unpaused[0].Actor);
+			else
+				(reason, producer) = ("exit_blocked", free.Actor);
+
+			// A cancelled item holds nothing; one still waiting at the head holds the items behind it.
+			var queued = queue.AllQueued().ToList();
+			var blockedBy = producers.Count > 0 && queued.Count > 1 && queued[0].Item == unit.Name ? unit.Name : null;
+
+			Explain(new NotificationContext(queue.Info.BlockedAudio, owner, unit.Name, queue.Info.Type, reason,
+				Producer: producer?.ActorID, BlockedBy: blockedBy));
+		}
+
+		/// <summary>
+		/// Explains the InsufficientFunds a production item's payment may play: set only when the funds fall short of the payment.
+		/// ShortBy is what the rest of the item costs beyond the funds, not this tick's slice.
+		/// </summary>
+		public static void ExplainProductionFunds(PlayerResources resources, ProductionItem item, int payment)
+		{
+			if (!AgentEvents.Enabled)
+				return;
+
+			var funds = resources.GetCashAndResources();
+			if (funds >= payment)
+				return;
+
+			Explain(new NotificationContext(resources.Info.InsufficientFundsNotification, item.Queue.Actor.Owner, item.Item,
+				item.Queue.Info.Type, "production", item.TotalCost, item.RemainingCost, funds, Math.Max(0, item.RemainingCost - funds)));
+		}
+
+		/// <summary>Explains the InsufficientFunds a repair step may play: set only when the funds fall short of the step's cost.</summary>
+		public static void ExplainRepairFunds(Player owner, string item, int cost)
+		{
+			if (!AgentEvents.Enabled)
+				return;
+
+			var resources = owner.PlayerActor.Trait<PlayerResources>();
+			var funds = resources.GetCashAndResources();
+			if (funds >= cost)
+				return;
+
+			Explain(new NotificationContext(resources.Info.InsufficientFundsNotification, owner, item,
+				Reason: "repair", Cost: cost, Funds: funds, ShortBy: cost - funds));
+		}
 
 		/// <summary>Marks the item a production queue has finished, and the queue it is in, for the ready notification it plays next. Pair with Finished.</summary>
 		public static void Finishing(Player owner, ActorInfo item, string queueType)
@@ -107,6 +218,17 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return;
 
 			var tick = player?.World.WorldTick ?? AgentWorldBridge.Active?.WorldTick ?? 0;
+
+			// A notification the engine explained carries what it knew. Matched on name and owner, so a notification played
+			// meanwhile for another reason never takes it.
+			if (context is { } explained && explained.Name == name && explained.Owner == player)
+			{
+				AgentEvents.Raise(new NotificationV1("notification", tick, name, player?.PlayerName, explained.Item, null, null,
+					explained.QueueType, null, explained.BlockedBy, null, explained.Reason, explained.Cost, explained.RemainingCost,
+					explained.Funds, explained.ShortBy, explained.Producer));
+				return;
+			}
+
 			var item = finishing is { } announced && announced.Owner == player ? announced.Item : null;
 			var queueType = finishing is { } queue && queue.Owner == player ? queue.QueueType : null;
 

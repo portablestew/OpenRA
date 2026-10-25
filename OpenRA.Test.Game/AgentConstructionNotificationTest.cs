@@ -150,6 +150,70 @@ namespace OpenRA.Test
 				"A unit is built at its barracks' exit, next to the barracks.");
 		}
 
+		[TestCase(TestName = "A barracks with its exits walled in raises NoBuild with the item, its queue, exit_blocked, the producer and blocked_by")]
+		public void BlockedExitNamesTheProducer()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.CreateActor("powr", hw.FindClearArea(new CPos(60, 60), 2, 2), hw.LocalPlayer);
+
+			// Both barracks exits are the cells below it (structures.yaml, BARR and TENT: ExitCell 0,2 and 1,2). Sandbags on them
+			// block the unit, and a structure is not moved aside the way a blocking unit is told to move.
+			var area = hw.FindClearArea(new CPos(56, 50), 4, 5);
+			var barracks = hw.CreateActor(hw.LocalPlayer.Faction.InternalName == "soviet" ? "barr" : "tent", area + new CVec(1, 1), hw.LocalPlayer);
+			hw.CreateActor("sbag", barracks.Location + new CVec(0, 2), hw.LocalPlayer);
+			hw.CreateActor("sbag", barracks.Location + new CVec(1, 2), hw.LocalPlayer);
+			hw.Tick(SettleTicks);
+
+			// The second e1 waits behind the first, which cannot leave, so the first holds it.
+			var note = FinishedNotifications(hw, "NoBuild",
+				"{\"cmd\":\"build\",\"item\":\"e1\"}", "{\"cmd\":\"build\",\"item\":\"e1\"}")[0];
+
+			Assert.That(note.GetProperty("item").GetString(), Is.EqualTo("e1"), "NoBuild should name the unit that cannot leave.");
+			Assert.That(note.GetProperty("queue_type").GetString(), Is.EqualTo("Infantry"));
+			Assert.That(note.GetProperty("reason").GetString(), Is.EqualTo("exit_blocked"));
+			Assert.That(note.GetProperty("producer").GetUInt32(), Is.EqualTo(barracks.ActorID), "The producer is the barracks to set a rally point on.");
+			Assert.That(note.GetProperty("blocked_by").GetString(), Is.EqualTo("e1"), "The stuck e1 holds the one queued behind it.");
+			foreach (var absent in new[] { "cost", "remaining_cost", "funds", "short_by", "placement_required", "placeable", "cell" })
+				Assert.That(note.TryGetProperty(absent, out _), Is.False, $"NoBuild has no {absent}.");
+		}
+
+		[TestCase(TestName = "Running out of cash mid-build raises one InsufficientFunds with the item, its queue, cost, remaining_cost, funds and short_by")]
+		public void ShortfallNamesTheItemAndItsCost()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(SettleTicks);
+
+			var started = Responses(Serve(hw, "{\"cmd\":\"build\",\"item\":\"powr\"}\n"));
+			Assert.That(started[0].GetProperty("results").GetProperty("ok").GetBoolean(), Is.True, "The build was refused.");
+
+			// The build is paid for a slice each tick, so with no cash or resources left the next slice falls short. The engine
+			// plays InsufficientFunds for the first shortfall, then not again for 30 s of real time.
+			AgentProductionTest.SetLocalCash(hw, 0);
+			var lines = new StringBuilder();
+			for (var i = 0; i < 3; i++)
+				lines.Append(WaitLine);
+
+			var notes = Notifications(Serve(hw, lines.ToString())).Where(n => n.GetProperty("name").GetString() == "InsufficientFunds").ToList();
+			Assert.That(notes, Has.Count.EqualTo(1), "The engine's throttle lets one InsufficientFunds through.");
+			var note = notes[0];
+
+			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
+			var item = AgentProductionTest.QueueOf(production.RootElement, "Building").GetProperty("items")[0];
+			var remaining = item.GetProperty("remaining_cost").GetInt32();
+
+			Assert.That(note.GetProperty("item").GetString(), Is.EqualTo("powr"));
+			Assert.That(note.GetProperty("queue_type").GetString(), Is.EqualTo("Building"));
+			Assert.That(note.GetProperty("reason").GetString(), Is.EqualTo("production"));
+			Assert.That(note.GetProperty("cost").GetInt32(), Is.EqualTo(item.GetProperty("cost").GetInt32()), "Cost is the item's total, not the slice.");
+			Assert.That(note.GetProperty("remaining_cost").GetInt32(), Is.EqualTo(remaining), "The stalled item still owes what it owed then.");
+			Assert.That(remaining, Is.InRange(1, note.GetProperty("cost").GetInt32()));
+			Assert.That(note.GetProperty("funds").GetInt32(), Is.Zero);
+			Assert.That(note.GetProperty("short_by").GetInt32(), Is.EqualTo(remaining), "With no funds, the item is short its whole remaining cost.");
+			Assert.That(note.TryGetProperty("producer", out _), Is.False, "InsufficientFunds names no producer.");
+		}
+
 		/// <summary>Queues the build, serves the waits that follow it, and returns the first notification with the given name.</summary>
 		static JsonElement FinishedNotification(HeadlessWorld hw, string build, string name)
 		{

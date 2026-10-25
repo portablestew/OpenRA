@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using OpenRA.Mods.Common.AgentSocket;
 using OpenRA.Primitives;
 using OpenRA.Traits;
 
@@ -175,7 +176,13 @@ namespace OpenRA.Mods.Common.Traits
 				var cost = Math.Max(1, (int)((long)hpToRepair * Info.RepairPercent * buildingValue / (health.MaxHP * 100L)));
 
 				// TakeCash will return false if the player can't pay, and will stop him from contributing this Tick
-				var activePlayers = Repairers.Count(player => player.PlayerActor.Trait<PlayerResources>().TakeCash(cost, true));
+				var activePlayers = Repairers.Count(player =>
+				{
+					AgentNotifications.ExplainRepairFunds(player, self.Info.Name, cost);
+					var paid = player.PlayerActor.Trait<PlayerResources>().TakeCash(cost, true);
+					AgentNotifications.Explained();
+					return paid;
+				});
 
 				RepairActive = activePlayers > 0;
 
