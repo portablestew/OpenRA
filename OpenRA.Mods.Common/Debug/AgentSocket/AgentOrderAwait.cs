@@ -717,6 +717,10 @@ namespace OpenRA.Mods.Common.AgentSocket
 			if (!target.IsValidFor(subject) || !attacks.Any(a => a.ChooseArmamentsForTarget(target, false).Any()))
 				return "target not valid for self";
 
+			// An enemy the owner cannot see is out of range only because it is out of sight, so the fog is the reason named.
+			if (IsHiddenFromOwner(subject.Owner, target))
+				return "target is hidden under fog: scout it before attacking";
+
 			var max = MaxRange(subject, target);
 			if (max == WDist.Zero)
 				return "no armament can attack the target";
@@ -725,6 +729,18 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return $"target out of range: max range {max.Length}, distance {(target.CenterPosition - subject.CenterPosition).Length} (world units)";
 
 			return "no armament can attack the target";
+		}
+
+		/// <summary>
+		/// True when the target is an actor the owner cannot see now and holds no frozen snapshot of, as AgentFog's rule reads it.
+		/// A bot is exempt, as it reads the world without fog. Must run on the game thread.
+		/// </summary>
+		static bool IsHiddenFromOwner(Player owner, Target target)
+		{
+			if (owner.IsBot || target.Type != TargetType.Actor)
+				return false;
+
+			return !owner.Shroud.IsVisible(target.Actor.CenterPosition) && owner.FrozenActorLayer.FromID(target.Actor.ActorID) == null;
 		}
 	}
 }

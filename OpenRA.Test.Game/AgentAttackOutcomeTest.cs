@@ -11,6 +11,7 @@
 
 using System.Text.Json;
 using NUnit.Framework;
+using OpenRA.Traits;
 
 namespace OpenRA.Test
 {
@@ -103,6 +104,49 @@ namespace OpenRA.Test
 			Assert.That(reason, Does.StartWith("target out of range"), reason);
 			Assert.That(reason, Does.Contain("max range"), reason);
 			Assert.That(reason, Does.Contain("distance"), reason);
+		}
+
+		[TestCase(TestName = "An attack on an enemy the owner cannot see, with no frozen snapshot, replies no_valid_target as hidden, not as out of range")]
+		public void HiddenEnemyReplyNoValidTarget()
+		{
+			using var hw = HeadlessWorld.Create(0xF06);
+			var local = hw.LocalPlayer;
+			var tank = hw.CreateActor("2tnk", hw.FindClearArea(local.HomeLocation, 3, 3), local);
+			hw.Tick(5);
+			var enemy = hw.CreateActor("e1", hw.FindClearArea(hw.EnemyPlayer.HomeLocation, 3, 3), hw.EnemyPlayer);
+			hw.Tick(5);
+
+			// Fog precondition, as AgentFogTest does: fog is on, the enemy is out of sight, and no frozen snapshot of it exists.
+			Assert.That(local.Shroud.FogEnabled, Is.True, "The test needs fog on.");
+			Assert.That(local.Shroud.IsVisible(enemy.CenterPosition), Is.False, "The enemy should start out of sight.");
+			Assert.That(local.PlayerActor.TraitOrDefault<FrozenActorLayer>()?.FromID(enemy.ActorID), Is.Null, "The enemy should have no frozen snapshot.");
+
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, AttackLine(tank, enemy));
+			var root = response.RootElement;
+
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+			Assert.That(root.GetProperty("outcome").GetString(), Is.EqualTo("no_valid_target"), root.ToString());
+			Assert.That(root.GetProperty("reason").GetString(), Does.Contain("hidden"), root.ToString());
+		}
+
+		[TestCase(TestName = "An attack on an enemy a scout has made visible starts, and the tank has an activity")]
+		public void ScoutedEnemyReplyStarted()
+		{
+			using var hw = HeadlessWorld.Create(0xF06);
+			var local = hw.LocalPlayer;
+			var tank = hw.CreateActor("2tnk", hw.FindClearArea(local.HomeLocation, 3, 3), local);
+			hw.Tick(5);
+			var enemy = hw.CreateActor("e1", hw.FindClearArea(hw.EnemyPlayer.HomeLocation, 3, 3), hw.EnemyPlayer);
+			var scout = hw.CreateActor("e1", hw.FindClearArea(hw.EnemyPlayer.HomeLocation, 3, 3), local);
+			hw.Tick(5);
+			Assert.That(local.Shroud.IsVisible(enemy.CenterPosition), Is.True, "The scout should make the enemy visible.");
+
+			using var response = AgentStateDumpTest.RequestWithTicks(hw, AttackLine(tank, enemy));
+			var root = response.RootElement;
+
+			Assert.That(root.GetProperty("ok").GetBoolean(), Is.True, root.ToString());
+			Assert.That(root.GetProperty("outcome").GetString(), Is.EqualTo("started"), root.ToString());
+			Assert.That(tank.CurrentActivity, Is.Not.Null, "The started attack should give the tank an activity.");
 		}
 
 		[TestCase(TestName = "An attack by an unarmed actor replies no_valid_target, no armament")]
