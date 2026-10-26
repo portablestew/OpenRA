@@ -215,6 +215,8 @@ namespace OpenRA.Test
 			Assert.That(banner, Does.Contain("income_per_s is the cash earned per second, averaged over the last minute of game time;"));
 			Assert.That(banner, Does.Contain("spend_per_s is what the items now building spend per second at full power"));
 			Assert.That(banner, Does.Contain("An item's eta_ticks is the ticks until it is done, counting the items ahead of it"));
+			Assert.That(banner, Does.Contain("min_effect_tick, ready, eta_ticks, add_per_s, blocked_by."));
+			Assert.That(banner, Does.Contain("add_per_s is what one copy adds to production's spend_per_s while it builds at the head of its queue"));
 			Assert.That(banner, Does.Contain("A Move adds path (found | no_path; null when no path was planned within 50 ticks)"));
 			Assert.That(banner, Does.Contain("An AttackMove adds outcome (started | no_path; null when no path was planned within 50 ticks) and path"));
 			Assert.That(banner, Does.Contain("Husks (wrecks) are not in units, unit_counts or known_counts."));

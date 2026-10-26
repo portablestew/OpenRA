@@ -24,7 +24,8 @@ namespace OpenRA.Test
 	[TestFixture]
 	sealed class AgentBuildTest
 	{
-		static readonly string[] SuccessKeys = ["ok", "cmd", "actor", "queue_type", "item", "count", "tick", "min_effect_tick", "ready", "eta_ticks", "blocked_by"];
+		static readonly string[] SuccessKeys =
+			["ok", "cmd", "actor", "queue_type", "item", "count", "tick", "min_effect_tick", "ready", "eta_ticks", "add_per_s", "blocked_by"];
 		static readonly string[] RefusedKeys = ["ok", "cmd", "error", "available", "missing_prerequisites", "ready", "eta_ticks", "blocked_by", "hint"];
 
 		bool savedAgentSocket;
@@ -180,6 +181,28 @@ namespace OpenRA.Test
 			Assert.That(blocked.RootElement.GetProperty("eta_ticks").ValueKind, Is.EqualTo(JsonValueKind.Null),
 				"A finished head holds the queue, so the ETA depends on placement");
 			Assert.That(blocked.RootElement.GetProperty("blocked_by").GetString(), Is.EqualTo("powr"));
+		}
+
+		[TestCase(TestName = "add_per_s is what one copy adds to spend_per_s once it reaches the head of its queue, not times its count")]
+		public void AddPerSIsTheSpendTheCopyAdds()
+		{
+			using var hw = HeadlessWorld.Create(1);
+			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
+			hw.Tick(1);
+
+			int addPerS;
+			using (var build = AgentStateDumpTest.Request("{\"cmd\":\"build\",\"item\":\"powr\",\"count\":2}"))
+				addPerS = build.RootElement.GetProperty("add_per_s").GetInt32();
+
+			Assert.That(hw.TickUntil(PowrBuilding, 100), Is.Not.Null, "The POWR never started building.");
+			var head = AgentProductionTest.LocalQueue(hw, "Building").Items[0];
+			var cost = (int)AgentProductionTest.Member(head, "TotalCost");
+			var time = (int)AgentProductionTest.Member(head, "TotalTime");
+			Assert.That(addPerS, Is.EqualTo(cost * 1000 / (time * hw.World.Timestep)), "One copy's cost over its build time, per second");
+
+			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
+			Assert.That(production.RootElement.GetProperty("spend_per_s").GetInt32(), Is.EqualTo(addPerS),
+				"The queue builds one copy at a time, so the spend rises by one copy's rate");
 		}
 
 		[TestCase(TestName = "A finished head blocks the queue: a build into it names the blocker, and the queue view names it too")]

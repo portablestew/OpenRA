@@ -385,7 +385,7 @@ namespace OpenRA.Test
 		}
 
 		/// <summary>The local player's queue of one type, with its live items head first. Read by reflection, as the test project cannot reference the mod.</summary>
-		static (object Queue, object[] Items) LocalQueue(HeadlessWorld hw, string queueType)
+		internal static (object Queue, object[] Items) LocalQueue(HeadlessWorld hw, string queueType)
 		{
 			var queues = ((IEnumerable)CallGeneric(hw.LocalPlayer.PlayerActor, "TraitsImplementing", "Traits.ProductionQueue")).Cast<object>();
 			var queue = queues.Single(q => (string)Member(Member(q, "Info"), "Type") == queueType);
@@ -402,7 +402,7 @@ namespace OpenRA.Test
 		}
 
 		/// <summary>A field or a property of the target, whichever the mod declares.</summary>
-		static object Member(object target, string name)
+		internal static object Member(object target, string name)
 		{
 			var field = target.GetType().GetField(name);
 			return field != null ? field.GetValue(target) : target.GetType().GetProperty(name).GetValue(target);

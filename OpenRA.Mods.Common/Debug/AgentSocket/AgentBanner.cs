@@ -129,13 +129,16 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " Each key is also one of the player actor's orders, and an order for a power that is not ready is refused with ok:false,"
 				+ " error, ready:false and remaining_ticks", "{\"cmd\":\"powers\"}"),
 			("build", "item (string); optional count (positive int, default 1)\n"
-				+ "                -> ok, actor, queue_type, item, count, tick, min_effect_tick, ready, eta_ticks, blocked_by. Not buildable now: ok:false, error,"
-				+ " available (the items build accepts now: buildable and affordable), missing_prerequisites (every unmet prerequisite;"
-				+ " null if the refusal is not about prerequisites), ready and eta_ticks (both null: a refused build queues nothing)."
-				+ " On success, ready is always false, and eta_ticks is the ticks until the first copy queued by this request is done,"
-				+ " counting the items ahead of it in its queue at the current power; null while a finished item at the head of that queue"
-				+ " holds it until it is placed. blocked_by names the finished item at the head of the queue this one joins, which holds"
-				+ " the queue until it is placed (null when that head is not finished); a refusal carries it too",
+				+ "                -> ok, actor, queue_type, item, count, tick, min_effect_tick, ready, eta_ticks, add_per_s, blocked_by."
+				+ " Not buildable now: ok:false, error, available (the items build accepts now: buildable and affordable),"
+				+ " missing_prerequisites (every unmet prerequisite; null if the refusal is not about prerequisites), ready and"
+				+ " eta_ticks (both null: a refused build queues nothing). On success, ready is always false, and eta_ticks is the"
+				+ " ticks until the first copy queued by this request is done, counting the items ahead of it in its queue at the"
+				+ " current power; null while a finished item at the head of that queue holds it until it is placed. add_per_s is"
+				+ " what one copy adds to production's spend_per_s while it builds at the head of its queue (credits per second"
+				+ " at full power; one copy at a time, so not times count). blocked_by names the finished item at the head of the"
+				+ " queue this one joins, which holds the queue until it is placed (null when that head is not finished); a"
+				+ " refusal carries it too",
 				"{\"cmd\":\"build\",\"item\":\"e1\",\"count\":2}"),
 			("cancel", "item (string); optional count (positive int, default 1)\n"
 				+ "                -> ok, actor, queue_type, item, canceled, tick, min_effect_tick. Removes up to count queued copies of item from the"

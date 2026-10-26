@@ -295,7 +295,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 		{
 			return queue.AllQueued()
 				.Where(i => !i.Done && !i.Paused && queue.IsProducing(i))
-				.Sum(i => i.TotalCost * 1000 / (Math.Max(1, BuildTimeOf(world, queue, i)) * world.Timestep));
+				.Sum(i => RatePerS(world, i.TotalCost, BuildTimeOf(world, queue, i)));
+		}
+
+		/// <summary>The credits per second of game time that an item of cost spends at full power over buildTime ticks. Shared with the build reply's AddPerS.</summary>
+		internal static int RatePerS(World world, int cost, int buildTime)
+		{
+			return cost * 1000 / (Math.Max(1, buildTime) * world.Timestep);
 		}
 
 		/// <summary>The build time of an item. TotalTime is only set once the item starts, so an unstarted item's time comes from the rules.</summary>

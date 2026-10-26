@@ -23,11 +23,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// EtaTicks describe the copy this request queued, the first of Count: it is queued behind every copy already in its queue, so
 	/// Ready is false (a copy queued now is not done), and EtaTicks is the ticks until it is done, counting the items ahead of it
 	/// at the power now. EtaTicks is null when a finished item at the head of that queue holds it until it is placed (BlockedBy
-	/// names that item). BlockedBy names the finished item at the head of the queue the item joins, which holds the new item until
-	/// it is placed (P1.12); null when that head is not finished.
+	/// names that item). AddPerS is what one copy adds to the production reply's SpendPerS while it builds at the head of its queue:
+	/// its cost over its build time, per second at full power. A queue builds one copy at a time, so it is not multiplied by Count.
+	/// BlockedBy names the finished item at the head of the queue the item joins, which holds the new item until it is placed
+	/// (P1.12); null when that head is not finished.
 	/// </summary>
 	public sealed record BuildV1(bool Ok, string Cmd, uint Actor, string QueueType, string Item, int Count, int Tick, int MinEffectTick,
-		bool? Ready, int? EtaTicks, string BlockedBy);
+		bool? Ready, int? EtaTicks, int AddPerS, string BlockedBy);
 
 	/// <summary>
 	/// The refusal for a build the queue cannot start. Available lists the items build would accept now. MissingPrerequisites
@@ -118,6 +120,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			// Read before the order is issued, since the copy joins the end of the queue as it stands now.
 			var etaTicks = EtaOfNewCopy(world, queue, item);
+			var trait = QueueTrait(world, queue);
+			var addPerS = AgentProduction.RatePerS(world, trait.GetProductionCost(info), trait.GetBuildTime(info, buildable));
 
 			// The same order-accept check as the order command, so a queue that does not take StartProduction is refused too.
 			var actor = AgentOrder.Accept(world, queue.Actor, "StartProduction");
@@ -126,7 +130,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 
 			// A copy queued now has not started, let alone finished, so it is never ready when the reply is sent.
 			return new BuildV1(true, "build", actor.ActorID, queue.QueueType, item, request.Count, world.WorldTick, world.WorldTick + 1,
-				false, etaTicks, queue.Blocker);
+				false, etaTicks, addPerS, queue.Blocker);
 		}
 
 		/// <summary>
