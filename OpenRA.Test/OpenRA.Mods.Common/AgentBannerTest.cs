@@ -207,6 +207,19 @@ namespace OpenRA.Test
 			Assert.That(AgentSocketServer.Banner, Does.Contain("LevelUp names item, actor (the unit's id) and level (the new rank, 1-based)."));
 		}
 
+		[TestCase(TestName = "The banner documents the run rate and item ETA, the Move and AttackMove path result, and husks left out of the digest")]
+		public void BannerDocumentsTheRunRatePathAndHusks()
+		{
+			var banner = AgentSocketServer.Banner;
+
+			Assert.That(banner, Does.Contain("income_per_s is the cash earned per second, averaged over the last minute of game time;"));
+			Assert.That(banner, Does.Contain("spend_per_s is what the items now building spend per second at full power"));
+			Assert.That(banner, Does.Contain("An item's eta_ticks is the ticks until it is done, counting the items ahead of it"));
+			Assert.That(banner, Does.Contain("A Move adds path (found | no_path; null when no path was planned within 50 ticks)"));
+			Assert.That(banner, Does.Contain("An AttackMove adds outcome (started | no_path; null when no path was planned within 50 ticks) and path"));
+			Assert.That(banner, Does.Contain("Husks (wrecks) are not in units, unit_counts or known_counts."));
+		}
+
 		[TestCase(TestName = "The banner documents the payload a notification marker keeps: the latest suppressed one's keys, per name and item")]
 		public void BannerDocumentsTheNotificationMarkerPayload()
 		{

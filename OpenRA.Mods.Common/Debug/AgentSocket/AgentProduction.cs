@@ -24,8 +24,9 @@ namespace OpenRA.Mods.Common.AgentSocket
 	/// spendable total, CashFunds + ResourceFunds; CashFunds and ResourceFunds are the two pools it sums, as in the state digest.
 	/// A queue's options
 	/// come only when they changed for this connection (ProductionQueueV1.Changed). production_tree lists them all.
-	/// IncomePerS is the cash earned over the last second of game time (PlayerStatistics.Income). SpendPerS is what the items
-	/// now building spend per second at full power: each one's cost over its build time. Compare them before queuing more.
+	/// IncomePerS is the cash earned per second, averaged over the last minute of game time (PlayerStatistics.Income / 60).
+	/// SpendPerS is what the items now building spend per second at full power: each one's cost over its build time.
+	/// Compare them before queuing more.
 	/// </summary>
 	public sealed record ProductionV1(bool Ok, string Cmd, string Player, int Funds, int CashFunds, int ResourceFunds,
 		PowerV1 Power, int IncomePerS, int SpendPerS, ProductionQueueV1[] Queues);
@@ -155,10 +156,14 @@ namespace OpenRA.Mods.Common.AgentSocket
 				.Where(t => t.Actor.Owner == player && t.Actor.IsInWorld && !t.Actor.IsDead && ProducersOf(world, player, t.Trait).Length > 0)
 				.Sum(t => SpendPerS(world, t.Trait));
 
+			// PlayerStatistics.Income is the cash earned over the last minute (a minute of one-second samples), so it is
+			// divided into a per-second rate to compare with the spend.
+			var income = (player.PlayerActor.TraitOrDefault<PlayerStatistics>()?.Income ?? 0) / 60;
+
 			return new ProductionV1(true, cmd, player.PlayerName, funds,
 				resources?.Cash ?? 0, resources?.Resources ?? 0,
 				AgentStateDump.Power(player.PlayerActor.TraitOrDefault<PowerManager>()),
-				player.PlayerActor.TraitOrDefault<PlayerStatistics>()?.Income ?? 0, spend, queues);
+				income, spend, queues);
 		}
 
 		// Null when the queue has no producer. Such a queue is not reported, so it is not recorded as seen either.

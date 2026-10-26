@@ -342,20 +342,25 @@ namespace OpenRA.Test
 			Assert.That(production.RootElement.GetProperty("spend_per_s").GetInt32(), Is.EqualTo(cost * 1000 / (time * hw.World.Timestep)));
 		}
 
-		[TestCase(TestName = "income_per_s is the local player's PlayerStatistics.Income")]
-		public void IncomePerSIsTheStatisticsIncome()
+		[TestCase(TestName = "income_per_s is the cash earned over the last minute of game time, per second")]
+		public void IncomePerSIsTheLastMinutesEarningsPerSecond()
 		{
 			using var hw = HeadlessWorld.Create(1);
 			hw.CreateActor("fact", hw.FindClearArea(new CPos(50, 50), 3, 3), hw.LocalPlayer);
 			hw.Tick(1);
 
-			// Income is set once a second of game time, so it is set here rather than waited for: the reply must carry the statistic as it stands.
+			var resources = CallGeneric(hw.LocalPlayer.PlayerActor, "TraitOrDefault", "Traits.PlayerResources");
 			var stats = CallGeneric(hw.LocalPlayer.PlayerActor, "TraitOrDefault", "Traits.PlayerStatistics");
 			Assert.That(stats, Is.Not.Null, "The ra player actor has PlayerStatistics.");
-			stats.GetType().GetField("Income").SetValue(stats, 123);
+			Assert.That((int)Member(resources, "Earned"), Is.EqualTo(0), "Premise: nothing is earned before the cash is given.");
+
+			// PlayerStatistics samples Earned once a second and keeps a minute of samples, so its Income is the minute's earnings.
+			resources.GetType().GetMethod("GiveCash").Invoke(resources, [6000, false]);
+			hw.Tick(1000 / hw.World.Timestep + 1);
+			Assert.That((int)Member(stats, "Income"), Is.EqualTo(6000), "Premise: Income is the cash earned over the last minute.");
 
 			using var production = AgentStateDumpTest.Request("{\"cmd\":\"production\"}");
-			Assert.That(production.RootElement.GetProperty("income_per_s").GetInt32(), Is.EqualTo(123));
+			Assert.That(production.RootElement.GetProperty("income_per_s").GetInt32(), Is.EqualTo(100));
 		}
 
 		[TestCase(TestName = "Each queued item's eta_ticks is the time until it is done, counting the items ahead of it")]

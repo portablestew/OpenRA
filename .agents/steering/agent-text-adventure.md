@@ -27,7 +27,8 @@ description: OpenRA text_adventure patterns.
 - A structure repair holds only while the building is damaged, so it ends at full health: read its `repairing` flag again before you count on it.
 - Vision comes only from your units; scout.
 - `path.eta_ticks` is a floor.
-- A Move reply's `path` is `found` or `no_path`: `no_path` means pick another cell. An AttackMove reply with no `outcome` planned no path in time (it may have engaged a target): read the state before you reissue it.
+- A Move reply's `path` and an AttackMove reply's `outcome` say `no_path` when the cell is unreachable: pick another cell. AttackMove `outcome:null` planned no path in time (it may have engaged a target): read the state before you reissue it.
+- An Attack reply's `outcome` is `started` or `no_valid_target` with `reason`. `reason:"target is hidden under fog: …"`: scout the target, then attack.
 - Sell refunds `RefundPercent` of the cost (default 50), scaled by the building's health: repair before you sell. `{"cmd":"order","actor":<id>,"order":"Sell"}`.
 - Power: `power` is `{provided, drained, excess, state}`. `state` is `Normal` (provided ≥ drained), `Low` or `Critical`. Low power disables defenses such as TSLA, AGUN and SAM; PBOX, HBOX, GUN and FTUR keep firing.
 - Stats: `fs_grep` `^\^Artillery:|^\^TeslaWeapon:` in `mods/ra/weapons/`. `Range: 12c0` is 12 cells; `7c0` is 7.
@@ -36,7 +37,8 @@ description: OpenRA text_adventure patterns.
 - `powers` lists each support power you can see, with its charge. Your own are always listed. An opponent's silo countdown is listed when the engine shows you its timer. A charging power is not ready, and `remaining_ticks` says when it will be. An empty list does not mean no opponent power is charging.
 - Group orders are partial: a matched actor that is dead, not owned, or refuses the name is skipped with its `error`, and the rest are ordered. `skipped` lists them, and is absent when none were skipped. The group is refused only when no matched actor can take the order.
 - `queued:true` appends to one actor's own activity queue; it does not make a group wait for its other members.
-- Unit and structure rows have no `pos`. `damage_state` appears only when a unit is below full health.
+- Unit and structure rows have no `pos`. `damage` appears only when a unit is below full health.
+- Husks (`*.husk`) are not in `units`, `unit_counts`, `known_counts` or `threats`; `actors` still lists them.
 - A `healed` event marks a medic at work. A repair does not raise it.
 
 ## Play
