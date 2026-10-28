@@ -1,0 +1,136 @@
+#region Copyright & License Information
+/*
+ * Copyright (c) The OpenRA Developers and Contributors
+ * This file is part of OpenRA, which is free software. It is made
+ * available to you under the terms of the GNU General Public License
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
+ */
+#endregion
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using NUnit.Framework;
+using OpenRA.Network;
+
+namespace OpenRA.Test
+{
+	/// <summary>
+	/// The single-ply evaluator (<see cref="MonteCarloSinglePly"/>): which candidate it prefers, that a throwing tick
+	/// leaves the rollout scope, and that an evaluation changes nothing in the live game.
+	/// </summary>
+	[TestFixture]
+	sealed class MonteCarloSinglePlyTest
+	{
+		const int Seed = 0x4F0B;
+
+		[OneTimeSetUp]
+		public void InitializeMod()
+		{
+			HeadlessMod.Require();
+		}
+
+		[SetUp]
+		public void ClearWindow()
+		{
+			WorldForks.Clear();
+		}
+
+		[TearDown]
+		public void ClearWindowAfter()
+		{
+			WorldForks.Clear();
+		}
+
+		/// <summary>The parent's buffered, not yet sent, orders. Read by reflection: the buffer is private and has no count.</summary>
+		static int PendingLocalOrders(OrderManager om)
+		{
+			var field = typeof(OrderManager).GetField("localOrders", BindingFlags.Instance | BindingFlags.NonPublic);
+			return ((List<Order>)field.GetValue(om)).Count;
+		}
+
+		/// <summary>
+		/// Places a unit and an enemy <paramref name="distance"/> cells east of it, both in clear ground near the local base.
+		/// The live world ticks twice first, so the local player's vision has revealed the enemy by the time candidates are generated.
+		/// </summary>
+		static (Actor Unit, Actor Enemy) PlaceUnitAndEnemy(HeadlessWorld hw, string enemyType, int distance)
+		{
+			var at = hw.FindClearArea(hw.LocalPlayer.HomeLocation, 4, 4);
+			var unit = hw.CreateActor("e1", at, hw.LocalPlayer);
+			var enemy = hw.CreateActor(enemyType, at + new CVec(distance, 0), hw.EnemyPlayer);
+			hw.Tick(2);
+			return (unit, enemy);
+		}
+
+		[TestCase(TestName = "An attack on a visible enemy outscores hold when the attack gains HP")]
+		public void AttackOutscoresHoldWhenItGainsHp()
+		{
+			// An unarmed building just outside the unit's weapon range (5 cells), so hold cannot fire on it, and the attack
+			// gains HP with no return fire. The unit's own vision does not reach that far, so an unarmed own mcv beside the
+			// building spots it. The mcv has no weapon, so it does not fire either.
+			using var hw = HeadlessWorld.Create(Seed);
+			var at = hw.FindClearArea(hw.LocalPlayer.HomeLocation, 4, 4);
+			var unit = hw.CreateActor("e1", at, hw.LocalPlayer);
+			hw.CreateActor("mcv", at + new CVec(4, 0), hw.LocalPlayer);
+			hw.CreateActor("powr", at + new CVec(5, 0), hw.EnemyPlayer);
+			hw.Tick(2);
+
+			var decision = MonteCarloSinglePly.Evaluate(hw.OrderManager, unit, hw.LocalPlayer);
+
+			var hold = decision.Candidates.Single(c => c.Kind == MonteCarloCandidateKind.Hold);
+			var attack = decision.Candidates.Single(c => c.Kind == MonteCarloCandidateKind.Attack);
+			Assert.That(attack.EnemyHpLost, Is.GreaterThan(0), "The attack did not hurt the enemy.");
+			Assert.That(attack.Score, Is.GreaterThan(hold.Score), "The attack did not outscore hold.");
+			Assert.That(decision.Winner.Kind, Is.EqualTo(MonteCarloCandidateKind.Attack), "Hold won over a clearly better attack.");
+		}
+
+		[TestCase(TestName = "Hold wins when no candidate gains anything")]
+		public void HoldWinsWhenNothingIsGained()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var unit = hw.CreateActor("e1", hw.FindClearArea(hw.LocalPlayer.HomeLocation, 4, 4), hw.LocalPlayer);
+
+			var decision = MonteCarloSinglePly.Evaluate(hw.OrderManager, unit, hw.LocalPlayer);
+
+			Assert.That(decision.Candidates.All(c => c.Score == 0), Is.True, "A candidate scored without gaining anything.");
+			Assert.That(decision.Winner.Kind, Is.EqualTo(MonteCarloCandidateKind.Hold), "Hold did not win a tie.");
+		}
+
+		[TestCase(TestName = "The rollout scope is exited after a throwing tick")]
+		public void RolloutScopeIsExitedAfterThrowingTick()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var (unit, _) = PlaceUnitAndEnemy(hw, "e1", 2);
+
+			Assert.Throws<InvalidOperationException>(() =>
+				MonteCarloSinglePly.Evaluate(hw.OrderManager, unit, hw.LocalPlayer, MonteCarloSinglePly.Horizon,
+					w => throw new InvalidOperationException("The injected tick failure.")));
+
+			Assert.That(WorldForks.InRolloutScope, Is.False, "The rollout scope was left open after a throwing tick.");
+		}
+
+		[TestCase(TestName = "An evaluation leaves the live SyncHash, the parent's pending orders and the live actors unchanged")]
+		public void EvaluationLeavesLiveWorldUnchanged()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			var (unit, enemy) = PlaceUnitAndEnemy(hw, "e1", 2);
+			var hashBefore = hw.World.SyncHash();
+			var tickBefore = hw.World.WorldTick;
+			var pendingBefore = PendingLocalOrders(hw.OrderManager);
+			var unitCellBefore = unit.Location;
+			var enemyHpBefore = enemy.TraitOrDefault<OpenRA.Traits.IHealth>().HP;
+
+			var decision = MonteCarloSinglePly.Evaluate(hw.OrderManager, unit, hw.LocalPlayer);
+
+			Assert.That(decision, Is.Not.Null, "The evaluation was refused.");
+			Assert.That(hw.World.SyncHash(), Is.EqualTo(hashBefore), "The live SyncHash changed.");
+			Assert.That(hw.World.WorldTick, Is.EqualTo(tickBefore), "The live world ticked.");
+			Assert.That(PendingLocalOrders(hw.OrderManager), Is.EqualTo(pendingBefore), "An evaluation order reached the parent OrderManager.");
+			Assert.That(unit.Location, Is.EqualTo(unitCellBefore), "The live unit moved.");
+			Assert.That(enemy.TraitOrDefault<OpenRA.Traits.IHealth>().HP, Is.EqualTo(enemyHpBefore), "The live enemy lost HP.");
+		}
+	}
+}
