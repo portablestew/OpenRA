@@ -158,17 +158,19 @@ namespace OpenRA
 					?? throw new InvalidOperationException("The unit is missing from the rollout fork.");
 				var watched = visibleEnemies.ConvertAll(e => (Actor: fork.GetActorById(e.ActorID), e.StartHp));
 
+				// Hold issues no order, so the rollout keeps the unit's current activity and auto-targeting, as a do-nothing would.
 				var order = plan.Kind switch
 				{
 					MonteCarloCandidateKind.Move => new Order("Move", forkUnit, Target.FromCell(fork, plan.Destination.Value), false),
 					MonteCarloCandidateKind.Attack => new Order("Attack", forkUnit, Target.FromActor(fork.GetActorById(plan.TargetActorId.Value)), false),
-					_ => new Order("Stop", forkUnit, false),
+					_ => null,
 				};
 
 				WorldForks.EnterRolloutScope();
 				try
 				{
-					forkUnit.ResolveOrder(order);
+					if (order != null)
+						forkUnit.ResolveOrder(order);
 					for (var i = 0; i < horizon; i++)
 						tick(fork);
 				}
