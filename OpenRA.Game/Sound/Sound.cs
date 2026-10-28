@@ -365,6 +365,10 @@ namespace OpenRA
 		{
 			ArgumentNullException.ThrowIfNull(ruleset);
 
+			// Voices and notifications from a rollout must not reach the live audio.
+			if (WorldForks.IsRolloutSink(player))
+				return false;
+
 			if (definition == null || DisableAllSounds || (DisableWorldSounds && soundType == SoundType.World))
 				return false;
 
