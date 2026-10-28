@@ -9,7 +9,6 @@
  */
 #endregion
 
-using OpenRA.Mods.Common.MonteCarlo;
 using OpenRA.Primitives;
 using OpenRA.Widgets;
 

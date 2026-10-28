@@ -49,16 +49,13 @@ namespace OpenRA.Test
 		}
 
 		/// <summary>
-		/// Runs the rule through the mod's type, since the test project cannot reference OpenRA.Mods.Common. Returns the
-		/// state's name, so the assertions read "Active" rather than an enum from another assembly.
+		/// Runs the rule and returns the state's name, so the assertions read "Active" rather than the enum.
 		/// </summary>
 		(string State, Actor Target) Resolve()
 		{
-			var type = HeadlessMod.ModData.ObjectCreator.FindType("MonteCarlo.MonteCarloTarget");
-			var args = new object[] { hw.World, null };
-			var state = type.GetMethod("Resolve").Invoke(null, args);
+			var state = MonteCarloTarget.Resolve(hw.World, out var target);
 
-			return (state.ToString(), (Actor)args[1]);
+			return (state.ToString(), target);
 		}
 
 		Actor CreateUnit(string type, Player owner, CPos near)

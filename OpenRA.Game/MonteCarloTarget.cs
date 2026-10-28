@@ -12,7 +12,7 @@
 using System.Linq;
 using OpenRA.Traits;
 
-namespace OpenRA.Mods.Common.MonteCarlo
+namespace OpenRA
 {
 	/// <summary>The three states the Monte Carlo mode can be in, as the label shows them.</summary>
 	public enum MonteCarloState
