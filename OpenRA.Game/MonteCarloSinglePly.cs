@@ -80,9 +80,13 @@ namespace OpenRA
 
 	/// <summary>
 	/// Scores the candidate orders for one unit by rolling each one out on its own fork of the live world (D9, D10).
-	/// Candidates are Hold, a Move of 4 cells north, south, east or west, and an Attack on the nearest enemy visible
-	/// to the viewer. Each rollout applies its order directly to the fork's actor with <c>ResolveOrder</c> and then ticks
-	/// the fork for the horizon. The evaluator issues nothing: the live world and its OrderManager are never touched.
+	/// Candidates are Hold, an Attack on the nearest enemy visible to the viewer, and one Move of 4 cells directly away
+	/// from that enemy along its dominant axis. The Move is omitted when no enemy is visible or the cell is off the map,
+	/// so a decision forks at most three times. Each rollout applies its order directly to the fork's actor with
+	/// <c>ResolveOrder</c> and then ticks the fork for the horizon. Hold issues no order.
+	/// The evaluator issues nothing: the live world and its OrderManager are never touched.
+	/// Limitation (v0): only the candidates and the enemy scoring are fog-fair. The rollout simulates hidden actors as
+	/// it does visible ones, so the own-HP term can react to threats the viewer cannot see. Hidden actors are not frozen.
 	/// </summary>
 	public static class MonteCarloSinglePly
 	{
@@ -98,13 +102,19 @@ namespace OpenRA
 		/// <summary>The score cost of the unit dying within the horizon.</summary>
 		public const double DeathPenalty = 10000;
 
-		static readonly (string Name, CVec Step)[] MoveSteps =
-		[
-			("N", new CVec(0, -MoveDistance)),
-			("S", new CVec(0, MoveDistance)),
-			("E", new CVec(MoveDistance, 0)),
-			("W", new CVec(-MoveDistance, 0)),
-		];
+		/// <summary>
+		/// The cardinal Move that leads away from <paramref name="enemy"/>, along the axis on which the unit is farthest from it.
+		/// Ties go to the x axis. Returns the candidate's name and its step.
+		/// </summary>
+		static (string Name, CVec Step) AwayFrom(CPos unit, CPos enemy)
+		{
+			var dx = unit.X - enemy.X;
+			var dy = unit.Y - enemy.Y;
+			if (Math.Abs(dx) >= Math.Abs(dy))
+				return dx >= 0 ? ("E", new CVec(MoveDistance, 0)) : ("W", new CVec(-MoveDistance, 0));
+
+			return dy >= 0 ? ("S", new CVec(0, MoveDistance)) : ("N", new CVec(0, -MoveDistance));
+		}
 
 		/// <summary>
 		/// Scores the candidates for <paramref name="unit"/>, as seen by <paramref name="viewer"/>. Returns null when the
@@ -135,16 +145,16 @@ namespace OpenRA
 				.ToList();
 
 			var plans = new List<CandidatePlan> { new(MonteCarloCandidateKind.Hold, "Hold", null, null) };
-			foreach (var (name, step) in MoveSteps)
+			var nearest = NearestEnemy(unit, visibleEnemies, world);
+			if (nearest != null)
 			{
+				var (name, step) = AwayFrom(unit.Location, world.GetActorById(nearest.Value).Location);
 				var cell = unit.Location + step;
 				if (world.Map.Contains(cell))
 					plans.Add(new(MonteCarloCandidateKind.Move, "Move " + name, cell, null));
-			}
 
-			var nearest = NearestEnemy(unit, visibleEnemies, world);
-			if (nearest != null)
 				plans.Add(new(MonteCarloCandidateKind.Attack, $"Attack #{nearest.Value}", null, nearest.Value));
+			}
 
 			var unitStartHp = HpOf(unit);
 			var candidates = new List<MonteCarloCandidate>(plans.Count);

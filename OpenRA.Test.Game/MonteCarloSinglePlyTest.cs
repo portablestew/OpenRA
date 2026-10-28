@@ -95,8 +95,26 @@ namespace OpenRA.Test
 
 			var decision = MonteCarloSinglePly.Evaluate(hw.OrderManager, unit, hw.LocalPlayer);
 
+			// No enemy is visible, so there is no Move (it heads away from an enemy) and no Attack: Hold is the only candidate.
+			Assert.That(decision.Candidates.Select(c => c.Kind), Is.EqualTo(new[] { MonteCarloCandidateKind.Hold }), "A candidate was generated with no visible enemy.");
 			Assert.That(decision.Candidates.All(c => c.Score == 0), Is.True, "A candidate scored without gaining anything.");
 			Assert.That(decision.Winner.Kind, Is.EqualTo(MonteCarloCandidateKind.Hold), "Hold did not win a tie.");
+		}
+
+		[TestCase(TestName = "The only Move heads directly away from the nearest visible enemy, and three candidates are scored")]
+		public void MoveHeadsAwayFromNearestEnemy()
+		{
+			// The enemy is two cells east, so away is west.
+			using var hw = HeadlessWorld.Create(Seed);
+			var (unit, _) = PlaceUnitAndEnemy(hw, "e1", 2);
+			var start = unit.Location;
+
+			var decision = MonteCarloSinglePly.Evaluate(hw.OrderManager, unit, hw.LocalPlayer);
+
+			var move = decision.Candidates.Single(c => c.Kind == MonteCarloCandidateKind.Move);
+			Assert.That(move.Label, Is.EqualTo("Move W"), "The Move did not head west, away from the enemy.");
+			Assert.That(move.Destination, Is.EqualTo(start + new CVec(-MonteCarloSinglePly.MoveDistance, 0)), "The Move destination is not four cells west.");
+			Assert.That(decision.Candidates.Count, Is.EqualTo(3), "The decision did not score exactly three candidates.");
 		}
 
 		[TestCase(TestName = "The rollout scope is exited after a throwing tick")]
