@@ -361,6 +361,47 @@ namespace OpenRA
 		}
 
 		/// <summary>
+		/// Clones the order manager's current world for a Monte Carlo rollout. Unlike <see cref="Capture"/> the fork
+		/// is not stored, so the window is untouched, and it is marked <see cref="World.IsRollout"/> before any
+		/// caller can tick it. Returns null, after logging why, when the world cannot be forked faithfully. The
+		/// caller drops the fork and never disposes it, since it shares the live <see cref="OrderManager"/>.
+		/// </summary>
+		public static World ForkForRollout(OrderManager orderManager)
+		{
+			var stopwatch = Stopwatch.StartNew();
+			var fork = CloneChecked(orderManager.World, orderManager, out var clonedObjects);
+			stopwatch.Stop();
+
+			if (fork == null)
+				return null;
+
+			fork.IsRollout = true;
+			Log.Write("debug", $"[WorldForks] rollout fork={stopwatch.Elapsed.TotalMilliseconds:F1}ms objects={clonedObjects}");
+			return fork;
+		}
+
+		[ThreadStatic]
+		static int rolloutScopeDepth;
+
+		/// <summary>
+		/// True while this thread is inside a rollout scope. A sink with no player to key on checks it, because a
+		/// rollout tick can reach it through a call that names no player (such as a victory-condition system line).
+		/// </summary>
+		internal static bool InRolloutScope => rolloutScopeDepth > 0;
+
+		/// <summary>Opens a rollout scope on this thread. Every call must be paired with <see cref="ExitRolloutScope"/>.</summary>
+		internal static void EnterRolloutScope() { rolloutScopeDepth++; }
+
+		/// <summary>Closes the rollout scope that <see cref="EnterRolloutScope"/> opened.</summary>
+		internal static void ExitRolloutScope() { rolloutScopeDepth--; }
+
+		/// <summary>
+		/// True when a sound or notification aimed at <paramref name="player"/> belongs to a rollout and must be dropped.
+		/// With a player, the player's own world decides. With none, the thread's rollout scope decides.
+		/// </summary>
+		internal static bool IsRolloutSink(Player player) => player != null ? player.World.IsRollout : InRolloutScope;
+
+		/// <summary>
 		/// Makes the newest snapshot at least <see cref="MinGapMs"/> older than <paramref name="liveMs"/> the
 		/// active game state. See <see cref="TryRestore"/> for what adopting a snapshot involves.
 		/// </summary>

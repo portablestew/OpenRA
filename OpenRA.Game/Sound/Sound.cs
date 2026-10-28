@@ -119,6 +119,9 @@ namespace OpenRA
 			if (player != null && player != player.World.LocalPlayer)
 				return null;
 
+			if (WorldForks.IsRolloutSink(player))
+				return null;
+
 			return soundEngine.Play2D(sounds[name],
 				loop, headRelative, pos,
 				InternalSoundVolume * volumeModifier, true);
@@ -466,6 +469,10 @@ namespace OpenRA
 
 		public bool PlayNotification(Ruleset rules, Player player, string type, string notification, string variant)
 		{
+			// Checked before the hook so a rollout's notifications do not reach the agent socket either.
+			if (WorldForks.IsRolloutSink(player))
+				return false;
+
 			NotificationPlayed?.Invoke(player, notification);
 			ArgumentNullException.ThrowIfNull(rules);
 

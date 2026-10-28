@@ -171,8 +171,26 @@ namespace OpenRA
 
 		readonly GameInformation gameInfo;
 
+		/// <summary>
+		/// True on a Monte Carlo rollout fork (<see cref="WorldForks.ForkForRollout"/>). A fork shares the live
+		/// <see cref="OrderManager"/>, so its sinks check this flag and drop sound, notifications and orders.
+		/// </summary>
+		public bool IsRollout { get; internal set; }
+
+		/// <summary>Orders a rollout fork has dropped in <see cref="IssueOrder"/>. Stays zero on any other world.</summary>
+		public int RolloutOrdersDropped { get; private set; }
+
 		// Hide the OrderManager from mod code
-		public void IssueOrder(Order o) { OrderManager.IssueOrder(o); }
+		public void IssueOrder(Order o)
+		{
+			if (IsRollout)
+			{
+				RolloutOrdersDropped++;
+				return;
+			}
+
+			OrderManager.IssueOrder(o);
+		}
 
 		readonly Type defaultOrderGeneratorType;
 

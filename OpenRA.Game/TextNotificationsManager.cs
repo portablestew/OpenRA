@@ -34,7 +34,7 @@ namespace OpenRA
 
 		public static void AddTransientLine(Player player, string text)
 		{
-			if (string.IsNullOrEmpty(text))
+			if (string.IsNullOrEmpty(text) || WorldForks.IsRolloutSink(player))
 				return;
 
 			if (player == null || player == player.World.LocalPlayer)
@@ -83,6 +83,10 @@ namespace OpenRA
 
 		static void AddTextNotification(TextNotificationPool pool, int clientId, string prefix, string text, Color? prefixColor = null, Color? textColor = null)
 		{
+			// Every line funnels through here. The system lines have no player to key on, so a rollout scope drops them all.
+			if (WorldForks.InRolloutScope)
+				return;
+
 			if (IsPoolEnabled(pool))
 			{
 				var textNotification = new TextNotification(pool, clientId, prefix, text, prefixColor, textColor);
