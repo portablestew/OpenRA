@@ -47,8 +47,9 @@ namespace OpenRA.Traits
 
 			// Screen shake is a pure camera/viewport effect with no simulation state: it only scrolls the
 			// WorldRenderer's viewport. There is no renderer or viewport headlessly (worldRenderer is null), so
-			// skip the scroll. Expired effects are still pruned above so the list does not grow unbounded.
-			if (worldRenderer != null)
+			// skip the scroll. A rollout's shake must not scroll the live viewport either, since the renderer is shared with the
+			// fork. Expired effects are still pruned above so the list does not grow unbounded.
+			if (worldRenderer != null && !WorldForks.IsRolloutSink(self.Owner))
 			{
 				var newOffset = shakeEffects.Count > 0 ? GetScrollOffset() : Vector2.Zero;
 				if (newOffset != previousOffset)

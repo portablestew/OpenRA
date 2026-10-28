@@ -108,10 +108,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 		/// <summary>The number of open connections. Each one receives every event.</summary>
 		public static int ConnectionCount => Volatile.Read(ref connections).Length;
 
-		/// <summary>Adds dto to every open connection's turn buffer. Runs on the game thread; never blocks on socket I/O.</summary>
+		/// <summary>
+		/// Adds dto to every open connection's turn buffer. Runs on the game thread; never blocks on socket I/O. An event raised
+		/// inside a rollout scope belongs to a rollout, not the live world, so it is dropped before the sink as well.
+		/// </summary>
 		public static void Raise(object dto)
 		{
-			if (!enabled)
+			if (!enabled || WorldForks.InRolloutScope)
 				return;
 
 			Sink?.Invoke(dto);

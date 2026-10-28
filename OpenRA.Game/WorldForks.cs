@@ -387,7 +387,7 @@ namespace OpenRA
 		/// True while this thread is inside a rollout scope. A sink with no player to key on checks it, because a
 		/// rollout tick can reach it through a call that names no player (such as a victory-condition system line).
 		/// </summary>
-		internal static bool InRolloutScope => rolloutScopeDepth > 0;
+		public static bool InRolloutScope => rolloutScopeDepth > 0;
 
 		/// <summary>Opens a rollout scope on this thread. Every call must be paired with <see cref="ExitRolloutScope"/>.</summary>
 		internal static void EnterRolloutScope() { rolloutScopeDepth++; }

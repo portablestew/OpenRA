@@ -9,10 +9,14 @@
  */
 #endregion
 
+using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using NUnit.Framework;
+using OpenRA.Graphics;
 using OpenRA.Network;
+using OpenRA.Traits;
 
 namespace OpenRA.Test
 {
@@ -128,6 +132,57 @@ namespace OpenRA.Test
 
 			Assert.That(TextNotificationsManager.Notifications.Count, Is.EqualTo(before), "A rollout line was shown.");
 			Assert.That(WorldForks.InRolloutScope, Is.False, "The rollout scope was not closed.");
+		}
+
+		[TestCase(TestName = "A rollout's screen shake does not scroll the live viewport")]
+		public void RolloutScreenShakeDoesNotScrollViewport()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			hw.Tick(5);
+			var fork = WorldForks.ForkForRollout(hw.OrderManager);
+			var shaker = fork.WorldActor.Trait<ScreenShaker>();
+
+			// There is no renderer headlessly. An uninitialized one has a null Viewport, so an ungated scroll throws.
+			var renderer = (WorldRenderer)RuntimeHelpers.GetUninitializedObject(typeof(WorldRenderer));
+			((IWorldLoaded)shaker).WorldLoaded(fork, renderer);
+			shaker.AddEffect(10, WPos.Zero, 1024);
+
+			Assert.DoesNotThrow(() => ((ITick)shaker).Tick(fork.WorldActor), "A rollout's shake scrolled the live viewport.");
+		}
+
+		[TestCase(TestName = "An agent event raised inside a rollout scope does not reach the sink, and a live one does")]
+		public void RolloutAgentEventDoesNotReachSink()
+		{
+			var events = HeadlessMod.ModData.ObjectCreator.FindType("AgentSocket.AgentEvents");
+			var savedEnabled = (bool)events.GetProperty("Enabled").GetValue(null);
+			var savedSink = events.GetField("Sink").GetValue(null);
+			var seen = new List<object>();
+			try
+			{
+				events.GetProperty("Enabled").SetValue(null, true);
+				events.GetField("Sink").SetValue(null, (Action<object>)seen.Add);
+				var raise = events.GetMethod("Raise");
+
+				WorldForks.EnterRolloutScope();
+				try
+				{
+					raise.Invoke(null, [new object()]);
+				}
+				finally
+				{
+					WorldForks.ExitRolloutScope();
+				}
+
+				Assert.That(seen, Is.Empty, "A rollout's agent event reached the sink.");
+
+				raise.Invoke(null, [new object()]);
+				Assert.That(seen, Has.Count.EqualTo(1), "A live agent event was dropped.");
+			}
+			finally
+			{
+				events.GetField("Sink").SetValue(null, savedSink);
+				events.GetProperty("Enabled").SetValue(null, savedEnabled);
+			}
 		}
 	}
 }
