@@ -114,6 +114,7 @@ hotkey-description-nextmusic = Next
 hotkey-description-snapshotundo = Snapshot Undo
 hotkey-description-snapshotredo = Snapshot Redo
 hotkey-description-snapshotredoalt = Snapshot Redo (alternate)
+hotkey-description-montecarlotoggle = Toggle Monte Carlo mode
 
 ## observer.yaml
 hotkey-description-observercombinedview = All Players

@@ -158,3 +158,8 @@ SnapshotRedoAlt: Z Ctrl, Shift
 	Contexts: player, spectator
 	Platform:
 		OSX: Z Meta, Shift
+
+MonteCarloToggle: M Ctrl
+	Description: hotkey-description-montecarlotoggle
+	Types: World
+	Contexts: player, spectator
