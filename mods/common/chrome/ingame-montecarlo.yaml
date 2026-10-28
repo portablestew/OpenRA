@@ -1,0 +1,15 @@
+Container@MONTECARLO_WIDGETS:
+	Logic: MonteCarloStatusLogic
+	X: 10
+	Y: 10
+	Width: 320
+	Height: 15
+	ClickThrough: true
+	Children:
+		LogicTicker@MONTECARLO_TICKER:
+		Label@MONTECARLO_TEXT:
+			Width: PARENT_WIDTH
+			Height: 15
+			Font: Bold
+			Contrast: true
+			IgnoreMouseOver: true

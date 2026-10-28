@@ -54,6 +54,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			}
 
 			Game.LoadWidget(world, "DEBUG_WIDGETS", worldRoot, []);
+			Game.LoadWidget(world, "MONTECARLO_WIDGETS", worldRoot, []);
 			Game.LoadWidget(world, "TRANSIENTS_PANEL", worldRoot, []);
 
 			world.GameOver += () =>

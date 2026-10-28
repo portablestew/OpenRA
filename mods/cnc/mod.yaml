@@ -130,6 +130,7 @@ ChromeLayout:
 	cnc|chrome/ingame-infostats.yaml
 	cnc|chrome/ingame-info-lobby-options.yaml
 	cnc|chrome/ingame-debuginfo.yaml
+	common|chrome/ingame-montecarlo.yaml
 	cnc|chrome/music.yaml
 	cnc|chrome/settings.yaml
 	cnc|chrome/settings-display.yaml
