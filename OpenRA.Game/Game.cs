@@ -106,6 +106,7 @@ namespace OpenRA
 			// The previous game's fork snapshots share its Map and order pipeline and must not leak
 			// into the game this connection will host.
 			WorldForks.Clear();
+			MonteCarloMode.Clear();
 
 			// HACK: The shellmap World and OrderManager are owned by the main menu's WorldRenderer instead of Game.
 			// This allows us to switch Game.OrderManager from the shellmap to the new network connection when joining
@@ -212,6 +213,7 @@ namespace OpenRA
 		{
 			// Any snapshots from the outgoing world are dead with it (they share its Map).
 			WorldForks.Clear();
+			MonteCarloMode.Clear();
 
 			// Dispose of the old world before creating a new one.
 			worldRenderer?.Dispose();
