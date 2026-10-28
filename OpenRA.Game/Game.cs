@@ -726,6 +726,9 @@ namespace OpenRA
 			// Between logic ticks (frame-end tasks drained) is the clean fork boundary: capture the
 			// rolling rewind snapshot when one is due.
 			WorldForks.MaybeSnapshot(OrderManager);
+
+			// The Monte Carlo driver runs at the same boundary, so a decision never sees a half-finished tick.
+			MonteCarloDriver.Tick(OrderManager);
 		}
 
 		public static void PerformDelayedActions()
