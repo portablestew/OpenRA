@@ -25,20 +25,19 @@ namespace OpenRA.Test
 		const string Infantry = "e1";
 
 		HeadlessWorld hw;
-		Func<Actor, bool> defaultPendingCheck;
+		Func<Actor, bool> savedPendingCheck;
 
 		[OneTimeSetUp]
 		public void InitializeMod()
 		{
 			HeadlessMod.Require();
-
-			// Read before any SetUp replaces the check, so a test can see the default the mod has not yet overridden.
-			defaultPendingCheck = MonteCarloDriver.HasPendingAgentOrder;
 		}
 
 		[SetUp]
 		public void SetUp()
 		{
+			// Other fixtures load worlds that wire the real socket check, so save whatever is current and restore it after.
+			savedPendingCheck = MonteCarloDriver.HasPendingAgentOrder;
 			MonteCarloMode.Clear();
 			MonteCarloMode.Toggle();
 			MonteCarloDriver.HasPendingAgentOrder = _ => false;
@@ -51,7 +50,7 @@ namespace OpenRA.Test
 		{
 			hw.Dispose();
 			MonteCarloMode.Clear();
-			MonteCarloDriver.HasPendingAgentOrder = defaultPendingCheck;
+			MonteCarloDriver.HasPendingAgentOrder = savedPendingCheck;
 			MonteCarloDriver.ForgetDecisions();
 		}
 
@@ -159,7 +158,7 @@ namespace OpenRA.Test
 		{
 			var unit = CreateUnit(new CPos(56, 50));
 
-			Assert.That(defaultPendingCheck(unit), Is.True, "The default must refuse every unit.");
+			Assert.That(MonteCarloDriver.FailClosed(unit), Is.True, "The fail-closed default must refuse every unit.");
 		}
 
 		[TestCase(TestName = "The first logic tick is due at once, and the next is due a cadence later")]
@@ -177,6 +176,123 @@ namespace OpenRA.Test
 
 			Assert.That(MonteCarloDriver.TakeDue(200), Is.True, "A rewound world was not decided for at once.");
 			Assert.That(MonteCarloDriver.TakeDue(250), Is.False, "The restarted cadence was not respected.");
+		}
+
+		static MonteCarloCandidate Hold(double score)
+		{
+			return new MonteCarloCandidate(MonteCarloCandidateKind.Hold, "Hold", null, null, 0, 0, false, score);
+		}
+
+		static MonteCarloCandidate Move(CPos cell, double score)
+		{
+			return new MonteCarloCandidate(MonteCarloCandidateKind.Move, "Move", cell, null, 0, 0, false, score);
+		}
+
+		static MonteCarloCandidate Attack(uint targetActorId, double score)
+		{
+			return new MonteCarloCandidate(MonteCarloCandidateKind.Attack, $"Attack #{targetActorId}", null, targetActorId, 0, 0, false, score);
+		}
+
+		[TestCase(TestName = "The winning Move is issued through the live order path and the unit reaches its cell")]
+		public void WinningMoveIsIssued()
+		{
+			var unit = CreateUnit(new CPos(56, 50));
+			Select(unit);
+			var destination = hw.FindClearArea(new CPos(60, 50), 1, 1);
+			var decision = new MonteCarloDecision([Hold(0), Move(destination, 5)]);
+
+			var issued = MonteCarloDriver.Issue(hw.World, unit, unit.Location, decision);
+
+			Assert.That(issued, Is.True, "The winning Move was not issued.");
+			Assert.That(hw.TickUntil(() => unit.Location == destination, 200), Is.Not.Null, "The unit never reached the Move's cell.");
+		}
+
+		[TestCase(TestName = "Hold issues no order")]
+		public void HoldIssuesNoOrder()
+		{
+			var unit = CreateUnit(new CPos(56, 50));
+			Select(unit);
+			var start = unit.Location;
+			var decision = new MonteCarloDecision([Hold(5), Move(hw.FindClearArea(new CPos(60, 50), 1, 1), 0)]);
+
+			var issued = MonteCarloDriver.Issue(hw.World, unit, unit.Location, decision);
+
+			Assert.That(issued, Is.False, "Hold issued an order.");
+			hw.Tick(60);
+			Assert.That(unit.Location, Is.EqualTo(start), "Hold moved the unit.");
+		}
+
+		[TestCase(TestName = "A unit that died after the evaluation issues nothing")]
+		public void DeadUnitIssuesNothing()
+		{
+			var unit = CreateUnit(new CPos(56, 50));
+			Select(unit);
+			var from = unit.Location;
+			var decision = new MonteCarloDecision([Hold(0), Move(hw.FindClearArea(new CPos(60, 50), 1, 1), 5)]);
+
+			unit.Kill(unit);
+			var issued = MonteCarloDriver.Issue(hw.World, unit, from, decision);
+
+			Assert.That(issued, Is.False, "A dead unit was issued an order.");
+		}
+
+		[TestCase(TestName = "A unit that is no longer the selection issues nothing")]
+		public void UnitNoLongerSelectedIssuesNothing()
+		{
+			var unit = CreateUnit(new CPos(56, 50));
+			var other = CreateUnit(new CPos(60, 50));
+			Select(unit);
+			var from = unit.Location;
+			var decision = new MonteCarloDecision([Hold(0), Move(hw.FindClearArea(new CPos(64, 50), 1, 1), 5)]);
+
+			hw.World.Selection.Remove(unit);
+			Select(other);
+			var issued = MonteCarloDriver.Issue(hw.World, unit, from, decision);
+
+			Assert.That(issued, Is.False, "A unit that is no longer selected was issued an order.");
+		}
+
+		[TestCase(TestName = "A unit that moved since the evaluation issues nothing")]
+		public void MovedUnitIssuesNothing()
+		{
+			var unit = CreateUnit(new CPos(56, 50));
+			Select(unit);
+			var start = unit.Location;
+			var decision = new MonteCarloDecision([Hold(0), Move(hw.FindClearArea(new CPos(60, 50), 1, 1), 5)]);
+
+			var issued = MonteCarloDriver.Issue(hw.World, unit, start + new CVec(1, 0), decision);
+
+			Assert.That(issued, Is.False, "A unit that moved since the evaluation was issued an order.");
+			hw.Tick(60);
+			Assert.That(unit.Location, Is.EqualTo(start), "The stale decision moved the unit.");
+		}
+
+		[TestCase(TestName = "An Attack on a target that is gone issues nothing")]
+		public void GoneAttackTargetIssuesNothing()
+		{
+			var unit = CreateUnit(new CPos(56, 50));
+			Select(unit);
+			var decision = new MonteCarloDecision([Hold(0), Attack(uint.MaxValue, 5)]);
+
+			var issued = MonteCarloDriver.Issue(hw.World, unit, unit.Location, decision);
+
+			Assert.That(issued, Is.False, "An Attack on a missing actor was issued.");
+		}
+
+		[TestCase(TestName = "A decision never runs on a rollout world")]
+		public void RolloutWorldNeverIssues()
+		{
+			var unit = CreateUnit(new CPos(56, 50));
+			Select(unit);
+			var fork = WorldForks.ForkForRollout(hw.OrderManager);
+			Assert.That(fork, Is.Not.Null, "The rollout fork was refused.");
+			var forkUnit = fork.GetActorById(unit.ActorID);
+			var decision = new MonteCarloDecision([Hold(0), Move(hw.FindClearArea(new CPos(60, 50), 1, 1), 5)]);
+
+			var issued = MonteCarloDriver.Issue(fork, forkUnit, forkUnit.Location, decision);
+
+			Assert.That(issued, Is.False, "A rollout world issued an order.");
+			Assert.That(fork.RolloutOrdersDropped, Is.Zero, "The driver tried to issue on the rollout world.");
 		}
 	}
 }

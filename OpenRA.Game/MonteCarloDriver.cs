@@ -11,6 +11,7 @@
 
 using System;
 using OpenRA.Network;
+using OpenRA.Traits;
 
 namespace OpenRA
 {
@@ -18,7 +19,7 @@ namespace OpenRA
 	/// The live driver for the Monte Carlo mode. Each logic tick, while the mode is on, it checks every 100 ticks whether
 	/// the selection is one eligible unit and whether a decision may run. It holds no actor or world references: it keeps
 	/// only the tick of its last decision, so a rewind or a new game can never leave it with a stale object.
-	/// This step stops at the guards. A due decision is logged, and it neither evaluates nor issues an order yet.
+	/// A due decision evaluates the unit, logs every candidate, and issues the winner on the live world. Hold issues nothing.
 	/// </summary>
 	public static class MonteCarloDriver
 	{
@@ -31,10 +32,16 @@ namespace OpenRA
 
 		/// <summary>
 		/// Whether the unit has an agent-socket order still in flight. The socket lives in OpenRA.Mods.Common, which
-		/// OpenRA.Game cannot reference, so the mod must wire this up. Until it does, the driver fails closed and decides
-		/// nothing for any unit.
+		/// OpenRA.Game cannot reference, so the mod wires this up when its world loads. Until it does, the driver fails
+		/// closed and decides nothing for any unit.
 		/// </summary>
-		public static Func<Actor, bool> HasPendingAgentOrder = _ => true;
+		public static Func<Actor, bool> HasPendingAgentOrder = FailClosed;
+
+		/// <summary>The default pending check. It reports every unit as pending, so nothing is decided until the mod wires the real check.</summary>
+		internal static bool FailClosed(Actor unit)
+		{
+			return true;
+		}
 
 		/// <summary>Called once per logic tick. Does nothing unless the mode is on and a decision is due.</summary>
 		public static void Tick(OrderManager orderManager)
@@ -52,8 +59,97 @@ namespace OpenRA
 				return;
 			}
 
-			// Step 1 stops here. Step 2 evaluates the unit and logs every candidate's score.
-			Log.Write("debug", $"[MonteCarlo] decision due at tick {world.WorldTick} for unit #{unit.ActorID}; the evaluator is not wired yet");
+			var decidedFrom = unit.Location;
+			MonteCarloDecision decision;
+			try
+			{
+				decision = MonteCarloSinglePly.Evaluate(orderManager, unit, world.LocalPlayer);
+			}
+			catch (Exception e)
+			{
+				// The rollout scope is exited in a finally block, and the fork is discarded, so the live world is unaffected.
+				Log.Write("debug", $"[MonteCarlo] decision abandoned at tick {world.WorldTick}: the evaluator threw {e.GetType().Name}: {e.Message}");
+				return;
+			}
+
+			// A null decision means the fork failed. ForkForRollout has already logged why.
+			if (decision == null)
+				return;
+
+			LogDecision(world.WorldTick, decision);
+			Issue(world, unit, decidedFrom, decision);
+		}
+
+		static void LogDecision(int worldTick, MonteCarloDecision decision)
+		{
+			foreach (var candidate in decision.Candidates)
+				Log.Write("debug", $"[MonteCarlo] tick {worldTick} candidate {candidate.Label}: score {candidate.Score:F2} " +
+					$"(own HP {candidate.OwnHpDelta}, enemy HP lost {candidate.EnemyHpLost}, died {candidate.UnitDied})");
+
+			Log.Write("debug", $"[MonteCarlo] tick {worldTick} chose {decision.Winner.Label}");
+		}
+
+		/// <summary>
+		/// Issues the decision's winner for the unit on the live world, through World.IssueOrder. Hold issues nothing. The
+		/// order is rebuilt from the winner's cell or actor ID, never taken from a fork. The guards run again first, because
+		/// the unit or the selection may have changed since the evaluation. Returns true when an order was issued.
+		/// </summary>
+		internal static bool Issue(World world, Actor unit, CPos decidedFrom, MonteCarloDecision decision)
+		{
+			if (!ShouldDecide(world, out var current, out var reason) || current != unit)
+			{
+				Log.Write("debug", $"[MonteCarlo] decision skipped at tick {world.WorldTick}: {reason ?? "the selection changed"}");
+				return false;
+			}
+
+			if (unit.Location != decidedFrom)
+			{
+				Log.Write("debug", $"[MonteCarlo] decision skipped at tick {world.WorldTick}: the unit moved since the evaluation");
+				return false;
+			}
+
+			var winner = decision.Winner;
+			var order = Rebuild(world, unit, winner, out reason);
+			if (order == null)
+			{
+				Log.Write("debug", $"[MonteCarlo] no order at tick {world.WorldTick} for {winner.Label}: {reason}");
+				return false;
+			}
+
+			world.IssueOrder(order);
+			Log.Write("debug", $"[MonteCarlo] issued {winner.Label} for unit #{unit.ActorID} at tick {world.WorldTick}");
+			return true;
+		}
+
+		/// <summary>Builds the live order for a candidate. Returns null, with the reason, when the candidate issues nothing.</summary>
+		static Order Rebuild(World world, Actor unit, MonteCarloCandidate candidate, out string reason)
+		{
+			reason = null;
+			switch (candidate.Kind)
+			{
+				case MonteCarloCandidateKind.Move:
+					if (!world.Map.Contains(candidate.Destination.Value))
+					{
+						reason = "the destination is off the map";
+						return null;
+					}
+
+					return new Order("Move", unit, Target.FromCell(world, candidate.Destination.Value), false);
+
+				case MonteCarloCandidateKind.Attack:
+					var target = world.GetActorById(candidate.TargetActorId.Value);
+					if (target == null || target.IsDead || !target.IsInWorld)
+					{
+						reason = "the target is gone";
+						return null;
+					}
+
+					return new Order("Attack", unit, Target.FromActor(target), false);
+
+				default:
+					reason = "Hold issues no order";
+					return null;
+			}
 		}
 
 		/// <summary>

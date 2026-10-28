@@ -59,6 +59,9 @@ namespace OpenRA.Mods.Common
 			AgentEvents.Enabled = Enabled;
 			UnitOrders.OrderResolving = Enabled ? AgentWorldEventObserver.Ordered : null;
 			Sound.NotificationPlayed = Enabled ? AgentNotifications.Raise : null;
+
+			// The Monte Carlo driver fails closed until this is wired, so it never decides for a unit with a socket order in flight.
+			MonteCarloDriver.HasPendingAgentOrder = AgentOrderAwait.InFlight;
 			if (!Enabled)
 				return;
 

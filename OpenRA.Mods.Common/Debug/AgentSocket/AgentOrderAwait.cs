@@ -225,6 +225,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 				return Pending.Exists(p => ReferenceEquals(p.subject, subject) && p.order == order);
 		}
 
+		/// <summary>True while any order the socket issued to subject has not settled or failed yet, whatever its name. Must run on the game thread.</summary>
+		public static bool InFlight(Actor subject)
+		{
+			lock (Gate)
+				return Pending.Exists(p => ReferenceEquals(p.subject, subject)) || Settling.Exists(p => ReferenceEquals(p.subject, subject));
+		}
+
 		/// <summary>
 		/// Parks the calling thread until the await settles, fails, or uses up budgetTicks of game time. A paused game ends the
 		/// wait at once with <see cref="AgentPausedException"/>; a budget that runs out throws a timeout. A failed await throws its
