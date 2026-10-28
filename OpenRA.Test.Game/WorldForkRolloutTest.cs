@@ -184,5 +184,31 @@ namespace OpenRA.Test
 				events.GetProperty("Enabled").SetValue(null, savedEnabled);
 			}
 		}
+
+		[TestCase(TestName = "A rollout's notification is dropped before the agent socket hook sees it, and a live one reaches the hook")]
+		public void RolloutNotificationDoesNotReachSocketHook()
+		{
+			using var hw = HeadlessWorld.Create(Seed);
+			hw.Tick(5);
+			var fork = WorldForks.ForkForRollout(hw.OrderManager);
+			Assert.That(fork, Is.Not.Null, "The rollout fork was refused.");
+
+			var rules = HeadlessMod.ModData.DefaultRules;
+			var seen = new List<string>();
+			var saved = Sound.NotificationPlayed;
+			Sound.NotificationPlayed = (player, notification) => seen.Add(notification);
+			try
+			{
+				Assert.That(Game.Sound.PlayNotification(rules, fork.LocalPlayer, "Speech", "Yes", null), Is.False, "A rollout notification was played.");
+				Assert.That(seen, Is.Empty, "A rollout's notification reached the agent socket hook.");
+
+				Game.Sound.PlayNotification(rules, hw.LocalPlayer, "Speech", "Yes", null);
+				Assert.That(seen, Has.Count.EqualTo(1), "A live notification did not reach the agent socket hook.");
+			}
+			finally
+			{
+				Sound.NotificationPlayed = saved;
+			}
+		}
 	}
 }

@@ -150,5 +150,41 @@ namespace OpenRA.Test
 			Assert.That(unit.Location, Is.EqualTo(unitCellBefore), "The live unit moved.");
 			Assert.That(enemy.TraitOrDefault<OpenRA.Traits.IHealth>().HP, Is.EqualTo(enemyHpBefore), "The live enemy lost HP.");
 		}
+
+		[TestCase(TestName = "Each candidate's score is its own HP change, plus the enemy weight times the enemy HP lost, less the death penalty")]
+		public void ScoreIsTheDocumentedFormula()
+		{
+			// The same setup as AttackOutscoresHoldWhenItGainsHp, so the Attack candidate has enemy HP lost to score.
+			using var hw = HeadlessWorld.Create(Seed);
+			var at = hw.FindClearArea(hw.LocalPlayer.HomeLocation, 4, 4);
+			var unit = hw.CreateActor("e1", at, hw.LocalPlayer);
+			hw.CreateActor("mcv", at + new CVec(4, 0), hw.LocalPlayer);
+			hw.CreateActor("powr", at + new CVec(5, 0), hw.EnemyPlayer);
+			hw.Tick(2);
+
+			var decision = MonteCarloSinglePly.Evaluate(hw.OrderManager, unit, hw.LocalPlayer);
+
+			Assert.That(decision.Candidates.Any(c => c.EnemyHpLost > 0), Is.True, "No candidate hurt the enemy, so the enemy term is not exercised.");
+			foreach (var candidate in decision.Candidates)
+			{
+				var expected = candidate.OwnHpDelta + MonteCarloSinglePly.EnemyHpWeight * candidate.EnemyHpLost
+					- (candidate.UnitDied ? MonteCarloSinglePly.DeathPenalty : 0);
+				Assert.That(candidate.Score, Is.EqualTo(expected).Within(1e-9), $"{candidate.Label} scored {candidate.Score}, not {expected}.");
+			}
+		}
+
+		[TestCase(TestName = "Among candidates a tie goes to the earlier one, and a strictly higher later candidate beats Hold")]
+		public void TieGoesToTheEarlierCandidate()
+		{
+			var hold = new MonteCarloCandidate(MonteCarloCandidateKind.Hold, "Hold", null, null, 0, 0, false, 0);
+			var move = new MonteCarloCandidate(MonteCarloCandidateKind.Move, "Move W", null, null, 0, 0, false, 50);
+			var attack = new MonteCarloCandidate(MonteCarloCandidateKind.Attack, "Attack #7", null, 7u, 0, 0, false, 50);
+			var idleMove = new MonteCarloCandidate(MonteCarloCandidateKind.Move, "Move E", null, null, 0, 0, false, 0);
+
+			Assert.That(new MonteCarloDecision([hold, move, attack]).Winner, Is.SameAs(move), "A Move tied with an Attack did not win by coming first.");
+			Assert.That(new MonteCarloDecision([hold, attack, move]).Winner, Is.SameAs(attack), "An Attack tied with a Move did not win by coming first.");
+			Assert.That(new MonteCarloDecision([hold, move]).Winner, Is.SameAs(move), "A higher-scoring Move did not beat Hold.");
+			Assert.That(new MonteCarloDecision([hold, idleMove]).Winner, Is.SameAs(hold), "Hold did not win a tie with a Move.");
+		}
 	}
 }
