@@ -50,6 +50,7 @@ namespace OpenRA.Mods.Common.AgentSocket
 		[
 			"ping", "help", "state", "actors", "maps", "load_skirmish", "order", "orders", "wait",
 			"production", "production_tree", "powers", "build", "cancel", "place", "deploy", "screenshot", "undo", "look", "map_state",
+			"montecarlo", "select",
 		];
 
 		static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
@@ -191,6 +192,8 @@ namespace OpenRA.Mods.Common.AgentSocket
 				"undo" => SnapshotStep(cmd, root),
 				"look" => Look(cmd, root),
 				"map_state" => MapState(cmd, root),
+				"montecarlo" => SetMonteCarlo(cmd, root),
+				"select" => SelectActor(cmd, root),
 				_ => Error(cmd, "unknown command"),
 			};
 		}
@@ -318,6 +321,25 @@ namespace OpenRA.Mods.Common.AgentSocket
 			{
 				return Error(cmd, e.Message);
 			}
+		}
+
+		/// <summary>Reads on the socket thread whether the mode is on or off, then sets it on the game thread.</summary>
+		static string SetMonteCarlo(string cmd, JsonElement root)
+		{
+			if (!root.TryGetProperty("on", out var on) || on.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+				return Error(cmd, "on must be true or false");
+
+			var enable = on.GetBoolean();
+			return Run(cmd, () => AgentMonteCarlo.SetMode(AgentWorldBridge.RequireWorld(), cmd, enable));
+		}
+
+		/// <summary>Reads the actor id on the socket thread, then selects that actor on the game thread. No order is issued.</summary>
+		static string SelectActor(string cmd, JsonElement root)
+		{
+			if (!root.TryGetProperty("actor", out var actor) || !actor.TryGetUInt32(out var id))
+				return Error(cmd, "actor must be an actor id");
+
+			return Run(cmd, () => AgentMonteCarlo.Select(AgentWorldBridge.RequireWorld(), cmd, id));
 		}
 
 		/// <summary>

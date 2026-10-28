@@ -198,6 +198,13 @@ namespace OpenRA.Mods.Common.AgentSocket
 				+ " category the occupying actor's rules declare (RA trees are Tree), or a crate's crush class (RA: crate), counted only for\n"
 				+ " actors you know, so an unseen doodad is not counted. An empty or invalid selector is ok:false, error",
 				"{\"cmd\":\"look\",\"points\":[[40,50]],\"k\":5,\"radius\":10}"),
+			("montecarlo", "on (bool, required) -> ok, cmd, enabled, status (off | idle | active: the Monte Carlo label's state, idle meaning on but"
+				+ " the selection is not one eligible mobile unit), unit (the active unit's type, else null), selection (sorted ids). Sets the"
+				+ " mode as the hotkey does; local and unsynced, issues no order",
+				"{\"cmd\":\"montecarlo\",\"on\":true}"),
+			("select", "actor (uint) -> ok, cmd, enabled, status, unit, selection. Replaces the selection with that one live actor, as a click"
+				+ " does. Issues no order. An unknown or dead actor is ok:false, error",
+				"{\"cmd\":\"select\",\"actor\":12}"),
 		];
 
 		/// <summary>Each event group, the event type it carries, and the record that defines the payload.</summary>
